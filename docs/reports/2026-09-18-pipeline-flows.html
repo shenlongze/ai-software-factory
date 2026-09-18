@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI Software Factory — 流程 · 数据流 · 调用链</title>
+<style>
+  :root{
+    --bg:#f5f5f7; --card:#fff; --ink:#1d1d1f; --sub:#6e6e73; --line:#e5e5ea;
+    --blue:#0071e3; --green:#34c759; --amber:#ff9f0a; --red:#ff3b30; --purple:#af52de;
+    --cyan:#32ade6; --brown:#a2845e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:40px 28px 80px;background:var(--bg);color:var(--ink);
+       font:15px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC",system-ui,sans-serif}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:30px;font-weight:700;letter-spacing:-.4px;margin:0 0 6px}
+  .sub{color:var(--sub);font-size:14px;margin-bottom:30px}
+  h2{font-size:20px;font-weight:600;margin:44px 0 6px;display:flex;align-items:center;gap:9px}
+  h2 .n{width:26px;height:26px;border-radius:8px;background:var(--ink);color:#fff;font-size:14px;
+        display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .hint{color:var(--sub);font-size:13.5px;margin:0 0 16px 35px}
+  .card{background:var(--card);border-radius:16px;padding:22px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .note{background:#fff8e6;border-left:3px solid var(--amber);padding:11px 14px;border-radius:8px;
+        font-size:13.5px;color:#6b5a2b;margin-top:16px}
+  code{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#f0f0f3;
+       padding:1.5px 5px;border-radius:5px}
+
+  /* ── 视图 1: 业务流程泳道 ── */
+  .flow{display:flex;flex-direction:column;gap:0}
+  .step{display:grid;grid-template-columns:56px 1fr;gap:14px;position:relative}
+  .step::before{content:"";position:absolute;left:27px;top:52px;bottom:-8px;width:2px;background:var(--line)}
+  .step:last-child::before{display:none}
+  .badge{width:56px;height:56px;border-radius:16px;display:flex;align-items:center;justify-content:center;
+         font-size:20px;font-weight:700;color:#fff;background:var(--green);flex:0 0 auto;z-index:1}
+  .badge.b2{background:var(--purple)}
+  .body{padding:8px 0 22px}
+  .title{font-weight:600;font-size:16px;margin-bottom:6px}
+  .title small{font-weight:400;color:var(--sub);font-size:13px;margin-left:8px}
+  .io{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+  .io > div{background:#fafafc;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:13px}
+  .io b{display:block;font-size:11.5px;color:var(--sub);font-weight:600;letter-spacing:.3px;
+        text-transform:uppercase;margin-bottom:4px}
+  .actor{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:20px;margin-right:5px;
+         background:#eef4ff;color:var(--blue);border:1px solid #d6e6ff}
+  .actor.llm{background:#f6eeff;color:var(--purple);border-color:#e8d9ff}
+  .actor.store{background:#eefaf0;color:#1d8f3d;border-color:#d3f0da}
+  .actor.role{background:#fff3e6;color:#b26a00;border-color:#ffe0bd}
+
+  /* ── 视图 2: 数据流 ── */
+  .dflow{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch}
+  .dbox{flex:1 1 200px;background:#fafafc;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .dbox h4{margin:0 0 3px;font-size:13.5px}
+  .dbox .p{font:11.5px/1.45 ui-monospace,Menlo,monospace;color:var(--sub);word-break:break-all}
+  .dbox .m{font-size:11.5px;color:var(--green);margin-top:5px;font-weight:600}
+  .dbox .w{font-size:11.5px;color:var(--sub);margin-top:5px}
+  .arrowr{display:flex;align-items:center;color:var(--sub);font-size:20px;flex:0 0 auto}
+
+  /* ── 视图 3: 调用链 ── */
+  .chain{display:grid;gap:10px}
+  .lane{display:grid;grid-template-columns:132px 1fr;gap:12px;align-items:start;
+        background:#fafafc;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .lane .k{font-weight:600;font-size:13.5px}
+  .lane .k em{display:block;font-style:normal;font-size:11.5px;color:var(--sub);margin-top:3px}
+  .hops{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+  .hop{background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12.5px;
+       display:flex;align-items:center;gap:6px}
+  .hop i{font-style:normal;font-size:11px;color:var(--sub)}
+  .hop.cli{border-color:#cfe2ff;background:#f5faff}
+  .hop.svc{border-color:#ffd9b3;background:#fffaf5}
+  .hop.agt{border-color:#e0d0f8;background:#faf6ff}
+  .hop.sto{border-color:#c8ecd2;background:#f5fdf7}
+  .to{color:#c0c0c8;font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;color:var(--sub);font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+  tr:last-child td{border-bottom:none}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}.io{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>AI Software Factory — 流程 · 数据流 · 调用链</h1>
+  <div class="sub">2026-09-18 · 全部数据来自一次真实端到端实跑（隔离数据根 <code>/tmp/factory_e2e_141145</code> · 真 LLM DeepSeek）· 项目「命令行待办清单工具」</div>
+
+  <!-- ═══════════ 视图 1 ═══════════ -->
+  <h2><span class="n">1</span>业务流程图（谁做 · 输入什么 · 产出什么）</h2>
+  <div class="hint">每条 = 一环。绿色圆标为已实测跑通；参与者按颜色区分（蓝=服务 · 紫=LLM/Agent · 绿=存储 · 橙=角色）。</div>
+  <div class="card">
+    <div class="flow">
+
+      <div class="step">
+        <div class="badge">1</div>
+        <div class="body">
+          <div class="title">会话 <small>conversation new / say</small></div>
+          <span class="actor">human</span><span class="actor store">会话 JSON</span>
+          <div class="io">
+            <div><b>输入</b>用户一句话：「我要做一个命令行待办清单工具,支持添加/完成/删除任务,数据存本地文件」</div>
+            <div><b>产出</b><code>conv-fe1e3d154806</code> 会话 + 消息 <code>msg-755ccfade543</code>（未理解, 仅落盘）</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="badge">2</div>
+        <div class="body">
+          <div class="title">需求理解 <small>conversation understand</small></div>
+          <span class="actor">interpreter</span><span class="actor llm">LLM (complete_text)</span><span class="actor store">事实层</span>
+          <div class="io">
+            <div><b>输入</b>会话里的原始消息 + 已有事实快照</div>
+            <div><b>产出</b><b>5 条结构化事实</b>：1×IDEA + 3×REQUIREMENT + 1×数据存储 · 理解版本 v5</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="badge">3</div>
+        <div class="body">
+          <div class="title">分析 / PRD <small>conversation prd</small></div>
+          <span class="actor">formalization</span><span class="actor store">product_truth</span>
+          <div class="io">
+            <div><b>输入</b>理解版本 v5 的 5 条事实</div>
+            <div><b>产出</b><code>PRD-75f91843144f</code> v1 · 7 章节（overview / functional_requirements / constraints / decisions / open_questions / future_considerations / provenance）</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="badge b2">4</div>
+        <div class="body">
+          <div class="title">架构设计 <small>product develop → product ux → arch design</small></div>
+          <span class="actor role">pm</span><span class="actor role">ui_designer</span><span class="actor role">architect</span><span class="actor llm">LLM ×3</span>
+          <div class="io">
+            <div><b>输入</b>想法文本（PM）→ product 产物 7 节；product → UX/UI 7 节；product + ux_ui → 架构</div>
+            <div><b>产出</b><code>A-87aa2432ee</code> product(7节) · <code>A-fe72cf841f</code> ux_ui(7节) · <code>A-2d7bb53d72</code> design(7节, 含 <code>task_breakdown</code> 11 条种子)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="badge">5</div>
+        <div class="body">
+          <div class="title">任务拆解 <small>tasktree decompose → confirm</small></div>
+          <span class="actor store">task_trees</span><span class="actor">decomposition</span><span class="actor">human 确认门</span>
+          <div class="io">
+            <div><b>输入</b>design 的 <code>task_breakdown</code> 11 条模块种子（<b>不再调 LLM</b>，避免拆两遍）</div>
+            <div><b>产出</b><code>PLAN-c28f738c84</code>：Project→Domain→Leaf 23 节点 / 11 叶 · 每叶带 验收断言+依赖+归属+change_type · 状态 candidate → <b>confirmed</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="badge">6</div>
+        <div class="body">
+          <div class="title">执行 <small>run --project &lt;仓库目录&gt;</small></div>
+          <span class="actor llm">LLM</span><span class="actor">agent</span><span class="actor store">exec/</span><span class="actor">审批门</span>
+          <div class="io">
+            <div><b>输入</b>真实 git 仓库（沙箱副本源）+ 目标「给 main.py 添加 add_task 函数」</div>
+            <div><b>产出</b><code>EXR-f40e5a81</code>/<code>EXS-d6524ee6</code> · <code>EXS-d6524ee6.patch</code>(13 行 diff) · <code>.test.txt</code>(PASS) · <code>.report.md</code> · <b>status=success</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="badge">7</div>
+        <div class="body">
+          <div class="title">监控 <small>metrics / kanban</small></div>
+          <span class="actor store">投影</span>
+          <div class="io">
+            <div><b>输入</b>事件 + 任务 + 执行记录</div>
+            <div><b>产出</b>Factory Metrics（total/completed/failed/success_rate）· 看板（按状态分栏）· Control Tower 投影</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="badge">8</div>
+        <div class="body">
+          <div class="title">运维 <small>backup / recover / checkpoint</small></div>
+          <span class="actor store">归档</span>
+          <div class="io">
+            <div><b>输入</b>数据根快照</div>
+            <div><b>产出</b>数据备份 tar.gz · 检查点 · 崩溃恢复（按 task_id）</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="note"><b>闭环要点</b>：⑥ 执行产出 patch 后<b>不直接落地</b> —— report 里写着 <code>human review required before apply (execution.approved gate)</code>，需人工审批（<code>exec approval apply</code>）才应用到真实仓库。</div>
+  </div>
+
+  <!-- ═══════════ 视图 2 ═══════════ -->
+  <h2><span class="n">2</span>数据流（数据存在哪 · 流经谁 · 变成什么）</h2>
+  <div class="hint">左→右为一次完整跑通的数据演进。方框下为**真实落盘路径与大小**（实测）。</div>
+  <div class="card">
+    <div class="dflow">
+      <div class="dbox">
+        <h4>① 原始输入</h4>
+        <div class="p">projects/&lt;P&gt;/conversations/<br>conv-fe1e3d154806.json</div>
+        <div class="m">6,205 B</div>
+        <div class="w">消息 + 理解快照 + 5 条事实</div>
+      </div>
+      <div class="arrowr">→</div>
+      <div class="dbox">
+        <h4>② 需求产物</h4>
+        <div class="p">projects/&lt;P&gt;/product_truth/<br>prds.json</div>
+        <div class="m">2,655 B</div>
+        <div class="w">PRD-75f91843144f（锚定 understanding v5）</div>
+      </div>
+      <div class="arrowr">→</div>
+      <div class="dbox">
+        <h4>③ 设计产物（3 个）</h4>
+        <div class="p">org/artifacts.json</div>
+        <div class="m">42,658 B</div>
+        <div class="w">product 7节 · ux_ui 7节 · design 7节</div>
+      </div>
+      <div class="arrowr">→</div>
+      <div class="dbox">
+        <h4>④ 计划</h4>
+        <div class="p">projects/&lt;P&gt;/tasks/<br>PLAN-c28f738c84.json</div>
+        <div class="m">17,880 B</div>
+        <div class="w">23 节点 / 11 叶（项目目录内 — Founder 铁律）</div>
+      </div>
+      <div class="arrowr">→</div>
+      <div class="dbox">
+        <h4>⑤ 执行事实</h4>
+        <div class="p">exec/requests.json · results.json<br>exec/patches/EXS-d6524ee6.patch</div>
+        <div class="m">456 B · 3,093 B · 298 B</div>
+        <div class="w">请求 → 结果 → 补丁（13 行 diff）</div>
+      </div>
+      <div class="arrowr">→</div>
+      <div class="dbox">
+        <h4>⑥ 验证证据</h4>
+        <div class="p">exec/EXS-d6524ee6.test.txt<br>exec/EXS-d6524ee6.report.md</div>
+        <div class="m">104 B · 1,187 B</div>
+        <div class="w">[PASS] syntax · [PASS] import main</div>
+      </div>
+    </div>
+
+    <h2 style="all:unset"></h2>
+    <div style="margin-top:22px" class="grid2">
+      <div>
+        <h3 style="font-size:15px;margin:0 0 8px">旁路数据（贯穿全程）</h3>
+        <table>
+          <tr><th>数据</th><th>位置</th><th>量</th></tr>
+          <tr><td>LLM 用量</td><td><code>providers/usage.json</code></td><td>836 B</td></tr>
+          <tr><td>经验回流</td><td><code>intelligence/experiences.json</code></td><td>1,296 B</td></tr>
+          <tr><td>产品侧审批</td><td><code>product/approvals.json</code></td><td>999 B</td></tr>
+          <tr><td>产品侧产物</td><td><code>product/artifacts.json</code></td><td>12,348 B</td></tr>
+          <tr><td>实体库</td><td><code>ops/unified/entities.json</code></td><td>2 B（空）</td></tr>
+          <tr><td>事件库</td><td><code>factory.db</code>（SQLite）</td><td>49,152 B</td></tr>
+        </table>
+      </div>
+      <div>
+        <h3 style="font-size:15px;margin:0 0 8px">数据落点规则（设计约束）</h3>
+        <table>
+          <tr><th>规则</th><th>落地</th></tr>
+          <tr><td>属于项目的文件必须在项目目录下</td><td>会话/PRD/任务树 → <code>projects/&lt;P&gt;/</code> ✓</td></tr>
+          <tr><td>分域存储, 不造平行 Truth</td><td>org 产物 → <code>org/</code> · 执行 → <code>exec/</code> · 产品 → <code>product/</code></td></tr>
+          <tr><td>原子写（防半截文件）</td><td>树/产物均 <code>os.replace</code> 落盘</td></tr>
+          <tr><td>候选 → 人工确认才进执行</td><td>任务树 <code>status: candidate → confirmed</code> ✓</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 视图 3 ═══════════ -->
+  <h2><span class="n">3</span>调用链路（一条命令背后经过哪些层）</h2>
+  <div class="hint">颜色分层：<b style="color:#0071e3">CLI 层</b> → <b style="background:#fffaf5;color:#b26a00">服务层</b> → <b style="background:#faf6ff;color:#7d3fc4">Agent / LLM</b> → <b style="background:#f5fdf7;color:#1d8f3d">存储</b>（每行 = 一条命令的完整穿透路径）</div>
+  <div class="card">
+    <div class="chain">
+
+      <div class="lane">
+        <div class="k">① 会话<em>conversation say</em></div>
+        <div class="hops">
+          <span class="hop cli">apps/cli/main.py <i>_dispatch_conversation</i></span><span class="to">→</span>
+          <span class="hop svc">services/conversation/understanding <i>append_message</i></span><span class="to">→</span>
+          <span class="hop sto">projects/&lt;P&gt;/conversations/*.json</span>
+        </div>
+      </div>
+
+      <div class="lane">
+        <div class="k">② 需求<em>conversation understand</em></div>
+        <div class="hops">
+          <span class="hop cli">_understand <i>apps/cli/domains/conversation.py</i></span><span class="to">→</span>
+          <span class="hop agt">interpreter.llm_semantic_interpreter <i>_llm_fn()</i></span><span class="to">→</span>
+          <span class="hop agt">infrastructure/llm/complete_text <i>gateway.complete</i></span><span class="to">→</span>
+          <span class="hop svc">proposal.apply_operations <i>唯一写路径</i></span><span class="to">→</span>
+          <span class="hop sto">事实层（理解版本 +1）</span>
+        </div>
+      </div>
+
+      <div class="lane">
+        <div class="k">③ 分析<em>conversation prd</em></div>
+        <div class="hops">
+          <span class="hop cli">_prd</span><span class="to">→</span>
+          <span class="hop svc">conversation/formalization <i>产品认知→PRD</i></span><span class="to">→</span>
+          <span class="hop sto">projects/&lt;P&gt;/product_truth/prds.json</span>
+        </div>
+      </div>
+
+      <div class="lane">
+        <div class="k">④ 架构设计<em>product develop / ux / arch design</em></div>
+        <div class="hops">
+          <span class="hop cli">cmd_product_develop <i>main.py</i></span><span class="to">→</span>
+          <span class="hop agt">PMAgent.develop <i>plugins/agents/pm.py</i></span><span class="to">→</span>
+          <span class="hop agt">_prod_provider <i>kernel ProviderRegistry</i></span><span class="to">→</span>
+          <span class="hop svc">ProjectStore.save_artifact</span><span class="to">→</span>
+          <span class="hop sto">org/artifacts.json</span>
+        </div>
+      </div>
+
+      <div class="lane">
+        <div class="k">⑤ 任务拆解<em>tasktree decompose</em></div>
+        <div class="hops">
+          <span class="hop cli">_dispatch_tasktree <i>main.py</i></span><span class="to">→</span>
+          <span class="hop svc">services/work/decomposition <i>decompose_from_design</i></span><span class="to">→</span>
+          <span class="hop svc">边界检查 <i>depth/leaves/cycle</i></span><span class="to">→</span>
+          <span class="hop sto">projects/&lt;P&gt;/tasks/PLAN-*.json</span>
+        </div>
+      </div>
+
+      <div class="lane">
+        <div class="k">⑥ 执行<em>run --project &lt;dir&gt;</em></div>
+        <div class="hops">
+          <span class="hop cli">cmd_run</span><span class="to">→</span>
+          <span class="hop svc">execution/kernel <i>agent_runtime</i></span><span class="to">→</span>
+          <span class="hop svc">kernel/sandbox <i>仓库副本</i></span><span class="to">→</span>
+          <span class="hop agt">LLM <i>生成 patch</i></span><span class="to">→</span>
+          <span class="hop svc">validation <i>syntax + test-cmd</i></span><span class="to">→</span>
+          <span class="hop sto">exec/patches/*.patch</span>
+        </div>
+      </div>
+
+      <div class="lane">
+        <div class="k">⑦ 监控<em>metrics / kanban</em></div>
+        <div class="hops">
+          <span class="hop cli">_print_metrics</span><span class="to">→</span>
+          <span class="hop svc">metrics/calculators <i>从事件聚合</i></span><span class="to">→</span>
+          <span class="hop svc">metrics/control_tower <i>注入式投影</i></span>
+        </div>
+      </div>
+
+      <div class="lane">
+        <div class="k">⑧ 运维<em>backup / recover</em></div>
+        <div class="hops">
+          <span class="hop cli">_dispatch_operations</span><span class="to">→</span>
+          <span class="hop svc">operations/backup <i>tar.gz 归档</i></span><span class="to">→</span>
+          <span class="hop svc">operations/rollback_service <i>回滚</i></span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="note"><b>LLM 出口只有一处</b>：② 与 ④ 的模型调用最终都走 <code>infrastructure/llm/gateway.complete()</code> —— 它是<b>唯一汇聚点</b>（成本估算 + <code>traces/llm.jsonl</code> 留痕都在那一次调用里完成）。这一刀正是本轮新补的（<code>complete_text.py</code>，组装自 gateway + control_plane，不再借老区 <code>llm_raw</code>）。</div>
+  </div>
+
+  <h2><span class="n">4</span>跨环依赖（谁挡住谁）</h2>
+  <div class="hint">这一层决定"改一环会不会牵动别环"。</div>
+  <div class="card">
+    <table>
+      <tr><th>环</th><th>依赖谁</th><th>被谁依赖</th><th>断链风险</th></tr>
+      <tr><td>① 会话</td><td>—</td><td>②（消息是理解输入）</td><td>低</td></tr>
+      <tr><td>② 需求</td><td>① · LLM 口</td><td>③（事实→PRD）</td><td>中（LLM 口断则降级 CLARIFY）</td></tr>
+      <tr><td>③ 分析</td><td>②</td><td>—</td><td>低</td></tr>
+      <tr><td>④ 架构</td><td>③ 的 PRD 语义 · LLM ×3 · org 存储</td><td>⑤（design.task_breakdown 是种子）</td><td><b>高</b>（双输入缺失则无法生成）</td></tr>
+      <tr><td>⑤ 拆解</td><td>④ 的 design 产物</td><td>⑥（叶任务 + 拓扑序）</td><td><b>高</b>（无 design 则拒绝）</td></tr>
+      <tr><td>⑥ 执行</td><td>⑤ 的任务 · 真实仓库 · LLM</td><td>⑦⑧（执行记录是数据源）</td><td>中（缺仓库则报错, 不静默）</td></tr>
+      <tr><td>⑦ 监控</td><td>⑥ 的执行记录 + 事件</td><td>—</td><td>低（无数据则显示 0, 诚实标注）</td></tr>
+      <tr><td>⑧ 运维</td><td>数据根</td><td>—</td><td>低</td></tr>
+    </table>
+  </div>
+
+  <div class="note" style="margin-top:26px">
+    <b>本页与上一页的区别</b>：上一页是<b>清单视图</b>（有什么命令 / 哪些域厚 / 完成度）；
+    本页是<b>流动视图</b>（一条需求如何逐环变成代码，数据落在哪，命令背后经过哪几层）。
+    <br>全部路径 / 大小 / ID / 状态均来自 2026-09-18 的一次真实实跑，无模拟数据。
+  </div>
+
+</div>
+</body>
+</html>

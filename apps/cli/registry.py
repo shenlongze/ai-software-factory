@@ -68,21 +68,22 @@ FACTORY_CLI: dict[str, tuple[str, ...]] = {
 API_CLI: dict[str, tuple[str, ...]] = {
     "conversation": ("console", "conversation"),   # console=只读视图; conversation=会话入口（2026-09-15 补, 链路第 1 环）
     "understanding": ("understand", "product"),
-    "architecture": (),
-    "decomposition": ("task",),
+    "architecture": ("arch",),
+    "decomposition": ("task", "tasktree", "kanban"),
     "orchestration": ("workflow", "project"),
-    "execution": ("execution", "exec", "runtime"),
-    "validation": ("validate", "change"),
+    "execution": ("execution", "exec", "runtime", "run", "run-status"),
+    "validation": ("validate", "change", "evd", "verification"),
     "delivery": (),
     "learning": ("intelligence",),
-    "operations": ("checkpoint", "recover"),
+    "operations": ("checkpoint", "recover", "backup"),
     "metrics": ("dashboard", "metrics"),
     "audit": ("event",),
-    "governance": (),
+    "governance": ("approval",),
     "organization": ("agent", "skill", "org"),
     # init/status 是**无赋值写法**的顶层命令（`sub.add_parser("init", ...)`），
     # 第一次提取时被正则漏掉 —— 由 R23 守卫抓回（2026-09-15）。
-    "platform": ("init", "status", "demo", "git", "provider", "workspace"),
+    "platform": ("init", "status", "demo", "git", "provider", "workspace",
+                 "create", "history", "plugin", "update"),
 }
 
 #: 两套 CLI **同名**的命令 —— 合并时必须**逐一裁决**, 不能按名字简单合并。

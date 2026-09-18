@@ -273,9 +273,7 @@ def rule_r13(mods, edges):
 
 
 def rule_r14(mods, edges):
-    base = ROOT / "scripts" / "legacy_baseline.json"
-    if not base.is_file():
-        return [f"无基线文件 {base.relative_to(ROOT)}（旧区只减不增无法判定 —— 需先建基线）"]
+    """★ 2026-09-19 退役: 旧区（_pending_migration）已整体删除 ⇒ "旧区文件只减不增"无对象。"""
     return []
 
 

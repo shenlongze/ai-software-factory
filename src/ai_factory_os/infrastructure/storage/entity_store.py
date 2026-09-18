@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from ai_factory_os.contracts.entity.contract import (
+    create_entity,
     validate_entity,
 )
 
@@ -135,6 +136,27 @@ def entities(root: Path | str, *, entity_type: str = "") -> list[dict[str, Any]]
     if entity_type:
         data = [e for e in data if e["type"] == entity_type]
     return data
+
+
+def create_requirement(root: Path | str, *, title: str, description: str = "",
+                       source_conv_id: str = "") -> dict[str, Any]:
+    """建 req 实体（S43 需求实体 ✓ 归位到实体域）。
+
+    ★ 2026-09-19 从 contracts/entity/contract.py 移来（它写盘 ⇒ 属实现面, 不属契约层;
+      entity_store 自述里本就列着它）。原修 F821 时用"函数内延迟导入"违反 R1, 此为正确修法。
+
+    为什么在此（2026-09-15 ✓ conversation_os 退休）:
+        原实现是 conversation_os.extract_requirement —— 它多做一步
+        「把 req id 追加进会话的 state.requirements」✗，而该字段**没有任何读取者**
+        ⇒ 无消费者语义 → 归位到实体域 ✓
+    """
+    req = create_entity("req", created_by="system", parent_id=source_conv_id, project_id="")
+    req["title"] = title
+    req["description"] = description
+    req["source_conversation_id"] = source_conv_id
+    req["status"] = "VALIDATED"
+    store_entity(root, req)
+    return req
 
 
 def trace_lineage(root: Path | str, entity_id: str) -> list[dict[str, Any]]:

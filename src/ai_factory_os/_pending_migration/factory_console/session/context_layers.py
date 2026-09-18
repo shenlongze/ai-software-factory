@@ -32,13 +32,13 @@ def pick_depth(model_tier: str | None = None, context_window: int | None = None)
 
 
 def _load_spine(data_dir: str | Path, project_id: str):
-    from .handoff import ProjectSpine
+    from ai_factory_os.services.conversation.handoff import ProjectSpine
 
     return ProjectSpine.load(data_dir, project_id)
 
 
 def _load_memory(data_dir: str | Path, project_id: str):
-    from .project_memory import MemoryStore
+    from ai_factory_os.services.conversation.project_memory import MemoryStore
 
     return MemoryStore.load(data_dir, project_id)
 

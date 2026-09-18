@@ -68,7 +68,7 @@ def _write_back(data_dir: str, project_id: str, task_id: str, title: str,
     if not ok or not project_id:
         return
     try:
-        from factory_console.session.handoff import ProjectSpine
+        from ai_factory_os.services.conversation.handoff import ProjectSpine
 
         sp = ProjectSpine.load(data_dir, project_id)
         sp.add_closure(task_id=task_id, title=title[:120],
@@ -78,7 +78,7 @@ def _write_back(data_dir: str, project_id: str, task_id: str, title: str,
     except Exception:  # noqa: BLE001 — 回填失败不阻断
         pass
     try:
-        from factory_console.session.project_memory import MemoryStore
+        from ai_factory_os.services.conversation.project_memory import MemoryStore
 
         mem = MemoryStore.load(data_dir, project_id)
         mem.add(f"任务[{title[:80]}] 外部执行完成, 验证 {verify.get('result') or 'unknown'}",

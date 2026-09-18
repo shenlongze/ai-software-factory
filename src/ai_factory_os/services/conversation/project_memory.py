@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .handoff import AUTHORITY, _authority_rank
+from ai_factory_os.services.conversation.handoff import AUTHORITY, _authority_rank
 
 MAX_ENTRIES = 200
 

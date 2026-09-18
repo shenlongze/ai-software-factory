@@ -168,7 +168,7 @@ class SessionHooks:
 # ---------------------------------------------------------------------------
 
 def _spine_ctx(ctx: dict[str, Any]):
-    from .handoff import ProjectSpine
+    from ai_factory_os.services.conversation.handoff import ProjectSpine
 
     data_dir = ctx.get("data_dir")
     project_id = ctx.get("project_id")
@@ -261,7 +261,7 @@ def session_end_hook(ctx: dict[str, Any]) -> None:
         blob = "\n".join(texts)
         if len(blob) < 10:
             return None
-        from .project_memory import MemoryStore
+        from ai_factory_os.services.conversation.project_memory import MemoryStore
 
         mem = MemoryStore.load(data_dir, project_id)
         added = 0
@@ -291,7 +291,7 @@ def session_end_hook(ctx: dict[str, Any]) -> None:
         # T10 (v1.1.292): SessionEnd 也写 Spine 交接卡 — 会话结束固化进展,
         # 新会话"继续做 XX"有据可依 (PreCompact 只在压缩时写, 普通结束会漏)
         try:
-            from .handoff import ProjectSpine
+            from ai_factory_os.services.conversation.handoff import ProjectSpine
 
             sp = ProjectSpine.load(data_dir, project_id)
             last_user = ""

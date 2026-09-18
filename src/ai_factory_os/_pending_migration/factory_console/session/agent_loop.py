@@ -1754,7 +1754,7 @@ def dispatch(
             # S10-127 M3.3: 续接信息 — Spine handoff/resume + 执行链 checkpoint
             _resume_lines = [f"已锚定任务「{match.get('title')}」({match.get('id')}), 状态 {match.get('status') or 'todo'}"]
             try:
-                from .handoff import ProjectSpine
+                from ai_factory_os.services.conversation.handoff import ProjectSpine
 
                 _sp = ProjectSpine.load(root, project_id)
                 _rp = _sp.data.get("resume_point") or {}
@@ -2387,8 +2387,8 @@ def dispatch(
         if tool_id == "compact_context":
             # T1 (v1.1.305): 手动上下文压缩 — 摘要 + PreCompact 交接 + 记忆沉淀
             try:
-                from .handoff import ProjectSpine
-                from .project_memory import MemoryStore
+                from ai_factory_os.services.conversation.handoff import ProjectSpine
+                from ai_factory_os.services.conversation.project_memory import MemoryStore
                 from .context_layers import build_context, pick_depth
 
                 focus = str(args.get("focus") or "")[:120]

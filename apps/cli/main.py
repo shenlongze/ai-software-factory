@@ -117,6 +117,7 @@ from .commands import (
     cmd_workspace_show,
 )
 from .context import DEFAULT_ROOT, FactoryContext
+from .domains import architecture as _dom_architecture
 from .domains import audit as _dom_audit
 from .domains import conversation as _dom_conversation
 from .domains import governance as _dom_governance
@@ -371,6 +372,10 @@ def build_parser() -> Any:
     # factory verification —— 验收域（按域拆至 domains/validation.py）
     # 底层 verification_store 已在新地基（services/validation/）, 所以本命令零老区依赖 ✓
     _dom_validation.register(sub, json_opt)
+
+    # factory arch —— 架构域（按域拆至 domains/architecture.py）
+    # ★ 2026-09-15 新增: 兑现 registry 里登记的 "architecture": ("arch",)
+    _dom_architecture.register(sub, json_opt)
 
     # factory create —— 平台域（按域拆至 domains/platform.py）
     # 底层 org.cli 已在新地基（services/organization/cli.py）⇒ 零老区依赖 ✓
@@ -1029,6 +1034,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_create(ctx, args)
         elif args.command == "plugin":
             result = _dispatch_plugin(ctx, args)
+        elif args.command == "arch":
+            result = _dispatch_arch(ctx, args)
         elif args.command == "kanban":
             result = _dispatch_kanban(ctx, args)
         elif args.command == "update":
@@ -1885,6 +1892,161 @@ def _print_history(sub: str, r: dict) -> None:
         print(f"    {h.snippet[:170]}")
 
 
+# ------------------------------------------------------------------ 架构域（arch）
+
+def _arch_store(ctx: FactoryContext) -> Any:
+    """组织域 ProjectStore（artifact 的家）—— 架构设计产物存在这里。"""
+    from ai_factory_os.services.organization.projects import ProjectStore
+    return ProjectStore(ctx.root / "org")
+
+
+def _arch_provider() -> Any:
+    """技术设计 LLM provider（复用 exec 内核的装配点: ControlPlane → Adapter）。"""
+    from ai_factory_os.services.execution.kernel.cli import _provider_registry
+    return _provider_registry()
+
+
+def _dispatch_arch(ctx: FactoryContext, args: Any) -> dict:
+    """factory arch list|show|design|gates —— 8 环第 4 环「架构设计」。
+
+    复用（不自造）:
+      · ArtifactRegistry / ProjectStore —— 产物读写与 CONTRACTS 校验（organization 域）
+      · ArchitectAgent + build_arch_executor —— Product + UX/UI → Design Artifact 7 节
+        （plugins/agents/architect.py; 老区 workflow_runner 的 arch_run 同源实现）
+    """
+    from ai_factory_os.services.organization.projects import ArtifactType
+
+    cmd = getattr(args, "arch_command", None) or "list"
+    store = _arch_store(ctx)
+
+    if cmd == "list":
+        proj = getattr(args, "project", None)
+        rows = []
+        for a in store.list_artifacts():
+            if str(a.type) not in ("design", "ArtifactType.DESIGN", "design_artifact"):
+                if "design" not in str(a.type).lower():
+                    continue
+            if proj and getattr(a, "project_id", "") != proj:
+                continue
+            rows.append({"id": a.id, "stage": a.stage_id, "project": a.project_id,
+                         "status": str(a.status), "version": a.version,
+                         "sections": len(getattr(a, "metadata", {}) or {}),
+                         "ref": a.ref})
+        return {"ok": True, "command": "arch list", "count": len(rows),
+                "designs": rows, "exit_code": 0, "args": args}
+
+    if cmd == "show":
+        aid = getattr(args, "artifact_id", None)
+        if not aid:
+            raise CliError("用法: factory arch show <artifact_id>", exit_code=2)
+        art = store.get_artifact(aid)
+        if art is None:
+            raise CliError(f"artifact not found: {aid}", exit_code=7)
+        meta = dict(getattr(art, "metadata", {}) or {})
+        # design 契约的 7 节（顺序固定, 缺节如实标注）
+        SECTIONS = ("system_architecture", "technical_stack", "database_design", "api_design",
+                    "frontend_architecture", "backend_architecture", "task_breakdown")
+        return {"ok": True, "command": "arch show",
+                "artifact": {"id": art.id, "type": str(art.type), "stage": art.stage_id,
+                             "project": art.project_id, "status": str(art.status),
+                             "version": art.version, "ref": art.ref,
+                             "producer_role": getattr(art, "producer_role", ""),
+                             "producer_agent": getattr(art, "producer_agent", "")},
+                "sections": {s: ("✓" if meta.get(s) else "缺失") for s in SECTIONS},
+                "artifact_refs": meta.get("artifact_refs", []),
+                "exit_code": 0, "args": args}
+
+    if cmd == "gates":
+        from ai_factory_os.services.governance.gates import POLICIES
+        # ★ 诚实: POLICIES 里【没有】architecture 这个 key —— 架构设计不是独立门,
+        #   它走 release 门（required_evaluation=True 那条）。如实标注, 不假装有。
+        own = POLICIES.get("architecture")
+        return {"ok": True, "command": "arch gates",
+                "is_own_gate": own is not None,
+                "policy": own or POLICIES.get("release"),
+                "policy_id": "architecture" if own else "release（架构无独立门, 借 release）",
+                "all_policies": sorted(POLICIES.keys()),
+                "exit_code": 0, "args": args}
+
+    if cmd == "design":
+        proj = getattr(args, "project", None)
+        if not proj:
+            raise CliError("用法: factory arch design --project <项目 id> (需先有 product + ux_ui 产物)",
+                           exit_code=2)
+        arts = [a for a in store.list_artifacts()
+                if getattr(a, "project_id", "") == proj]
+        def _pick(type_name: str, explicit: str | None) -> Any:
+            if explicit:
+                a = store.get_artifact(explicit)
+                if a is None:
+                    raise CliError(f"{type_name} artifact not found: {explicit}", exit_code=7)
+                return a
+            cands = [a for a in arts if type_name in str(a.type).lower()]
+            return cands[-1] if cands else None
+        product = _pick("product", getattr(args, "product", None))
+        ux_ui = _pick("ux_ui", getattr(args, "ux_ui", None))
+        if product is None or ux_ui is None:
+            raise CliError(
+                f"架构设计需双输入: product={'✓' if product else '✗'} ux_ui={'✓' if ux_ui else '✗'}"
+                " — 禁止脱离输入独立生成 (ArchitectAgent 强校验)", exit_code=1)
+        from ai_factory_os.plugins.agents.architect import ArchitectAgent, ArchitectError
+        try:
+            agent = ArchitectAgent(provider=_arch_provider(),
+                                   product=dict(product.metadata or {}),
+                                   ux_ui=dict(ux_ui.metadata or {}))
+            design = agent.design()
+        except ArchitectError as exc:
+            raise CliError(f"架构设计失败: {exc}", exit_code=1) from exc
+        meta = design.to_dict() if hasattr(design, "to_dict") else dict(design)
+        meta["artifact_refs"] = [product.id, ux_ui.id]   # 溯源（照 build_arch_executor）
+        new = store.create_artifact(project_id=proj, type_=ArtifactType.DESIGN,
+                                    ref="file:///docs/design.json", metadata=meta,
+                                    producer_role="software_architect",
+                                    producer_agent="architect")
+        return {"ok": True, "command": "arch design",
+                "artifact": {"id": getattr(new, "id", ""), "type": "design"},
+                "artifact_refs": meta["artifact_refs"],
+                "sections": sorted(k for k in meta if k != "artifact_refs"),
+                "exit_code": 0, "args": args}
+
+    raise CliError(f"unknown arch action: {cmd}", exit_code=2)
+
+
+def _print_arch(args: Any, r: dict) -> None:
+    cmd = getattr(args, "arch_command", None) or "list"
+    if cmd == "list":
+        rows = r.get("designs", [])
+        print(f"=== Design Artifact ({len(rows)}) ===")
+        for x in rows:
+            print(f"  {x['id']}  {x['status']:<10}  v{x['version']}  {x['sections']} 节  "
+                  f"project={x['project'] or '-'}  {x['ref']}")
+        if not rows:
+            print("  （无 — 用 `factory arch design --project <id>` 生成）")
+    elif cmd == "show":
+        a = r["artifact"]
+        print(f"Design Artifact: {a['id']}")
+        print(f"  type={a['type']} status={a['status']} version={a['version']}")
+        print(f"  project={a['project'] or '-'} stage={a['stage'] or '-'}")
+        print(f"  producer_role={a['producer_role'] or '-'} agent={a['producer_agent'] or '-'}")
+        print(f"  ref={a['ref']}")
+        print(f"  溯源 artifact_refs: {r.get('artifact_refs') or '（无）'}")
+        print("  7 节:")
+        for k, v in r.get("sections", {}).items():
+            print(f"    {k:<24} {v}")
+    elif cmd == "gates":
+        print("=== 架构门策略 ===")
+        if not r.get("is_own_gate"):
+            print("  ⚠ 架构设计【没有独立门】—— 它走 release 门（POLICIES 无 architecture key）")
+        print(f"  策略来源: {r.get('policy_id')}")
+        print(f"  策略内容: {r.get('policy')}")
+        print(f"  全部策略: {', '.join(r.get('all_policies', []))}")
+    elif cmd == "design":
+        a = r["artifact"]
+        print(f"✔ Design Artifact 已生成: {a['id']}")
+        print(f"  溯源: {r.get('artifact_refs')}")
+        print(f"  节: {', '.join(r.get('sections', []))}")
+
+
 def _format_failure(error: str) -> str:
     """统一失败输出（S10-044 Task 001）: ❌ Failed + Reason + Solution 到 stdout。
 
@@ -2313,6 +2475,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_history(args.history_action, result)
     elif args.command == "create":
         _print_create(result)
+    elif args.command == "arch":
+        _print_arch(args, result)
     elif args.command == "kanban":
         _print_kanban(result)
     elif args.command == "update":

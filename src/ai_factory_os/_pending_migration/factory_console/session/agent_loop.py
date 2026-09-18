@@ -643,7 +643,7 @@ def _chain_auto_worker(root: Any, project_id: str, session_id: str, service: Any
            exec_ref = EXS-* (F0 语义)。
     """
     try:
-        from ..external_executor.gateway import gateway_execute
+        from ai_factory_os.services.execution.external.gateway import gateway_execute
 
         def _exec_fn(task):
             title = str(task.get("title") or "")
@@ -2171,7 +2171,7 @@ def dispatch(
             # (TASK-GW 仅作 legacy 兼容, 非 canonical)。UNKNOWN → 重排队 (不伪造)。
             try:
                 from ai_factory_os.services.execution.node_runtime import get_node_run
-                from ..external_executor.task_registry import ExternalTaskRegistry
+                from ai_factory_os.services.execution.external.task_registry import ExternalTaskRegistry
                 from ai_factory_os.services.execution.execution_records import load_records
 
                 _reg = ExternalTaskRegistry.load(root)
@@ -2223,7 +2223,7 @@ def dispatch(
 
             def _exec_fn(task):
                 # 委派外部 AI 执行 (真实): 走执行器网关 (G1-G4: 选执行器/注册/验证/回填/审计)
-                from ..external_executor.gateway import gateway_execute
+                from ai_factory_os.services.execution.external.gateway import gateway_execute
 
                 title = str(task.get("title") or "")
                 # P0-F1: 先建 TaskRun 锚 (run-*), gateway 透传 task_id/task_run_id → EXS 锚
@@ -2331,7 +2331,7 @@ def dispatch(
                 f"{r.get('output') or ''} · 进度 {r.get('progress')}。说『继续』推进下一个。")}
         if tool_id == "gateway_status":
             try:
-                from ..external_executor.task_registry import ExternalTaskRegistry
+                from ai_factory_os.services.execution.external.task_registry import ExternalTaskRegistry
 
                 _reg = ExternalTaskRegistry.load(root)
                 _proj = str(args.get("project") or "").strip()
@@ -2425,8 +2425,8 @@ def dispatch(
             except Exception as exc:  # noqa: BLE001
                 return {"ok": False, "error": f"压缩失败: {exc}"}
         if tool_id == "external_route":
-            from ..external_executor.router import route
-            from ..external_executor.registry import build_registry
+            from ai_factory_os.services.execution.external.router import route
+            from ai_factory_os.services.execution.external.registry import build_registry
 
             adapters = build_registry(root).list() if root else []
             agents = []

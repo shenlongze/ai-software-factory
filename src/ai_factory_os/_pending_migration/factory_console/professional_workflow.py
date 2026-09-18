@@ -277,8 +277,8 @@ def build_developer_repair_fn(root: Path | str, *, idea: str, arch: str):
 
     输入显式: failed_artifact + verification (pytest evidence), 无 hidden state。
     """
-    from .external_executor.registry import build_registry
-    from .external_executor.executor import run as ext_run
+    from ai_factory_os.services.execution.external.registry import build_registry
+    from ai_factory_os.services.execution.external.executor import run as ext_run
 
     reg = build_registry(str(root))
 
@@ -377,8 +377,8 @@ def build_real_executor_factory(root: Path | str):
     from .workflow_runner import load_llm_key, has_llm_key
     from ai_factory_os.infrastructure.config.provider import get_config
     from ai_factory_os.infrastructure.llm.gateway import complete as _llm_complete
-    from .external_executor.registry import build_registry
-    from .external_executor.executor import run as ext_run
+    from ai_factory_os.services.execution.external.registry import build_registry
+    from ai_factory_os.services.execution.external.executor import run as ext_run
 
     reg = build_registry(str(root))
 

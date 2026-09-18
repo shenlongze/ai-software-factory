@@ -146,7 +146,7 @@ def gateway_execute(
         if not _ok_dir:
             reg.update(tid, status="failed", finished_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat())
             reg.audit(tid, "denied", f"project_dir 不在白名单: {project_dir}")
-            return {"ok": False, "error": f"权限拒绝: 项目目录不在执行器白名单 (网关 G3)",
+            return {"ok": False, "error": "权限拒绝: 项目目录不在执行器白名单 (网关 G3)",
                     "task_id": tid, "result_id": "", "verify": {"result": "denied"},
                     "retry_count": 0, "executor": executor_id, "output": ""}
     prompt = task

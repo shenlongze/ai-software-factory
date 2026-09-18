@@ -198,8 +198,8 @@ def run_execution(root: str | Path, execution_id: str, *, command: str,
 
 def _provider_adapter(provider: str) -> Any:
     """从 external_executor 内置模板取 adapter (codex/claude); 未注册 -> ValueError。"""
-    from .external_executor.registry import BUILTIN_ADAPTERS
-    from .external_executor.schema import ExternalExecutorAdapter
+    from ai_factory_os.services.execution.external.registry import BUILTIN_ADAPTERS
+    from ai_factory_os.services.execution.external.schema import ExternalExecutorAdapter
 
     spec = BUILTIN_ADAPTERS.get(str(provider))
     if not spec:
@@ -212,7 +212,7 @@ def _provider_executor_fn(provider: str, prompt: str, project_dir: str,
     adapter = _provider_adapter(provider)
 
     def _fn(_input: dict[str, Any]) -> dict[str, Any]:
-        from .external_executor.executor import run as _ext_run
+        from ai_factory_os.services.execution.external.executor import run as _ext_run
 
         res = _ext_run(adapter, prompt, project_dir or "", timeout=timeout)
         return {"ok": int(res.get("exit_code", 1)) == 0,

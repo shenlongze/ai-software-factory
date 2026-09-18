@@ -2827,8 +2827,8 @@ class FactoryCLI:
           · 注册还要再跑 `import` ✗ → 两步且分散 ✓
         本命令: 一条命令、遍历全部宿主、扫描+导入(合并 ✓ 幂等 ✓) + 汇总 ✓
         """
-        from .external_executor import host_assets as _ee_host
-        from .external_executor.registry import build_registry
+        from ai_factory_os.services.execution.external import host_assets as _ee_host
+        from ai_factory_os.services.execution.external.registry import build_registry
 
         root = Path(getattr(args, "data_dir", None) or self.data_dir)
         only = str(getattr(args, "id", "") or "").strip()
@@ -2948,7 +2948,7 @@ class FactoryCLI:
             ok, out, err = False, "", "（未装配可用的 adapter ✗）"
             try:
                 # 用外部执行器适配层真实调一次 ✓（不 mock ✗）
-                from factory_console.external_executor.registry import build_registry as _br
+                from ai_factory_os.services.execution.external.registry import build_registry as _br
                 _reg = _br(root)
                 _ad = _reg.get(target)
                 if _ad is not None:
@@ -3534,7 +3534,7 @@ class FactoryCLI:
                 except ValueError:
                     print("--score 必须是数字")
                     return 2
-            from .external_executor import executor as _ee_exec  # F821: 本分支原用未定义名 ✗
+            from ai_factory_os.services.execution.external import executor as _ee_exec  # F821: 本分支原用未定义名 ✗
             updated = _ee_exec.verify_invocation(
                 self.data_dir, rid,
                 method=str(getattr(args, "method", "") or "manual"),
@@ -3621,8 +3621,8 @@ class FactoryCLI:
 
     def external_ai(self, args: argparse.Namespace) -> int:
         """外部执行器通用适配层 (M1): scan/list/probe/run — 声明式, 不硬编码产品。"""
-        from .external_executor import executor as _ee_exec
-        from .external_executor.registry import build_registry
+        from ai_factory_os.services.execution.external import executor as _ee_exec
+        from ai_factory_os.services.execution.external.registry import build_registry
 
         registry = build_registry(self.data_dir)
         action = getattr(args, "external_ai_action", "list") or "list"
@@ -3660,7 +3660,7 @@ class FactoryCLI:
             print("  扫描完成")
             return 0
         if action == "route":
-            from .external_executor import router as _ee_router
+            from ai_factory_os.services.execution.external import router as _ee_router
 
             task = str(getattr(args, "task", "") or "").strip()
             if not task:
@@ -3685,8 +3685,8 @@ class FactoryCLI:
                 print(f"  候选: {', '.join(r['alternatives'][:6])}")
             return 0 if r["pick"] else 1
         if action == "auto":
-            from .external_executor import router as _ee_router
-            from .external_executor import executor as _ee_exec
+            from ai_factory_os.services.execution.external import router as _ee_router
+            from ai_factory_os.services.execution.external import executor as _ee_exec
 
             task = str(getattr(args, "task", "") or "").strip()
             if not task:
@@ -3760,7 +3760,7 @@ class FactoryCLI:
             print(f"未找到适配器: {aid} (external-ai list)")
             return 1
         if action == "assets":
-            from .external_executor import host_assets as _ee_host
+            from ai_factory_os.services.execution.external import host_assets as _ee_host
 
             assets = _ee_host.scan_adapter_assets(adapter)
             print(f"=== {adapter.name} 宿主资产扫描 ({len(assets)}) ===")
@@ -3776,7 +3776,7 @@ class FactoryCLI:
                           + (f" | role={a.get('role')}" if a.get("role") else ""))
             return 0
         if action == "import":
-            from .external_executor import host_assets as _ee_host
+            from ai_factory_os.services.execution.external import host_assets as _ee_host
 
             assets = _ee_host.scan_adapter_assets(adapter)
             result = _ee_host.import_assets(
@@ -3794,7 +3794,7 @@ class FactoryCLI:
             print(f"  共导入 {result['imported']} 项")
             return 0
         if action == "route":
-            from .external_executor import router as _ee_router
+            from ai_factory_os.services.execution.external import router as _ee_router
 
             task = str(getattr(args, "task", "") or "").strip()
             if not task:
@@ -3819,8 +3819,8 @@ class FactoryCLI:
                 print(f"  候选: {', '.join(r['alternatives'][:6])}")
             return 0 if r["pick"] else 1
         if action == "auto":
-            from .external_executor import router as _ee_router
-            from .external_executor import executor as _ee_exec
+            from ai_factory_os.services.execution.external import router as _ee_router
+            from ai_factory_os.services.execution.external import executor as _ee_exec
 
             task = str(getattr(args, "task", "") or "").strip()
             if not task:
@@ -3898,7 +3898,7 @@ class FactoryCLI:
                 except ValueError:
                     print("--score 必须是数字")
                     return 2
-            from .external_executor import executor as _ee_exec  # F821: 本分支原用未定义名 ✗
+            from ai_factory_os.services.execution.external import executor as _ee_exec  # F821: 本分支原用未定义名 ✗
             updated = _ee_exec.verify_invocation(
                 self.data_dir, rid,
                 method=str(getattr(args, "method", "") or "manual"),
@@ -4198,8 +4198,8 @@ class FactoryCLI:
             print(f"    ⚠ 本机 AI 扫描失败: {type(exc).__name__}: {exc}")
         # ② agent / skill（各宿主 ✓）
         try:
-            from .external_executor.host_assets import scan_adapter_assets
-            from .external_executor.registry import build_registry
+            from ai_factory_os.services.execution.external.host_assets import scan_adapter_assets
+            from ai_factory_os.services.execution.external.registry import build_registry
             reg = build_registry(self.data_dir)
             tot = {"agent": 0, "skill": 0, "plugin": 0, "persona": 0}
             per: list[str] = []

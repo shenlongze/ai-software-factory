@@ -114,8 +114,10 @@ def absorb_workflow_to_canonical(
                 "workflow_run_id": workflow_run_id, "task_id": task_id}
 
     try:
-        nr = _import_console("node_runtime")
-        ex = _import_console("external_executor.executor")
+        # ★ 2026-09-15: 两个模块均已迁入新地基 ⇒ 动态导入传新路径
+        #   （_import_console 先试 factory_console.<mod>, 失败则 importlib 直接导入 ⇒ 传全路径即可）
+        nr = _import_console("ai_factory_os.services.execution.node_runtime")
+        ex = _import_console("ai_factory_os.services.execution.external.executor")
         # 注册执行节点 (幂等; 真实 E2E 中可能已注册)
         try:
             nr.register_node(root, node_id="task-execution", name="task-execution",

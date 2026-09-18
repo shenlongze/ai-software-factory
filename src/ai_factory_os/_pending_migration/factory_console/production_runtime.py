@@ -87,9 +87,9 @@ def build_real_executor(
     R0 P0: 复用 external_executor (现有 Runtime 的接线层), 不新建执行器/Agent 平台。
     返回 None = 本机无可用 executor (调用方必须诚实 FAILED, 禁止占位假成功)。
     """
-    from factory_console.external_executor.executor import discover_binary
-    from factory_console.external_executor.executor import run as ext_run
-    from factory_console.external_executor.registry import ExternalExecutorRegistry
+    from ai_factory_os.services.execution.external.executor import discover_binary
+    from ai_factory_os.services.execution.external.executor import run as ext_run
+    from ai_factory_os.services.execution.external.registry import ExternalExecutorRegistry
 
     reg = ExternalExecutorRegistry(str(root))
     candidates: list[str] = []

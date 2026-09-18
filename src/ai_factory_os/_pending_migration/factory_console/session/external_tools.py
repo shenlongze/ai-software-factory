@@ -102,8 +102,8 @@ def delegate_external(
     if not data_dir:
         return {"ok": False, "error": "数据目录不可用 (无法定位外部执行器)"}
     try:
-        from ..external_executor.registry import build_registry
-        from ..external_executor import executor as _exec
+        from ai_factory_os.services.execution.external.registry import build_registry
+        from ai_factory_os.services.execution.external import executor as _exec
 
         adapters = build_registry(data_dir).list()
         prefix = agent_id.split(".")[0]

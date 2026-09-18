@@ -102,7 +102,6 @@ def scan_adapter_assets(adapter: ExternalExecutorAdapter) -> list[dict[str, Any]
     if spec.skills is not None:
         base = Path(str(spec.skills.dir).replace("~", str(home))).expanduser()
         if base.is_dir():
-            from ai_factory_os.plugins.skills.loader import load_external_skills as _load_ext
 
             seen: set[str] = set()
             for md in sorted(base.rglob("SKILL.md")):

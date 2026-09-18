@@ -463,6 +463,21 @@ def build_parser() -> Any:
     )
     json_opt(p_product)
     psub = p_product.add_subparsers(dest="product_command", required=True)
+    # ★ factory product develop / ux —— 产品阶段执行链（2026-09-15 新增）
+    #   环④「架构设计」需要 product + ux_ui 两种 7 节产物；本节补上它们的生成入口。
+    #   复用 plugins/agents 里已就位的 PMAgent / UXUIDesignerAgent（不搬老区 workflow_runner）。
+    p_pd = psub.add_parser(
+        "develop", help="PM Agent: 想法 → Product Artifact (7 节, 注册为 org 产物 type=product)"
+    )
+    json_opt(p_pd)
+    p_pd.add_argument("--project", required=True, help="项目 id（产物注册到该项目）")
+    p_pd.add_argument("--idea", default=None, help="想法文本（缺省从项目 PRD/会话事实取）")
+    p_pu = psub.add_parser(
+        "ux", help="UX/UI Agent: Product Artifact → UX/UI Artifact (7 节, type=ux_ui)"
+    )
+    json_opt(p_pu)
+    p_pu.add_argument("--project", required=True, help="项目 id")
+    p_pu.add_argument("--product", default=None, help="(可选) 指定 product 产物 id; 缺省取项目最新")
     # product idea <sub>
     p_pi = psub.add_parser("idea", help="产品想法管理 (发 idea.* 事件)")
     json_opt(p_pi)
@@ -1901,9 +1916,16 @@ def _arch_store(ctx: FactoryContext) -> Any:
 
 
 def _arch_provider() -> Any:
-    """技术设计 LLM provider（复用 exec 内核的装配点: ControlPlane → Adapter）。"""
+    """技术设计 LLM provider（复用 exec 内核的装配: ControlPlane → Adapter）。
+
+    ★ 取的是注册表里的 **Adapter**（ProviderInterface, 有 generate）；
+      kernel 的 `_provider_registry()` 返回的是注册表本身 —— 别直接当 provider 用。
+    """
     from ai_factory_os.services.execution.kernel.cli import _provider_registry
-    return _provider_registry()
+    provs = _provider_registry().list()
+    if not provs:
+        raise CliError("无可用 LLM provider（先 factory provider 配置 + 设 key）", exit_code=1)
+    return provs[0]
 
 
 def _dispatch_arch(ctx: FactoryContext, args: Any) -> dict:
@@ -1914,7 +1936,7 @@ def _dispatch_arch(ctx: FactoryContext, args: Any) -> dict:
       · ArchitectAgent + build_arch_executor —— Product + UX/UI → Design Artifact 7 节
         （plugins/agents/architect.py; 老区 workflow_runner 的 arch_run 同源实现）
     """
-    from ai_factory_os.services.organization.projects import ArtifactType
+    from ai_factory_os.services.organization.projects import Artifact, ArtifactType
 
     cmd = getattr(args, "arch_command", None) or "list"
     store = _arch_store(ctx)
@@ -1999,10 +2021,12 @@ def _dispatch_arch(ctx: FactoryContext, args: Any) -> dict:
             raise CliError(f"架构设计失败: {exc}", exit_code=1) from exc
         meta = design.to_dict() if hasattr(design, "to_dict") else dict(design)
         meta["artifact_refs"] = [product.id, ux_ui.id]   # 溯源（照 build_arch_executor）
-        new = store.create_artifact(project_id=proj, type_=ArtifactType.DESIGN,
-                                    ref="file:///docs/design.json", metadata=meta,
-                                    producer_role="software_architect",
-                                    producer_agent="architect")
+        from ai_factory_os.infrastructure.ids import new_id
+        new = Artifact(id=new_id("A"), stage_id="", type=ArtifactType.DESIGN,
+                       ref="file:///docs/design.json", project_id=proj,
+                       producer_role="software_architect", producer_agent="architect",
+                       metadata=meta)
+        store.save_artifact(new)
         return {"ok": True, "command": "arch design",
                 "artifact": {"id": getattr(new, "id", ""), "type": "design"},
                 "artifact_refs": meta["artifact_refs"],
@@ -2045,6 +2069,121 @@ def _print_arch(args: Any, r: dict) -> None:
         print(f"✔ Design Artifact 已生成: {a['id']}")
         print(f"  溯源: {r.get('artifact_refs')}")
         print(f"  节: {', '.join(r.get('sections', []))}")
+
+
+# ------------------------------------------------------------------ 产品阶段执行链（环④ 的前置）
+
+def _prod_provider() -> Any:
+    """产品分析用的 LLM provider（复用 exec 内核的装配: ControlPlane → Adapter）。
+
+    PMAgent / UXUIDesignerAgent 要的是 `ProviderInterface.generate(ProviderRequest)`,
+    与新地基 kernel/providers 的 OpenAIProvider/AnthropicProvider 一致 ⇒ 直接复用。
+    """
+    from ai_factory_os.services.execution.kernel.cli import _provider_registry
+    reg = _provider_registry()
+    provs = reg.list()
+    if not provs:
+        raise CliError("无可用 LLM provider（先 factory provider 配置 + 设 key）", exit_code=1)
+    return provs[0]
+
+
+def _prod_idea_text(ctx: FactoryContext, project_id: str, explicit: str | None) -> str:
+    """想法文本: 显式 --idea > 项目 PRD 的 overview > 会话最近 human 消息（诚实缺口 → 报错）。"""
+    if explicit:
+        return str(explicit)
+    from ai_factory_os.services.organization.projects import ProjectStore
+    store = ProjectStore(ctx.root / "org")
+    # 1) 项目里已有的 prd 产物（org）或 product_truth 的 PRD
+    for a in store.list_artifacts():
+        if getattr(a, "project_id", "") == project_id and "prd" in str(a.type).lower():
+            meta = dict(getattr(a, "metadata", {}) or {})
+            for k in ("overview", "problem_statement", "title"):
+                if meta.get(k):
+                    return str(meta[k])
+    # 2) 会话事实里的 IDEA
+    conv_dir = ctx.root / "projects" / project_id / "conversations"
+    if conv_dir.is_dir():
+        import json as _json
+        for f in sorted(conv_dir.glob("*.json")):
+            try:
+                d = _json.loads(f.read_text())
+            except Exception:  # noqa: BLE001
+                continue
+            for fact in (d.get("facts") or []):
+                if str(fact.get("type") or "").upper() == "IDEA" and fact.get("content"):
+                    return str(fact["content"])
+    raise CliError(
+        "无想法文本 —— 传 --idea, 或先 conversation understand 产出 IDEA 事实", exit_code=2)
+
+
+def cmd_product_develop(ctx: FactoryContext, args: Any) -> dict:
+    """factory product develop --project P [--idea TEXT] — PM Agent 产出 Product Artifact(7 节)。
+
+    复用 plugins/agents/pm.py 的 PMAgent（老区 workflow_runner 同源实现）；
+    产物注册到组织域（ProjectStore.artifacts）type=product ⇒ 供 `arch design` 作双输入。
+    """
+    from ai_factory_os.plugins.agents.pm import PMAgent, ProductManagerError
+    from ai_factory_os.services.organization.projects import Artifact, ArtifactType, ProjectStore
+
+    project_id = str(args.project)
+    idea = _prod_idea_text(ctx, project_id, getattr(args, "idea", None))
+    try:
+        agent = PMAgent(provider=_prod_provider(), idea=idea)
+        art = agent.develop()
+    except ProductManagerError as exc:
+        raise CliError(f"产品分析失败: {exc}", exit_code=1) from exc
+    meta = art.to_dict()
+    store = ProjectStore(ctx.root / "org")
+    from ai_factory_os.infrastructure.ids import new_id
+    rec = Artifact(id=new_id("A"), stage_id="", type=ArtifactType.PRODUCT,
+                   ref="file:///docs/product.json", project_id=project_id,
+                   producer_role="product_manager", producer_agent="pm", metadata=meta)
+    store.save_artifact(rec)
+    return {"ok": True, "command": "product develop",
+            "artifact": {"id": getattr(rec, "id", ""), "type": "product"},
+            "sections": sorted(meta.keys()), "idea": idea[:120],
+            "exit_code": 0, "args": args}
+
+
+def cmd_product_ux(ctx: FactoryContext, args: Any) -> dict:
+    """factory product ux --project P — UX/UI Agent 产出 UX/UI Artifact(7 节)。
+
+    输入 = 项目里的 product 产物（`product develop` 的产出）; 产物 type=ux_ui。
+    """
+    from ai_factory_os.plugins.agents.uxui import UXUIDesignerAgent, UXUIDesignerError
+    from ai_factory_os.services.organization.projects import Artifact, ArtifactType, ProjectStore
+
+    project_id = str(args.project)
+    store = ProjectStore(ctx.root / "org")
+    explicit = getattr(args, "product", None)
+    if explicit:
+        src = store.get_artifact(str(explicit))
+        if src is None:
+            raise CliError(f"product artifact not found: {explicit}", exit_code=7)
+    else:
+        cands = [a for a in store.list_artifacts()
+                 if getattr(a, "project_id", "") == project_id and "product" in str(a.type).lower()]
+        if not cands:
+            raise CliError(
+                "项目内无 product 产物 —— 先跑 factory product develop --project "
+                f"{project_id}（UX 需要 product 作输入）", exit_code=2)
+        src = cands[-1]
+    try:
+        agent = UXUIDesignerAgent(provider=_prod_provider(), product=dict(src.metadata or {}))
+        art = agent.design()
+    except UXUIDesignerError as exc:
+        raise CliError(f"UX/UI 设计失败: {exc}", exit_code=1) from exc
+    meta = art.to_dict()
+    from ai_factory_os.infrastructure.ids import new_id
+    rec = Artifact(id=new_id("A"), stage_id="", type=ArtifactType.UX_UI,
+                   ref="file:///docs/ux_ui.json", project_id=project_id,
+                   producer_role="ui_designer", producer_agent="uxui", metadata=meta)
+    store.save_artifact(rec)
+    return {"ok": True, "command": "product ux",
+            "artifact": {"id": getattr(rec, "id", ""), "type": "ux_ui"},
+            "input_product": getattr(src, "id", ""),
+            "sections": sorted(meta.keys()),
+            "exit_code": 0, "args": args}
 
 
 def _format_failure(error: str) -> str:
@@ -2294,7 +2433,11 @@ def _dispatch_change(ctx: FactoryContext, args: Any) -> dict:
 
 
 def _dispatch_product(ctx: FactoryContext, args: Any) -> dict:
-    """product idea/approval/workflow/generate/experience 分发 (Phase 9A ADR-0026 + 9B ADR-0027)。"""
+    """product idea/approval/workflow/generate/experience/develop/ux 分发 (Phase 9A ADR-0026 + 9B ADR-0027)。"""
+    if args.product_command == "develop":
+        return cmd_product_develop(ctx, args)
+    if args.product_command == "ux":
+        return cmd_product_ux(ctx, args)
     if args.product_command == "idea":
         if args.idea_command == "create":
             return cmd_product_idea_create(ctx, args)
@@ -3143,6 +3286,20 @@ def _print_product(args: Any, r: dict) -> None:
     """factory product 输出: idea create/list/show + approval request/decide/list
     + workflow start/status + generate + experience list/record (发对应
     idea.*/approval.*/product.* 审计事件; Phase 9A ADR-0026 + 9B ADR-0027)。"""
+    if args.product_command in ("develop", "ux"):
+        # ★ 产品阶段执行链（2026-09-15）: PM / UX Agent 产出 7 节产物
+        cmd = args.product_command
+        a = r.get("artifact") or {}
+        print(f"✔ {'Product' if cmd == 'develop' else 'UX/UI'} Artifact 已生成: {a.get('id')}")
+        if cmd == "develop":
+            print(f"  想法: {str(r.get('idea') or '')[:100]}")
+        else:
+            print(f"  输入 product: {r.get('input_product')}")
+        print(f"  7 节: {', '.join(r.get('sections') or [])}")
+        proj = str(getattr(args, "project", "") or "")
+        nxt = f"product ux --project {proj}" if cmd == "develop" else f"arch design --project {proj}"
+        print(f"  下一步: factory {nxt}")
+        return
     if args.product_command == "idea":
         if args.idea_command == "list":
             _print_product_idea_list(r)

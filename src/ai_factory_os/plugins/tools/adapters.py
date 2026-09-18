@@ -64,10 +64,13 @@ def git_status(root: Any, project_id: str, params: dict[str, Any]) -> dict[str, 
 def monitor(root: Any, project_id: str, params: dict[str, Any]) -> dict[str, Any]:
     from ..monitor import collect_system, check_alerts
 
+    # ★ 已切: 不再借 ConsoleService（老区）—— 版本从包元数据读, 根取本模块约定
     try:
-        from factory_console.console_service import _factory_version, DEFAULT_ROOT
+        from importlib.metadata import version as _v
+        _factory_version = _v("ai-software-factory")
     except Exception:  # noqa: BLE001
-        _factory_version, DEFAULT_ROOT = "unknown", str(Path.home() / ".factory")
+        _factory_version = "unknown"
+    DEFAULT_ROOT = str(Path.home() / ".factory")
     sys_mon = collect_system(_root(root) or Path(DEFAULT_ROOT), _factory_version, model_line="")
     alerts = check_alerts(sys_mon, [])
     return {"system": sys_mon, "alerts": alerts}

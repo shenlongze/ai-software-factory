@@ -25,9 +25,14 @@ from typing import Any
 
 from ai_factory_os.services.execution.production_run import get_production_run
 from ai_factory_os.services.delivery.release_service import get_release, list_releases
-from ai_factory_os._pending_migration.factory_console.governance_service import (
-    check_governance, get_approval,
-)
+from ai_factory_os.services.governance.gates import check_governance   # ★ 已切新地基
+from ai_factory_os.services.governance.store import ApprovalStore
+
+
+def get_approval(root, approval_id):
+    """老签名兼容: 新地基 store → dict | None。"""
+    rec = ApprovalStore(Path(root) / "governance").get(approval_id)
+    return rec.to_dict() if rec is not None else None
 
 ST_PENDING = "PENDING"
 ST_GATED = "GATED"

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from ai_factory_os.services.execution.production_run import get_production_run
-from ai_factory_os._pending_migration.factory_console.governance_service import check_governance
+from ai_factory_os.services.governance.gates import check_governance  # ★ 已切新地基
 
 #: 状态机
 ST_PENDING = "PENDING"
@@ -240,7 +240,9 @@ def execute(root: Path | str, release_id: str, *, actor: str = "release_engineer
             # governance approval (Release 授权, 传给 apply 满足 I12)
             gov_approval = None
             if rel.get("approval_ids"):
-                from ai_factory_os._pending_migration.factory_console.governance_service import get_approval as _get_appr
+                from ai_factory_os.services.governance.store import ApprovalStore as _AS
+                _rec = _AS(__import__("pathlib").Path(root) / "governance").get(aid_)
+                _get_appr = (lambda r, i: (_rec.to_dict() if _rec is not None else None))
                 for aid_ in rel["approval_ids"]:
                     ap_ = _get_appr(root, aid_)
                     if ap_ and ap_.get("decision") == "APPROVED":

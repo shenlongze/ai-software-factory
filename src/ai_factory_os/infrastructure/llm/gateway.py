@@ -405,7 +405,7 @@ def complete(
     #   在【唯一汇聚点】留痕 ✓ —— 此刻 tokens 与 estimated_cost_usd 都已算好 ✓
     #   为什么在此: 不必改任何调用链 ✓ 不 thread usage ✓ 单点 ✓（失败安全 ✓）
     try:
-        from factory_console.llm_trace import record_llm_call as _rec
+        from ai_factory_os.infrastructure.llm.trace import record_llm_call as _rec  # ★ 已切新地基
         _u2 = out.get("usage") or {}
         _last = messages[-1].get("content") if messages else ""
         _rec(str(_last or ""), str(out.get("content") or ""),

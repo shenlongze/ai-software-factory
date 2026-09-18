@@ -30,7 +30,8 @@ def _resolve_fn(fn: str | None) -> Any | None:
     mod_name, _, func_name = fn.rpartition(".")
     candidates = [mod_name]
     if mod_name.startswith("tools."):
-        candidates.insert(0, "factory_console." + mod_name)
+        # ★ 已切: 旧 tools.* 名优先走别名桥（compat_aliases 已映射到新地基）
+        candidates.insert(0, "ai_factory_os.plugins.tools." + mod_name.split(".", 1)[-1])
     for cand in candidates:
         try:
             mod = importlib.import_module(cand)

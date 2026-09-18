@@ -24,7 +24,7 @@
 """
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
 
 __all__ = ["wire", "wired"]
 
@@ -57,9 +57,14 @@ def wire(*, verbose: bool = False) -> dict[str, str]:
     # ── organization.artifact_lifecycle: 审批读取（破环2 的注入点）
     try:
         from ai_factory_os.services.organization import artifact_lifecycle as _AL
-        from factory_console.governance_service import get_approval as _ga   # ★ 暂借老区, 一行可换
-        _AL.bind_lookups(get_approval=_ga)
-        _wired["organization.artifact_lifecycle.get_approval"] = "ok（借老区实现）"
+        from ai_factory_os.services.governance.store import ApprovalStore   # ★ 已切新地基
+
+        def _get_approval(root, approval_id):    # 老签名 → 新 store（返回 dict 或 None）
+            rec = ApprovalStore(Path(root) / "governance").get(approval_id)
+            return rec.to_dict() if rec is not None else None
+
+        _AL.bind_lookups(get_approval=_get_approval)
+        _wired["organization.artifact_lifecycle.get_approval"] = "ok（新地基 governance）"
     except Exception as exc:  # noqa: BLE001
         _wired["organization.artifact_lifecycle.get_approval"] = f"unavailable: {type(exc).__name__}: {exc}"
 

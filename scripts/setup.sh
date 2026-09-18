@@ -66,13 +66,13 @@ else
     say "  已存在 (跳过)"
 fi
 
-say "== 2/4 editable install factory-core =="
+say "== 2/4 editable install (ai_factory_os) =="
 "$VENV_PY" -m pip install --quiet --upgrade pip
 # pyproject.toml 在仓库根 (setuptools find: where=factory-core), 安装目标为根
 "$VENV_PY" -m pip install --quiet -e .
 
 say "== 3/4 frontend (可选) =="
-FRONTEND_DIR="factory-console/web/frontend"
+FRONTEND_DIR="apps/web/frontend"   # ★ 2026-09-15 老区 factory-console 已删
 if [ -d "$FRONTEND_DIR" ] && [ -f "$FRONTEND_DIR/package.json" ]; then
     if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
         warn "  $FRONTEND_DIR 检测到 node/npm, 执行: (cd $FRONTEND_DIR && npm install)"

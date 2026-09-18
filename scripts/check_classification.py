@@ -293,7 +293,7 @@ def rule_r23() -> list[str]:
     sys.path.insert(0, str(ROOT))  # apps/ 在项目根（SSoT §一: 消费者独立于 src/）
     sys.path.insert(0, str(SRC))
     try:
-        from apps.cli.registry import API_CLI, FACTORY_CLI
+        from apps.cli.registry import API_CLI
     except Exception as exc:  # noqa: BLE001 — 表本身坏了 = 最该报的一种红
         return [f"apps/cli/registry.py 导入失败: {type(exc).__name__}: {exc}"]
 

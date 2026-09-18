@@ -52,11 +52,8 @@ def main() -> int:
     ap.add_argument("-q", "--quiet", action="store_true", help="只报汇总")
     args = ap.parse_args()
 
-    # 与 bin/factory 的 PYTHONPATH 等价：src 必须排在最前（逆序插入）
-    # ⚠ 注意用 factory-console（连字符目录）而非 src/legacy —— 后者会让转发壳
-    #   src/legacy/factory_console/ 遮蔽真包，导致 false negative。
-    for p in reversed((SRC, SRC / "legacy" / "factory-core",
-                       SRC / "legacy" / "factory-console")):
+    # ★ 2026-09-15: src/legacy/factory-* 路径随老区删除（不再需要额外 sys.path）
+    for p in reversed((SRC,)):
         if str(p) not in sys.path:
             sys.path.insert(0, str(p))
     # apps/ 在项目根（SSoT §一: 消费者独立于 src/）—— 放**最后**, 不遮蔽 src。

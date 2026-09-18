@@ -74,6 +74,13 @@ _ENDPOINT_KEYS: tuple[str, ...] = ("method", "path", "contract")
 #: API 约定 / UI 实现指导 — S8-005 Developer 消费点)
 _TASK_KEYS: tuple[str, ...] = ("module", "task", "api_contract", "ui_guidance")
 
+#: task_breakdown 每项的【可选】键 —— ★ 2026-09-19 增 depends_on（M3 并行调度）:
+#:   该模块依赖的**模块名**数组（架构阶段还不知道任务树 id, 故用名字; 无依赖 → 空数组）。
+#:   消费方: services/work/decomposition.parallel_groups（按名匹配 → 拓扑分层）。
+#:   为什么让架构给: 依赖是架构设计的产物 —— 架构 agent 本就按模块划分,
+#:   由它给是"源头给"; 靠后从关键词/路径猜都不如源头准。
+_TASK_OPTIONAL_KEYS: tuple[str, ...] = ("depends_on",)
+
 #: product 契约中 Architect 消费的 3 节 (功能/MVP/故事 → 模块划分与任务拆分)
 _PRODUCT_ARCH_SECTIONS: tuple[str, ...] = (
     "feature_list",
@@ -246,6 +253,15 @@ def _validate_tasks(tasks: Any) -> list[str]:
                 errors.append(
                     f"task_breakdown[{i}].{key}: expected non-empty str"
                 )
+        # ★ 可选键 depends_on: 给了就必须是 str 列表（模块名; 不给 = 无依赖）
+        if "depends_on" in task:
+            dep = task.get("depends_on")
+            if not isinstance(dep, list) or any(
+                not isinstance(x, str) or not x.strip() for x in dep
+            ):
+                errors.append(
+                    f"task_breakdown[{i}].depends_on: expected list[str] (模块名)"
+                )
     return errors
 
 
@@ -269,8 +285,12 @@ _ARCH_AGENT_PROMPT = (
     "产物给出 UI 实现指导)\n"
     "- backend_architecture: 后端架构 (字符串, 服务/模块)\n"
     "- task_breakdown: 任务拆分 (数组, 每项 task = {{module, task, "
-    "api_contract, ui_guidance}} — 模块/技术任务/API 约定/UI 实现指导, 供 "
-    "Developer 直接消费)\n\n"
+    "api_contract, ui_guidance, depends_on}} — 模块/技术任务/API 约定/UI 实现指导, "
+    "供 Developer 直接消费)\n"
+    "  ★ depends_on = 该模块依赖的**模块名数组**（无依赖 → 空数组 []）。"
+    "请按真实先决关系给: 脚手架/初始化/配置类模块→被其它模块依赖; "
+    "底层(领域模型/存储)→被上层(命令/接口)依赖; 端到端测试→依赖被测的模块。"
+    "**不要**把『列表顺序』当成依赖——顺序不代表先决。\n\n"
     "产品分析产物:\n{product}\n\n"
     "UX/UI 设计产物:\n{ux_ui}\n\n"
     "输出 JSON 对象, 7 节字段必须全部存在且为实质内容: system_architecture / "

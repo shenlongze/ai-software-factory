@@ -123,21 +123,6 @@ _ROLE_RULES: list[tuple[re.Pattern[str], str]] = [
 _DEFAULT_ROLE = "unassigned"   # ★ 不猜: 种子里没给就诚实留空
 
 
-#: 落地型模块的特征词（脚手架 / 初始化 / 配置 —— 其余都依赖它们先就位）
-_SETTLING_RE = re.compile(
-    r"\b(scaffold|init|bootstrap|setup|config|skeleton|module|目录|骨架|初始化|脚手架)\b"
-)
-
-
-def _is_settling(module: str, text: str) -> bool:
-    """是不是"落地型"模块（脚手架/初始化/配置）—— 它们是其它模块的先决。
-
-    判据 = 词边界（不猜语义）。不是落地型 → 依赖已有落地域（若有）。
-    """
-    hay = re.sub(r"[-_/]", " ", f"{module} {text}").lower()
-    return bool(_SETTLING_RE.search(hay))
-
-
 def _role_hint(module: str, text: str) -> str:
     """角色**提示**（不是事实）—— 关键字推导不可靠（"render" 可能是 CLI 渲染而非 UI），
     所以只作 hint 供执行层参考；`required_role` 一律诚实留 `unassigned` 除非种子显式给。
@@ -226,35 +211,38 @@ def decompose_from_design(
     nodes.append(root_node)
 
     # 中间层: 按种子出现顺序归组
-    # ★ 2026-09-19 修（M3 并行调度）: 原实现把"种子出现顺序"当成"依赖顺序"，
-    #   给每个叶子连了 prev_leaf_ids ⇒ 强制全串行（实测并行度=1 ✗）。
-    #   顺序 ≠ 依赖 —— 依赖要按【真实先决关系】推导:
-    #     · 每个叶子依赖【自己的 domain 节点】（层级归属, 不产生串行）
-    #     · 跨 domain 只连【层次先决】: 落地型(脚手架/配置) → 其余; 底层域 → 上层域
-    #     · 无真依赖 → **不连边** ⇒ 同层可并行 ✓
-    #   （同层写同一文件的冲突不在依赖图里表达 —— 由 file_conflicts() 在执行前收缩边界）
-    prev_leaf_ids: list[str] = []
-    first_domain_ids: list[str] = []          # 最先落地的那些域（供跨域先决用）
+    # ★ 2026-09-19 修（M3 并行调度 · Founder 裁决方案 A）:
+    #   依赖由【架构阶段给】—— 种子里带 depends_on（模块名数组）。
+    #   之前的两种写法都错（实测暴露）:
+    #     · 链式依赖 prev_leaf  ⇒ 并行度 1（全串行）
+    #     · "落地型→其余"启发式 ⇒ 并行度 11（全并行）
+    #   现在: 种子给什么就是什么; **没给就不连边**（不猜 —— 不猜是纪律, 不是懒惰）。
+    #   跨域先决的落点: 叶依赖【自己的 domain 节点】= 层级归属; 域间由种子 depends_on 表达。
+    seed_order: dict[str, str] = {}          # 模块名 → domain 节点 id
+    for idx, seed in enumerate(seeds, 1):
+        if isinstance(seed, dict):
+            mod = str(seed.get("module") or f"module-{idx}").strip()
+            seed_order[mod] = ""                 # 先占位, 下面填 id
     for idx, seed in enumerate(seeds, 1):
         if not isinstance(seed, dict):
             continue
         module = str(seed.get("module") or f"module-{idx}").strip()
         desc = str(seed.get("task") or "").strip()
         contract = str(seed.get("api_contract") or "").strip()
+        # ★ 架构给的模块级依赖（模块名 → domain 节点 id; 未给的模块名忽略）
+        seed_deps = [str(d).strip() for d in (seed.get("depends_on") or []) if str(d).strip()]
 
         dom = _node("domain", f"模块 {idx}: {module}", parent=root_node["id"], scope=desc[:300])
-        # ★ 跨域先决: 仅当本模块属"落地/底层"之外, 且已有早于它的落地域时, 才连一条
-        #   （不逐级链接 —— 那会退化成串行）
-        dom["depends_on"] = list(first_domain_ids) if _is_settling(module, desc) is False else []
-        if _is_settling(module, desc) and not first_domain_ids:
-            first_domain_ids.append(dom["id"])
+        # 域间依赖: 映射到那些被依赖模块的 domain 节点（此时已生成的在 seed_order 里）
+        dom["depends_on"] = [i for i in (seed_order.get(d, "") for d in seed_deps) if i]
         nodes.append(dom)
+        seed_order[module] = dom["id"]           # 登记本模块 → 供后续模块引用
 
         leaf = _node(
             "task", desc or module, parent=dom["id"],
             change_type="NEW_FILE",
             expected_files=_files_for(module, f"{desc} {contract}", stack),
-            # 只依赖自己的域（层级归属）—— 不再链式依赖前一个叶
+            # 叶只依赖自己的域（层级归属）—— 模块间的先决在 domain 层表达
             depends_on=[dom["id"]],
             scope=contract[:300],
             required_role=_DEFAULT_ROLE,
@@ -262,7 +250,6 @@ def decompose_from_design(
             acceptance=contract or f"{module} 实现完成且可验证",
         )
         nodes.append(leaf)
-        prev_leaf_ids.append(leaf["id"])
 
     leaves = [n for n in nodes if n["kind"] == "task"]
     # ── 边界纪律（超出 → 响亮拒绝, 不静默硬拆）
@@ -355,6 +342,28 @@ def parallel_groups(tree: dict[str, Any]) -> list[list[str]]:
     idset = {str(n.get("id") or "") for n in leaves if n.get("id")}
     deps: dict[str, set[str]] = {i: set() for i in idset}
     by_title = {str(n.get("title") or "").strip(): str(n.get("id") or "") for n in leaves}
+    # ★ 2026-09-19: 依赖可能挂在 domain 节点上（架构给的模块级先决）——
+    #   叶要**继承其祖先域的依赖**（域 A 依赖域 B ⇒ A 的叶依赖 B 的叶）。
+    #   不继承的话叶之间无边 ⇒ 全部挤在第 0 层（实测暴露的坑）。
+    nodes_all = list(tree.get("nodes") or [])
+    by_id_all = {str(n.get("id") or ""): n for n in nodes_all}
+    leaf_of: dict[str, list[str]] = {}          # 节点 id → 该子树下的叶 id
+    for lf in leaves:
+        cur = str(lf.get("id") or "")
+        for _ in range(16):                     # 上溯到根（深度上限兜底）
+            leaf_of.setdefault(cur, []).append(str(lf.get("id") or ""))
+            par = str((by_id_all.get(cur) or {}).get("parent_id") or "")
+            if not par or par == cur:
+                break
+            cur = par
+    for n in nodes_all:                          # 把每个节点的 depends_on 摊到它的叶
+        nid = str(n.get("id") or "")
+        for d in (n.get("depends_on") or []):
+            d = str(d).strip()
+            for a in leaf_of.get(nid, []):       # 本节点的叶
+                for b in leaf_of.get(d, []):     # 被依赖节点的叶
+                    if a in deps and b in idset and a != b:
+                        deps[a].add(b)
     for n in leaves:
         tid = str(n.get("id") or "")
         if tid not in deps:

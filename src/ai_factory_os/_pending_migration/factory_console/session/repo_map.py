@@ -68,7 +68,7 @@ def build_repo_map(root: str | Path | None, project_id: str,
                    query: str = "", max_chars: int = DEFAULT_MAX_CHARS) -> dict[str, Any]:
     """构建代码库符号地图。失败 → 诚实错误。"""
     try:
-        from .code_scan import locate_repo
+        from ai_factory_os.infrastructure.git.code_scan import locate_repo
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"repo_map 不可用: {exc}"}
     if not root or not project_id:

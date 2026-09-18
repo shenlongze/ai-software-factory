@@ -136,7 +136,7 @@ def gateway_execute(
     project_dir = ""
     if project_id:
         try:
-            from factory_console.session.code_scan import locate_repo
+            from ai_factory_os.infrastructure.git.code_scan import locate_repo
 
             project_dir = str(locate_repo(data_dir, project_id) or "")
         except Exception:  # noqa: BLE001

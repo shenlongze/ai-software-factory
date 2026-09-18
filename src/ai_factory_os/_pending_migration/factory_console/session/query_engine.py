@@ -454,7 +454,7 @@ def build_facts(
         name = str(getattr(target, "name", "") or "")
         if intent == "code_scan":
             try:
-                from ..session.code_scan import format_code_scan, scan_repo
+                from ai_factory_os.infrastructure.git.code_scan import format_code_scan, scan_repo
 
                 report = scan_repo(root, str(getattr(target, "id", "") or ""))
                 block = format_code_scan(report, name)
@@ -462,7 +462,7 @@ def build_facts(
                 block = f"项目: {name}\n代码扫描失败（数据服务不可用）— 请稍后重试。"
         elif intent == "project_structure":
             try:
-                from ..session.code_scan import format_structure, scan_structure
+                from ai_factory_os.infrastructure.git.code_scan import format_structure, scan_structure
 
                 report = scan_structure(root, str(getattr(target, "id", "") or ""))
                 block = format_structure(report, name)

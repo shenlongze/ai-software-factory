@@ -1302,7 +1302,7 @@ def dispatch(
         return r
     try:
         if tool_id == "scan_todos":
-            from .code_scan import format_todos, scan_todos
+            from ai_factory_os.infrastructure.git.code_scan import format_todos, scan_todos
 
             _pf = str(args.get("path") or "").strip()
             _mi = int(args.get("max_items") or 50)
@@ -1310,7 +1310,7 @@ def dispatch(
             return {"ok": _r.get("ok", False), "output": format_todos(_r),
                     "error": _r.get("error") or ""}
         if tool_id == "code_scan":
-            from .code_scan import scan_repo, format_code_scan
+            from ai_factory_os.infrastructure.git.code_scan import scan_repo, format_code_scan
 
             rr = scan_repo(root, project_id)
             return {"ok": rr.get("ok"), "output": format_code_scan(rr)}
@@ -1320,7 +1320,7 @@ def dispatch(
             rr = scan_project(root, project_id)
             return {"ok": True, "output": format_scan(rr, project_id)}
         if tool_id == "project_structure":
-            from .code_scan import scan_structure, format_structure
+            from ai_factory_os.infrastructure.git.code_scan import scan_structure, format_structure
 
             rr = scan_structure(root, project_id)
             return {"ok": rr.get("ok"), "output": format_structure(rr, project_id)}
@@ -1786,7 +1786,7 @@ def dispatch(
                 skills=[str(x) for x in (args.get("skills") or []) if str(x).strip()],
             )
         if tool_id == "read_code":
-            from .code_scan import locate_repo
+            from ai_factory_os.infrastructure.git.code_scan import locate_repo
             from pathlib import Path as _P
 
             repo = locate_repo(root, project_id)
@@ -3192,7 +3192,7 @@ def _repo_fact(data_dir: str | Path | None, project_id: str) -> str:
             "要创建新项目时：先向用户确认需求与名称，再调用创建项目流程。"
         )
     try:
-        from .code_scan import locate_repo
+        from ai_factory_os.infrastructure.git.code_scan import locate_repo
 
         repo = locate_repo(data_dir, project_id)
     except Exception:  # noqa: BLE001

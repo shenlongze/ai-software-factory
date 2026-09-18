@@ -119,7 +119,7 @@ def delegate_external(
         project_dir = ""
         if project_id:
             try:
-                from .code_scan import locate_repo
+                from ai_factory_os.infrastructure.git.code_scan import locate_repo
 
                 project_dir = str(locate_repo(data_dir, project_id) or "")
             except Exception:  # noqa: BLE001

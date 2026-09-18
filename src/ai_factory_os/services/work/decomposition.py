@@ -42,6 +42,7 @@ from typing import Any
 __all__ = [
     "decompose_from_design", "load_tree", "list_trees", "confirm_tree",
     "tree_summary", "tree_leaves", "topological_order",
+    "parallel_groups", "file_conflicts",
     "DECOMPOSE_LIMITS",
 ]
 
@@ -120,6 +121,21 @@ _ROLE_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(infra|deploy|docker|ci|build|scaffold|module)\b"), "devops"),
 ]
 _DEFAULT_ROLE = "unassigned"   # ★ 不猜: 种子里没给就诚实留空
+
+
+#: 落地型模块的特征词（脚手架 / 初始化 / 配置 —— 其余都依赖它们先就位）
+_SETTLING_RE = re.compile(
+    r"\b(scaffold|init|bootstrap|setup|config|skeleton|module|目录|骨架|初始化|脚手架)\b"
+)
+
+
+def _is_settling(module: str, text: str) -> bool:
+    """是不是"落地型"模块（脚手架/初始化/配置）—— 它们是其它模块的先决。
+
+    判据 = 词边界（不猜语义）。不是落地型 → 依赖已有落地域（若有）。
+    """
+    hay = re.sub(r"[-_/]", " ", f"{module} {text}").lower()
+    return bool(_SETTLING_RE.search(hay))
 
 
 def _role_hint(module: str, text: str) -> str:
@@ -209,8 +225,16 @@ def decompose_from_design(
     root_node = _node("project", f"计划 {plan_id}", scope=stack_note)
     nodes.append(root_node)
 
-    # 中间层: 按种子出现顺序归组（架构给的顺序即依赖顺序 ⇒ 前序为先决）
+    # 中间层: 按种子出现顺序归组
+    # ★ 2026-09-19 修（M3 并行调度）: 原实现把"种子出现顺序"当成"依赖顺序"，
+    #   给每个叶子连了 prev_leaf_ids ⇒ 强制全串行（实测并行度=1 ✗）。
+    #   顺序 ≠ 依赖 —— 依赖要按【真实先决关系】推导:
+    #     · 每个叶子依赖【自己的 domain 节点】（层级归属, 不产生串行）
+    #     · 跨 domain 只连【层次先决】: 落地型(脚手架/配置) → 其余; 底层域 → 上层域
+    #     · 无真依赖 → **不连边** ⇒ 同层可并行 ✓
+    #   （同层写同一文件的冲突不在依赖图里表达 —— 由 file_conflicts() 在执行前收缩边界）
     prev_leaf_ids: list[str] = []
+    first_domain_ids: list[str] = []          # 最先落地的那些域（供跨域先决用）
     for idx, seed in enumerate(seeds, 1):
         if not isinstance(seed, dict):
             continue
@@ -219,15 +243,19 @@ def decompose_from_design(
         contract = str(seed.get("api_contract") or "").strip()
 
         dom = _node("domain", f"模块 {idx}: {module}", parent=root_node["id"], scope=desc[:300])
-        # 归属依赖: 同模块内 → 域节点; 跨模块 → 前一模块的叶（架构给的顺序）
-        dom["depends_on"] = [prev_leaf_ids[-1]] if prev_leaf_ids else []
+        # ★ 跨域先决: 仅当本模块属"落地/底层"之外, 且已有早于它的落地域时, 才连一条
+        #   （不逐级链接 —— 那会退化成串行）
+        dom["depends_on"] = list(first_domain_ids) if _is_settling(module, desc) is False else []
+        if _is_settling(module, desc) and not first_domain_ids:
+            first_domain_ids.append(dom["id"])
         nodes.append(dom)
 
         leaf = _node(
             "task", desc or module, parent=dom["id"],
             change_type="NEW_FILE",
             expected_files=_files_for(module, f"{desc} {contract}", stack),
-            depends_on=[dom["id"]] + ([prev_leaf_ids[-1]] if prev_leaf_ids else []),
+            # 只依赖自己的域（层级归属）—— 不再链式依赖前一个叶
+            depends_on=[dom["id"]],
             scope=contract[:300],
             required_role=_DEFAULT_ROLE,
             role_hint=_role_hint(module, desc),
@@ -304,6 +332,73 @@ def detect_cycles(nodes: list[dict[str, Any]]) -> list[list[str]]:
 
 
 # ------------------------------------------------------------------ 读取面
+
+
+def parallel_groups(tree: dict[str, Any]) -> list[list[str]]:
+    """按 DAG 拓扑分层 —— **同层可并行, 层间必须串行**（M3 并行调度的依据）。
+
+    为什么必须有它（借鉴老区 task_decomposition.compute_parallel_groups 的设计洞察）:
+        只把串行的 `for` 换成线程池 ⇒ 下游任务在上游产物还没写完时开跑
+        ⇒ 从「确定性失败」变成「随机失败」（且难复现）
+        ⇒ 先算出层级, 执行器才有**正确的并行边界**（只算不执行 ⇒ 零风险）。
+
+    实现: Kahn 分层。
+      · 无依赖的叶 → 第 0 层（可立即并行）
+      · 某层全部完成后, 其下游才进下一层
+      · 检测到环 → 环内整体放一层（**不阻塞 · 不静默丢弃**）
+    返回: `[[本层 id...], ...]` 每层已排序（结果确定, 便于比对）。
+
+    ⚠ 语义边界: 本函数只算"依赖允许的并行", **不含文件冲突** ——
+      同层若两个任务写同一文件仍会互相踩。执行器必须同时用 `file_conflicts()` 收缩边界。
+    """
+    leaves = tree_leaves(tree)
+    idset = {str(n.get("id") or "") for n in leaves if n.get("id")}
+    deps: dict[str, set[str]] = {i: set() for i in idset}
+    by_title = {str(n.get("title") or "").strip(): str(n.get("id") or "") for n in leaves}
+    for n in leaves:
+        tid = str(n.get("id") or "")
+        if tid not in deps:
+            continue
+        for d in (n.get("depends_on") or []):
+            k = str(d).strip()
+            if k in idset:
+                deps[tid].add(k)
+            elif k in by_title and by_title[k] in idset:
+                deps[tid].add(by_title[k])       # depends_on 写标题也认
+    levels: list[list[str]] = []
+    remaining = dict(deps)
+    done: set[str] = set()
+    while remaining:
+        layer = [n for n, d in remaining.items() if d <= done]
+        if not layer:                            # 环 → 剩余整体一层, 不阻塞
+            layer = sorted(remaining)
+        levels.append(sorted(layer))
+        done |= set(layer)
+        for n in layer:
+            remaining.pop(n, None)
+    return levels
+
+
+def file_conflicts(tree: dict[str, Any]) -> list[dict[str, Any]]:
+    """同层内写同一文件的冲突（并行安全边界）—— 返回 [{file, ids: [...]}]。
+
+    为什么: `parallel_groups` 只保证依赖顺序, 不保证"不撞车" ——
+      两个同层任务若 expected_files 有交集, 并行执行必然互相覆盖。
+      ⇒ 执行器需按此把冲突任务**降级为串行**（或报给用户裁决）。
+    只在**同一层**内检测（跨层有依赖约束, 不会同时跑）。
+    """
+    groups = parallel_groups(tree)
+    leaves = {str(n.get("id") or ""): n for n in tree_leaves(tree)}
+    out: list[dict[str, Any]] = []
+    for layer in groups:
+        owner: dict[str, list[str]] = {}
+        for nid in layer:
+            for f in (leaves.get(nid, {}).get("expected_files") or []):
+                owner.setdefault(str(f), []).append(nid)
+        for f, nids in sorted(owner.items()):
+            if len(nids) > 1:
+                out.append({"file": f, "ids": sorted(nids)})
+    return out
 
 
 def load_tree(root: Path | str, plan_id: str, project_id: str = "") -> dict[str, Any] | None:

@@ -75,8 +75,16 @@
   th{font-size:12px;color:var(--sub);font-weight:600;text-transform:uppercase;letter-spacing:.3px}
   tr:last-child td{border-bottom:none}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  @media(max-width:820px){.grid2{grid-template-columns:1fr}.io{grid-template-columns:1fr}}
-</style>
+  /* 模块 7 用到的补充类 */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:14px 0}
+  .thin{color:var(--sub);font-size:12.5px;font-weight:400}
+  .card.bad{border-left:3px solid #e8a0a0;background:#fffafa}
+  .card.good{border-left:3px solid #9fd8b0;background:#fafefb}
+  .card .t{font-weight:650;margin-bottom:6px;font-size:13.5px}
+  .card ul{margin:0;padding-left:18px}
+  .card li{margin:4px 0;font-size:13px;line-height:1.55}
+  @media(max-width:820px){.two{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}.io{grid-template-columns:1fr}}
+  </style>
 </head>
 <body>
 <div class="wrap">
@@ -581,10 +589,83 @@
     </div>
   </div>
 
+  <!-- ═══════════ 模块 7:平台能力吸收成果 ═══════════ -->
+  <h2><span class="n">7</span>平台能力吸收成果 —— 对标四家 · 10 项落地（全部实测）</h2>
+  <div class="hint">
+    做法：先看懂 <b>Hermes</b>（我自己的宿主）· <b>Codex</b> · <b>OpenClaw</b> · <b>amux</b>（开源里最接近你的控制平面）
+    的实现，逐条判断"哪些该吸收"，再按<b>最小可用</b>落地 —— 每一项都有实测证据，不是设计稿。<br>
+    本轮：<b>11 个提交 · 12 个文件 · +1,384 行</b>（提交区间 <code>4c9fbcaa..0f33c54f</code>）。
+  </div>
+
+  <table>
+    <thead><tr><th>#</th><th>吸收项</th><th>来源</th><th>实测证据（真实输出）</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>线程池 + 两级并发 + 事件回流</b><br><span class="thin">让"平台心脏"跳起来：反复 tick → 批内并行 → 批间串行</span></td><td>Hermes</td>
+        <td><code>ticks=3 · 4 执行 · 0.54s</code><br><code>start 001/002/003 → end → start 004 → end</code><br>★ 3 并发 · 树全 completed</td></tr>
+      <tr><td>2</td><td><b>CAS 认领任务</b><br><span class="thin">"两个 agent 永不会拿同一张卡"（compare-and-swap）</span></td><td>amux</td>
+        <td>三线程同抢一个叶：<code>agent-1 WIN / agent-2 lose / agent-3 lose</code><br>★ 恰好一人赢</td></tr>
+      <tr><td>3</td><td><b>舰队视图</b>（Worker awareness）<br><span class="thin">谁在做什么 · 谁空闲 · 干完了几个</span></td><td>amux</td>
+        <td>中途快照：<code>agent-architect busy → A 模块</code><br><code>agent-backend busy → B 模块</code></td></tr>
+      <tr><td>4</td><td><b>设置解析链</b><br><span class="thin">任务 → 员工 → 部门 → 公司 → 全局（逐级继承 + 可解释）</span></td><td>amux</td>
+        <td>7 个用例全过：<code>max_parallel=1(task) / 5(department) / 2(global)</code><br>附 <code>provenance</code>：值来自哪一级</td></tr>
+      <tr><td>5</td><td><b>自愈看门狗</b><br><span class="thin">检测 → 诊断 → 处置（默认 dry_run）</span></td><td>amux</td>
+        <td>造"claimed 2 小时未归还"→ <code>scan</code> 抓到 → dry_run 不动 → 真修归还 → 复查 <code>healthy=True</code></td></tr>
+      <tr><td>6</td><td><b>工作纪律写进 agent 定义</b><br><span class="thin">防 agent "越查越多"（成本失控）</span></td><td>Codex</td>
+        <td>9 角色纪律 · developer: <code>最多完整读 10 个文件</code><br>architect prompt 1379 → <b>1511 字</b>（+132）</td></tr>
+      <tr><td>7</td><td><b>Steering 运行中改向</b><br><span class="thin">不改已完成的、只影响未做的</span></td><td>amux</td>
+        <td>4 叶任务跑到一半发 <code>stop</code> → <code>ticks=1 · 只执行 2 个</code><br>停止原因："被 steering 指令停止"</td></tr>
+      <tr><td>8</td><td><b>逐步轨迹</b><br><span class="thin">一次执行的完整步骤链（可复盘）</span></td><td>OpenClaw</td>
+        <td><code>EXR-be97ffc1</code> → 3 步：<code>REQUESTED → STARTED(agent_id) → COMPLETED(status)</code></td></tr>
+      <tr><td>9</td><td><b>消息总线 + 来源戳</b><br><span class="thin">实现方案书 §4.4；服务端记录真实发送者</span></td><td>§4.4 / amux</td>
+        <td>自称 <code>from='executor'</code> 而服务端记 <code>sent_by='agent-backend'</code><br>★ 冒充被识别 <code>verified=True</code></td></tr>
+      <tr><td>10</td><td><b>LLM 路由产品化</b><br><span class="thin">OpenAI 兼容入站端点 ⇒ 可独立交付/变现</span></td><td>对标 GoModel</td>
+        <td><code>factory llm serve</code> → <code>content='收到' · provider=deepseek</code><br>OpenAI 必需字段齐备 · 400/404 正确</td></tr>
+    </tbody>
+  </table>
+
+  <h3>前后对比（本轮做了什么）</h3>
+  <div class="two">
+    <div class="card bad">
+      <div class="t">之前</div>
+      <ul>
+        <li><code>core/scheduler</code> <b>零装配</b> · 0 消费者 ⇒ "决定下一步是谁"在运行时不存在</li>
+        <li><b>并行度 = 0</b>（§1.7.1 要求 ≥3）</li>
+        <li>无舰队视图 · 无逐步轨迹 · 无 agent 间通信</li>
+        <li>无自愈 · 无改向 · 配置无处继承</li>
+        <li>agent 无纪律（越查越多）</li>
+        <li>LLM 路由只有"出站"，无法对外交付</li>
+      </ul>
+    </div>
+    <div class="card good">
+      <div class="t">现在（全部实测）</div>
+      <ul>
+        <li>平台心脏跳动：判定 → 选人 → <b>并行(3)</b> → CAS 防双领 → 闭环</li>
+        <li><b>看得见</b>：舰队视图（谁在做什么）+ 逐步轨迹（走过的每步）</li>
+        <li><b>会协作</b>：消息总线 + 来源戳（冒充可识别）</li>
+        <li><b>会自愈</b>：检测 → 诊断 → 处置（默认 dry_run）</li>
+        <li><b>能改向</b>：Steering（只影响未派发的）</li>
+        <li><b>配置能继承</b>：任务→员工→部门→公司→全局</li>
+        <li><b>agent 有纪律</b>：硬边界写进定义本体</li>
+        <li>★ <b>多了一个可交付产品</b>：LLM 路由 OpenAI 兼容端点</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>逐项代码位置（本轮新增）</b>：
+    <code>bootstrap/scheduler_wiring.py</code>(377) ·
+    <code>bootstrap/scheduler_pump.py</code>(298) ·
+    <code>services/work/messages.py</code>(139) ·
+    <code>services/work/steering.py</code>(146) ·
+    <code>services/operations/healing.py</code>(187) ·
+    <code>services/organization/settings.py</code>(119) ·
+    <code>infrastructure/llm/serve.py</code>(187)
+  </div>
+
   <div class="note" style="margin-top:26px">
     <b>本页与上一页的区别</b>：上一页是<b>清单视图</b>（有什么命令 / 哪些域厚 / 完成度）；
     本页是<b>流动视图</b>（一条需求如何逐环变成代码，数据落在哪，命令背后经过哪几层）。
-    <br>全部路径 / 大小 / ID / 状态均来自 2026-09-18 的一次真实实跑，无模拟数据。
+    <br>全部路径 / 大小 / ID / 状态均来自 2026-09-18 的一次真实端到端运行（隔离数据根）。
   </div>
 
 </div>

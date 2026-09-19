@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>execution-optimal-path</title>
+<style>
+  :root{--bg:#f5f5f7;--fg:#1d1d1f;--sub:#6e6e73;--line:#d2d2d7;--blue:#0071e3;--code-bg:#f0f0f2}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.7 -apple-system,"SF Pro SC","PingFang SC",system-ui,sans-serif}
+  main{max-width:960px;margin:0 auto;padding:44px 22px 90px}
+  h1{font-size:30px;letter-spacing:-.4px;margin:0 0 8px}
+  h2{font-size:21px;margin:38px 0 12px;padding-top:16px;border-top:1px solid var(--line)}
+  h3{font-size:17px;margin:26px 0 10px}
+  h4{font-size:15px;margin:20px 0 8px;color:var(--sub)}
+  p{margin:10px 0}
+  blockquote{margin:12px 0;padding:10px 14px;background:#fff;border-left:3px solid var(--blue);
+    border-radius:0 8px 8px 0;color:var(--sub)}
+  pre{background:#1d1d1f;color:#f5f5f7;padding:14px 16px;border-radius:10px;overflow:auto;
+    font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+  code{background:var(--code-bg);padding:1.5px 5px;border-radius:5px;
+    font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre code{background:none;padding:0;color:inherit}
+  table{width:100%;border-collapse:collapse;margin:14px 0;background:#fff;
+    border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05);font-size:14px}
+  th{background:#fafafa;text-align:left;font-weight:600;padding:9px 12px;border-bottom:1px solid var(--line)}
+  td{padding:9px 12px;border-bottom:1px solid #f0f0f2;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  ul{margin:8px 0 8px 4px;padding-left:20px}
+  li{margin:5px 0}
+  strong,b{font-weight:600}
+  .foot{margin-top:44px;color:var(--sub);font-size:12.5px;text-align:center}
+</style></head><body><main>
+<h1>AI Factory OS — 复杂任务执行:最优实施路径</h1>
+<blockquote>状态: 方案 (Plan) | 日期: 2026-09-19 | 依据: 我方自评 + Codex 独立评审(读代码核实)</blockquote>
+<blockquote>一句话: <b>先让执行链"跑得起来且不出静默故障", 再谈能力(审查员/隔离/MoA)。</b></blockquote>
+<p>---</p>
+<h2>0. 为什么是这条路（两方评审的交集）</h2>
+<pre>我方自评: 方向对, 但依据部分不实 + 做早了; 该先做执行能力(ct-1)。
+Codex:    暂缓原设计; 先统一执行存储 + run --plan + Outcome/失败释放/文件冲突。
+⇒ 交集（也是本方案）: 【地基 → 能跑 → 不静默出错 → 语义正确 → 资源真实】, 能力后置。</pre>
+<p><b>关键否决(接受 Codex)</b>: 原设计把 <code>single/parallel/isolated/moa</code> 做成一个 enum = 错误维度。</p>
+<p><code>isolated</code>(上下文可见性) · <code>parallel</code>(并发度) · <code>moa</code>(模型多样性) <b>不是互斥的</b> ⇒ 应为<b>三个正交属性</b>。</p>
+<p>---</p>
+<h2>1. 四刀方案（每刀 = 1 commit + 全量验证 + STOP）</h2>
+<h3>第 0 刀 · 统一执行存储（地基）</h3>
+<table><thead><tr><th></th><th></th></tr></thead><tbody>
+<tr><td><b>现状(实测)</b></td><td>同一个 <code>RuntimeStore</code> 类被两条链用<b>两个路径</b>: pump→<code>root/runtime</code>（磁盘 0 个）· CLI→<code>root/runtimes</code>（1 个）; 另有 <code>ExecStore</code>→<code>root/exec</code>（6 个）</td></tr>
+<tr><td><b>目标</b></td><td><b>一个路径 + 一个权威 Store</b>（一数据一权威源 —— 与既有铁律同源）</td></tr>
+<tr><td><b>做法</b></td><td>① 定权威路径（建议 <code>&lt;root&gt;/exec</code>, 数据最多）② 另一个改为兼容读 ③ 迁移现存 <code>runtimes/</code> 1 个（先备份）</td></tr>
+<tr><td><b>验收</b></td><td>pump 建的 execution 能被 CLI 查到（<b>互可见</b>）; 三条链只有一处写</td></tr>
+<tr><td><b>风险</b></td><td>迁移真实数据 ⇒ <b>先备份</b>（<code>runtimes/</code> + <code>exec/</code>）</td></tr>
+</tbody></table>
+<p><b>为什么必须第一刀</b>: <code>run --plan</code>（第 1 刀）要跑整棵树并<b>续跑</b> —— 若存储分裂, pump 与 CLI 各写各的, 续跑读不到状态。</p>
+<h3>第 1 刀 · <code>run --plan</code> + 三个"不静默"前提（必须一起做）</h3>
+<table><thead><tr><th></th><th></th></tr></thead><tbody>
+<tr><td><b>① run --plan</b></td><td>按 <code>depends_on</code> 拓扑序跑整棵树（现在只能 <code>run --task</code> 单个 ⇒ 13 任务 13 次调用）</td></tr>
+<tr><td><b>② claim 释放(cr-4)</b></td><td>现状: <code>_claim_and_run()</code> <b>只在抛异常时</b>释放 leaf; 返回 <b>FAILED 结果</b>时 leaf <b>保持 claimed</b> ⇒ <b>任务卡死永不重试</b>。修: FAILED ⇒ 释放 + 回写 + 落 checkpoint</td></tr>
+<tr><td><b>③ 文件冲突(cr-5)</b></td><td>现状: <code>decomposition.file_conflicts()</code> 要求"同层写同文件 ⇒ 降级串行", 但<b>没人调用</b> ⇒ 并行会<b>静默覆盖</b>。修: 并行前检测, 冲突降级串行</td></tr>
+<tr><td><b>验收</b></td><td>13 个任务一条命令跑完; <b>故意让第 7 个失败 ⇒ 能续跑且前 6 个不重跑</b>; 两个写同文件的任务被串行</td></tr>
+<tr><td><b>为什么三件一起</b></td><td>★ 只做 ① 会<b>更糟</b>: 跑起来就会遇到"失败即卡死"+"并行静默覆盖" —— 比现在人工逐个跑还危险</td></tr>
+</tbody></table>
+<h3>第 2 刀 · Outcome 接进完成语义（cr-3）</h3>
+<table><thead><tr><th></th><th></th></tr></thead><tbody>
+<tr><td><b>现状</b></td><td>contract 明写 "execution success ≠ business completion, <b>必须 accepted Outcome</b>", 但 pump 见结果成功就写 <code>completed</code>; <code>has_accepted_outcome()</code> 也把 <code>completed/done</code> 当验收</td></tr>
+<tr><td><b>目标</b></td><td>"完成"必须经验收语义（不能"跑通即完成"）</td></tr>
+<tr><td><b>验收</b></td><td>无 accepted Outcome 的任务<b>不能</b>被标 <code>completed</code>; 与"acceptance 无消费方"一并解决</td></tr>
+</tbody></table>
+<h3>第 3 刀 · 让预算是真的（cr-6）</h3>
+<table><thead><tr><th></th><th></th></tr></thead><tbody>
+<tr><td><b>现状</b></td><td><code>SimpleLoad</code> 直接返回 <code>1e9</code> · <code>OrgResource.capability()</code> 返回 <code>None</code> ⇒ <code>cost_estimate</code> 实际为 <b>0</b> ⇒ 预算约束形同虚设（"超限该阻断就阻断"无数据支撑）</td></tr>
+<tr><td><b>目标</b></td><td>load/capability 返回真实值（数据源: <code>providers/usage.json</code> 已存在）</td></tr>
+<tr><td><b>验收</b></td><td>预算能真实阻断（不是 1e9）; 超限时确实推迟/拒绝</td></tr>
+</tbody></table>
+<p>---</p>
+<h2>2. 后置（明确不做, 及原因）</h2>
+<table><thead><tr><th>能力</th><th>为什么后置</th></tr></thead><tbody>
+<tr><td><b>角色外置(cr-2)</b></td><td>★ <code>RoleDefinition.prompt_template</code> <b>全仓无运行时消费者</b> ⇒ 先让 runtime 真读角色, 再谈外置; 否则"只加一个文件"只是多个目录</td></tr>
+<tr><td><b>审查员插件(cc-2)</b></td><td>依赖上一条（角色得先被消费干净）; 且现在无人正在加审查员（"只问现在谁在用"）</td></tr>
+<tr><td><b>上游上下文传递(ct-6)</b></td><td>第 1/2 刀跑通后再做（那时才知道传什么）</td></tr>
+<tr><td><b>isolated / MoA</b></td><td>依赖第 3 刀（真实预算）; 且 MoA 需要模型选择+聚合契约, 成本高</td></tr>
+<tr><td><b>"执行策略" enum</b></td><td>★ Codex 判定错误维度 ⇒ 改为三个正交属性（<code>context_visibility</code> / <code>concurrency</code> / <code>model_diversity</code>）, 且等有实现再定</td></tr>
+</tbody></table>
+<p>---</p>
+<h2>3. 为什么这是最优（而不是"我原设计"或"Codex 的全盘"）</h2>
+<table><thead><tr><th>判据</th><th>本方案</th></tr></thead><tbody>
+<tr><td>顺序按依赖</td><td>地基(存储) → 能力(跑整棵树) → 语义(完成) → 资源(预算) ✓</td></tr>
+<tr><td>守住"不静默"底线</td><td>第 1 刀强制三件一起（否则跑起来更糟）✓</td></tr>
+<tr><td>不做没消费者的</td><td>角色外置/审查员后置（cr-2 证据: 没人读）✓</td></tr>
+<tr><td>不做过早抽象</td><td>"执行策略"改正交属性且后置 ✓</td></tr>
+<tr><td>对齐 Founder 铁律</td><td>一数据一权威源(第0刀) · 只问现在谁在用(后置项) · 不给自己造活 ✓</td></tr>
+</tbody></table>
+<h2>4. 一句话</h2>
+<pre>最优路径 = 【先修地基与安全网, 再让整棵树跑起来, 最后才谈智能】
+  第 0 刀 统一执行存储   —— 否则续跑读不到状态
+  第 1 刀 run --plan + claim 释放 + 文件冲突 —— 三件一起, 否则跑起来更糟
+  第 2 刀 Outcome 接进完成语义
+  第 3 刀 真实预算
+  ⇒ 之后才有资格谈: 角色消费 → 上游传递 → isolated / MoA</pre>
+<div class="foot">由 execution-optimal-path.md 生成 · 3183 字符</div>
+</main></body></html>

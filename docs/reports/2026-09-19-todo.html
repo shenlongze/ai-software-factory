@@ -357,20 +357,13 @@
       同名 KnowledgeStore 2 → 1 · 记忆机制 5 → 1。<br>
       <b>方式</b>: 不做大迁移（会造出新的一套）; <b>新增走新机制 + 旧的自然淘汰</b>, 每淘汰一个数字减一。<br>
       <b>纪律</b>: 新增任何存储前先问「能不能用事件+投影表达」—— 能则<b>不许新增 store</b>。</span></span></label>
-    <label class="item"><input type="checkbox" id="imp-1"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>「改全」缺一环：有文件级索引，缺<b>精确调用图</b></span>
-      <span class="meta"><b>Founder 问</b>: "项目需要改一段代码, 如何才能改全?"<br>
-      <b>实测</b>: 改 <code>upsert_fact</code> 靠 grep 得 13 处/3 文件 —— 其中定义 2 处是<b>「同名异物」</b>
-      (<code>conversation.upsert_fact</code> 与 <code>scoped_facts.upsert_fact</code>) ⇒ 裸名搜索分不清谁是谁。<br>
-      <b>已有</b>: <code>repo_intelligence.py</code> 的<b>仓库智能 7 层</b>（L1 文件 / L2 模块 / L3 依赖 / L4 符号 /
-      <b>L5 调用关系 + callers_of 影响面</b> / L6 测试映射 / L7 架构上下文），且有真消费者
-      (<code>agent_runtime.py:154</code> · <code>ranking.py:1461/1788</code>)。<br>
-      <b>★ 但精度不足（实测）</b>: 它是「<b>正则级启发式</b>」—— <code>callers_of</code> 把
-      <code>_new_id</code>/<code>_load_conv</code>（其实是被 upsert_fact 调用的）当成「调用者」⇒ <b>假阳性</b>;
-      <code>architecture()</code>/<code>dependencies()</code> 是属性而非方法（接口易误用）。<br>
-      <b>建议</b>: 升级为 <b>AST 级</b>（Python <code>ast</code> 属标准库 ⇒ 仍零依赖）;
-      再加「四通道」(静态 · 文本 · 行为契约 · 文档引用) 与影响面清单输出。
-      新增 <code>factory change plan SYMBOL</code>：只分析不改，输出影响面清单（含「无测试覆盖」风险标注）。</span></span></label>
+    <label class="item done"><input type="checkbox" id="imp-1" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 「改全」的精确调用图 —— 已由 imp-0e 落地（AST 化）</span>
+      <span class="meta"><b>本条的答案就是 imp-0e</b>: 原 callers_of 是正则级（把被调用者当调用者,
+      6+ 假阳性）⇒ 已升 AST 级 + 修"包名前缀导致跨文件依赖全丢" + "相对导入拼接多点" 两个解析 bug。<br>
+      <b>★ 修后实测</b>: <code>upsert_fact</code> 调用者 6 处全对（proposal.py:242/254/268/282/299 +
+      understanding.py:419, 行号与人工 grep 一致）· 假阳性 0 处 · proposal.py 依赖含 understanding.py ✓<br>
+      <b>下一步（④ 剩余）</b>: <code>factory change plan</code> 输出 + 影响面落事件（可查"上次改这个影响了几处"）。</span></span></label>
     <label class="item done"><input type="checkbox" id="imp-0" checked><span class="body">
       <span class="t"><span class="tag p1">P1</span>✅ 设计已交付: <code>docs/design/storage-and-memory-design.md</code>（+HTML 预览）</span>
       <span class="meta"><b>总纲（一条原则推出全部）</b>: <b>不可派生的才「记」, 可派生的只「算」; 每个数据只有一个权威源</b>。<br>

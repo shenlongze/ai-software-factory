@@ -193,6 +193,79 @@ class ConsoleView:
                         "timestamp": str(getattr(e, "timestamp", "") or "")})
         return out
 
+    def fleet(self) -> dict[str, Any]:
+        """★ 舰队视图 —— 谁在做什么、谁空闲、谁干完了（吸收自 amux 的 Worker awareness）。
+
+        amux 原文: "every worker sees the fleet (who is live, what they own, what they are
+        doing)" —— 一个调度平台如果不能回答"此刻谁在干什么", 用它的人就只能盲猜。
+
+        数据源（都是已有事实, 不新增存储）:
+          · 任务树的叶: status='claimed' → claimed_by/claimed_at  ⇒ **正在做**
+          · execution 记录: agent_id + status + created_at        ⇒ **做过什么 / 做完没**
+        ⇒ 合成一张 "worker → 当前任务 + 最近活动" 的表。
+
+        实现: 扫 root 下所有任务树 + execution 记录（失败安全: 缺/坏 → 空表, 不抛）。
+        """
+        workers: dict[str, dict[str, Any]] = {}
+        busy_leaves: list[dict[str, Any]] = []
+        if self._root is None:                      # 无数据根 ⇒ 空舰队（不抛）
+            return {"workers": [], "busy": 0, "idle": 0, "busy_leaves": []}
+
+        # ── ① 正在做: 任务树里 claimed 的叶
+        try:
+            from ai_factory_os.services.work import decomposition as D
+
+            for t in D.list_trees(self._root):
+                pid = str(t.get("plan_id") or "")
+                tree = D.load_tree(self._root, pid)
+                if not tree:
+                    continue
+                for n in tree.get("nodes") or []:
+                    if str(n.get("status") or "").lower() != "claimed":
+                        continue
+                    who = str(n.get("claimed_by") or "(未记名)")
+                    busy_leaves.append({
+                        "worker": who, "plan_id": pid,
+                        "node_id": str(n.get("id") or ""),
+                        "task": str(n.get("title") or ""),
+                        "since": str(n.get("claimed_at") or ""),
+                    })
+                    w = workers.setdefault(who, {"worker": who, "status": "busy",
+                                                 "current_task": "", "since": "",
+                                                 "done": 0, "failed": 0})
+                    w["current_task"] = str(n.get("title") or "")
+                    w["since"] = str(n.get("claimed_at") or "")
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
+
+        # ── ② 做过什么: execution 记录（agent_id × status）
+        try:
+            from ai_factory_os.services.execution.runtime.store import RuntimeStore
+
+            for req in RuntimeStore(self._root / "runtime").list_executions():
+                who = str(req.agent_id or "").strip()
+                if not who:
+                    continue
+                w = workers.setdefault(who, {"worker": who, "status": "idle",
+                                             "current_task": "", "since": "",
+                                             "done": 0, "failed": 0})
+                st = str(getattr(req.status, "value", req.status)).upper()
+                if st in ("COMPLETED", "SUCCESS", "SUCCEEDED"):
+                    w["done"] = int(w.get("done") or 0) + 1
+                elif st in ("FAILED", "ERROR"):
+                    w["failed"] = int(w.get("failed") or 0) + 1
+        except Exception:  # noqa: BLE001
+            pass
+
+        rows = sorted(workers.values(),
+                      key=lambda w: (w.get("status") != "busy", -(int(w.get("done") or 0))))
+        return {
+            "workers": rows,
+            "busy": sum(1 for w in rows if w.get("status") == "busy"),
+            "idle": sum(1 for w in rows if w.get("status") != "busy"),
+            "busy_leaves": busy_leaves,
+        }
+
     def dashboard(self, *, recent_limit: int = DEFAULT_RECENT_LIMIT) -> dict[str, Any]:
         """七域汇总快照（只读; 空工厂 → 全空域, 永不因数据缺失失败）。"""
         return {

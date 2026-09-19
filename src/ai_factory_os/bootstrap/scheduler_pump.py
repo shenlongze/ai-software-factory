@@ -98,19 +98,23 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
     from ai_factory_os.services.execution.runtime.store import RuntimeStore
 
     root = Path(getattr(ports.work, "_root", "."))
-    node_id, task_id = "", ""
+    node_id, task_id, who = "", "", ""
     try:
         store = RuntimeStore(root / "runtime")
         for req in store.list_executions():
             if str(req.id) == execution_id:
-                node_id = str((req.input or {}).get("node_id") or "")
+                inp = req.input or {}
+                node_id = str(inp.get("node_id") or "")
                 task_id = str(req.task_id or "")
+                # ★ 认领要记**真实成员名**（不是执行 id）—— 否则舰队视图里看到的
+                #   全是 "exec:EXR-00x", 回答不了"谁在干什么"（实测暴露过）。
+                who = str(inp.get("member_id") or req.agent_id or "")
                 break
     except Exception:  # noqa: BLE001 — 拿不到就退化为"直接跑"（老行为）
         return run_execution(execution_id)
 
     if node_id and task_id:
-        got = D.claim_leaf(root, task_id, node_id, member_id=f"exec:{execution_id}")
+        got = D.claim_leaf(root, task_id, node_id, member_id=who or f"exec:{execution_id}")
         if not got.get("ok"):
             # 已被别人领 ⇒ 本执行作废（不跑）—— 这正是 CAS 的意义
             return {"status": "SKIPPED", "reason": f"CAS 认领失败: {got.get('reason')}"}

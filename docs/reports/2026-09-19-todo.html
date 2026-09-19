@@ -309,6 +309,17 @@
       未声明公司者只看到公共 ✓<br>
       <b>⏳ 未做（刀3b, 可缓）</b>: FTS5 检索层 + 最近注入 —— 84 条 facts 阶段用不到,
       等体量上来再做（这才是真的"将来用"）。</span></span></label>
+    <label class="item"><input type="checkbox" id="tsc-4"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>刀3b（未做）：FTS5 检索层 + 最近注入</span>
+      <span class="meta"><b>为什么单列一条</b>: 此前它只写在 tsc-3(已完成)的尾部一句话里 ⇒ 会被当"已了结",
+      而它<b>并未实现</b>（Founder 2026-09-19 问"刀3b 记录到 todolist 中了么, 因为没有做"时发现）。<br>
+      <b>要做什么</b>: ① <b>FTS5 检索层</b> —— facts 多了以后按相关性检索（开源对标 context-mode:
+      索进 FTS5 + <b>BM25</b> 只取相关, 压缩时<b>不倒回上下文</b>）; ② <b>最近注入</b> ——
+      只把"最近 N 条 + 相关若干"送进 prompt, 而非全量。<br>
+      <b>为什么现在不做</b>: 实测当前总 facts <b>84 条</b>、单条 prompt ≈ 570 tokens（上限百万级）
+      ⇒ 用不到检索; 现在做就是"为将来买单"（与既有纪律冲突）。<br>
+      <b>触发条件（做它的信号）</b>: 单作用域 facts 超过几百条, 或 prompt 超 ~20k tokens,
+      或出现"相关事实捞不出来"的实际抱怨。★ 本仓已有 FTS5 能力（<code>learning/history_search</code>）可复用。</span></span></label>
   </div>
 
   <!-- ═══════ 7 ═══════ -->

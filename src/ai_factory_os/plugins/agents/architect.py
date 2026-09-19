@@ -519,12 +519,18 @@ class ArchitectAgent:
             )
         # ★ roles 传真实角色清单（单一事实源: plugins/agents/roles.py 的 ROLE_IDS）
         from ai_factory_os.plugins.agents.roles import ROLE_IDS as _ROLE_IDS
+        from ai_factory_os.plugins.agents.roles import discipline_block as _disc
 
         prompt = _ARCH_AGENT_PROMPT.format(
             product=_input_summary("product", product_payload),
             ux_ui=_input_summary("ux_ui", ux_ui_payload),
             roles=", ".join(_ROLE_IDS),
         )
+        # ★ 注入工作纪律（吸收自 Codex 的 agent 定义写法）—— 让模型自己看见硬边界,
+        #   而不是靠事后拦截（LLM 天然"越查越多" ⇒ 成本失控 + 上下文被挤出）。
+        _disc_block = _disc("architect")
+        if _disc_block:
+            prompt = f"{prompt}\n\n{_disc_block}"
         last_error: ArchitectError | None = None
         for attempt in range(self._max_retries + 1):
             response = self._provider.generate(

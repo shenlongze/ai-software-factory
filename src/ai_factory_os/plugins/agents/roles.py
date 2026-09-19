@@ -61,6 +61,12 @@ class RoleDefinition:
     prompt_template: str = ""
     workflow_stages: tuple[str, ...] = ()
     execution_kind: str = "planning"
+    # ★ 2026-09-19 加（吸收自 Codex 的 agent 定义写法: "## Depth limits / **Hard limit**"）:
+    #   工作纪律 —— 该角色干活时的硬边界（读多少文件 / 查多少 / 何时停手）。
+    #   为什么必须有: LLM 天然"越查越多"（成本失控 + 上下文被无关内容挤满）。
+    #   Codex 的做法是把边界写进 agent 定义本体让模型自己看见 —— 简单但有效。
+    #   注入: discipline_block(role_id)（见下方）, 让纪律成为**单一事实源**。
+    discipline: tuple[str, ...] = ()
 
     @property
     def is_executable(self) -> bool:
@@ -180,6 +186,28 @@ _WRITER_PROMPT = (
     "输出格式: 严格 JSON 对象, 4 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
+#: 全体角色共通的底线纪律（与角色专属纪律合并注入）
+_COMMON_DISCIPLINE: tuple[str, ...] = (
+    "先只读必要的文件: 用文件名/目录结构判断, 不逐文件通读",
+    "拿不准就问或如实报告缺口 —— **不猜、不编**",
+    "做完就停: 不顺手扩展范围, 不主动重构无关代码",
+)
+
+
+def discipline_block(role_id: str) -> str:
+    """组装某角色的"工作纪律"文本块（给 prompt 用）。
+
+    契约: 角色不存在 ⇒ 只给共通底线（不抛）; 无纪律 ⇒ 空串。
+    让"纪律"成为**单一事实源**（RoleDefinition.discipline）, 而非散在各 prompt 里。
+    """
+    role = ROLE_REGISTRY.get(str(role_id))
+    items = list(_COMMON_DISCIPLINE) + (list(role.discipline) if role else [])
+    if not items:
+        return ""
+    lines = "\n".join(f"- {x}" for x in items)
+    return f"## 工作纪律（硬边界，必须遵守）\n{lines}"
+
+
 ROLE_REGISTRY: dict[str, RoleDefinition] = {
     "product-manager": RoleDefinition(
         role_id="product-manager",
@@ -188,6 +216,10 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         prompt_template=_PM_PROMPT,
         workflow_stages=("product",),
         execution_kind="executable",
+            discipline=(
+                "面向用户说话: 不写技术实现细节",
+                "MVP 只圈最小可用, 不堆功能清单",
+            ),
     ),
     "writer": RoleDefinition(
         role_id="writer",
@@ -196,6 +228,9 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         prompt_template=_WRITER_PROMPT,
         workflow_stages=("documentation",),
         execution_kind="executable",
+            discipline=(
+                "忠于输入材料, 不添加未提及的事实",
+            ),
     ),
     "security": RoleDefinition(
         role_id="security",
@@ -204,6 +239,9 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         prompt_template=_SECURITY_PROMPT,
         workflow_stages=("security",),
         execution_kind="executable",
+            discipline=(
+                "按威胁清单逐项核对, 不做泛泛而谈的安全建议",
+            ),
     ),
     "reviewer": RoleDefinition(
         role_id="reviewer",
@@ -212,6 +250,10 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         prompt_template=_REVIEW_PROMPT,
         workflow_stages=("review",),
         execution_kind="executable",
+            discipline=(
+                "只审被指派的范围, 不做全仓体检",
+                "指出问题时给出具体位置（文件:行）",
+            ),
     ),
     "ui-designer": RoleDefinition(
         role_id="ui-designer",
@@ -220,6 +262,9 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         prompt_template=_UI_PROMPT,
         workflow_stages=("ux_ui",),
         execution_kind="executable",
+            discipline=(
+                "先定布局与交互, 再谈视觉细节",
+            ),
     ),
     "architect": RoleDefinition(
         role_id="architect",
@@ -228,6 +273,9 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         prompt_template=_ARCH_PROMPT,
         workflow_stages=("architecture",),
         execution_kind="executable",
+            discipline=(
+                "每个模块都要能落到文件/接口上, 不写抽象空话",
+            ),
     ),
     "developer": RoleDefinition(
         role_id="developer",
@@ -236,6 +284,10 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         prompt_template=_DEV_PROMPT,
         workflow_stages=("development",),
         execution_kind="executable",
+            discipline=(
+                "**最多完整读 10 个文件** —— 其余用 grep/glob 定位",
+                "只改任务点名的文件, 不顺手重构",
+            ),
     ),
     "tester": RoleDefinition(
         role_id="tester",
@@ -244,6 +296,9 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         prompt_template=_TESTER_PROMPT,
         workflow_stages=("testing",),
         execution_kind="executable",
+            discipline=(
+                "只验证不修: 发现缺陷如实记录（改是 Developer 的事）",
+            ),
     ),
     "devops": RoleDefinition(
         role_id="devops",
@@ -252,6 +307,10 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         prompt_template=_DEVOPS_PROMPT,
         workflow_stages=("release",),
         execution_kind="executable",
+            discipline=(
+                "改动前先说明回滚方式",
+                "不擅自改生产配置/密钥",
+            ),
     ),
 }
 

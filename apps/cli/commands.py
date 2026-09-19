@@ -1306,13 +1306,29 @@ def cmd_run_plan(ctx: FactoryContext, args: Any) -> dict:
     ports = wire_scheduler(ctx.root, plan_id=plan_id, project_id=project_id)
     with ctx.logger_scope() as logger:
         service = _open_execution_service(ctx, logger=logger)
+        store = _open_runtime_store(ctx)          # 失败回写用（与 service 同一个装配点）
 
         def _run_one(execution_id: str) -> Any:
-            """跑一个执行 —— 异常也转成 FAILED 结果（让 drive 能归还叶, 不裸抛断整批）。"""
+            """跑一个执行 —— 异常也转成 FAILED **并落盘**（让 drive/捡取有依据, 不裸抛断整批）。
+
+            ★ 实测教训: 只返回 dict{"status":"FAILED"} **不够** ——
+              执行请求在 RuntimeStore 里仍是 PENDING ⇒ 下一轮又被捡起 ⇒ 失败 ⇒ 再捡 ⇒
+              **打满 max_ticks 空转**（实测 50 轮）。失败必须**写回存储**, 重试才有依据。
+            """
             try:
                 return service.run(execution_id)
             except Exception as exc:  # noqa: BLE001 — 单叶失败不终止整棵树
-                return {"status": "FAILED", "error": f"{type(exc).__name__}: {exc}"}
+                err = f"{type(exc).__name__}: {exc}"
+                try:
+                    from ai_factory_os.services.execution.runtime.types import ExecutionStatus
+
+                    req = store.get_execution(execution_id)
+                    if req is not None:
+                        req.status = ExecutionStatus.FAILED
+                        store.save_execution(req)
+                except Exception:  # noqa: BLE001 — 落盘失败也不该炸掉整棵树
+                    pass
+                return {"status": "FAILED", "error": err}
 
         rep = drive(ports, run_execution=_run_one, max_parallel=max_parallel)
 

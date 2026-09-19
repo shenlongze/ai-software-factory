@@ -197,12 +197,16 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
         if node_id and task_id:
             D.release_leaf(root, task_id, node_id, status="pending")   # 回滚, 供重认
         raise
-    # ★ 2026-09-19（cr-4）: **返回值是 FAILED 时也必须归还** ——
-    #   原先只有"抛异常"才回滚; 若执行正常返回但终态为 FAILED, 叶会**永久停在 claimed**
-    #   ⇒ 该叶再也不会被调度（比"不能续跑"更糟: 静默卡死）。
-    #   归还为 pending ⇒ 下一轮 tick 可重认（配合 checkpoint 可断点续跑）。
+    # ★ 2026-09-19（cr-4 修正）: 返回值为 FAILED ⇒ **把叶标为 cancelled（终止）**。
+    #   原先归还为 "pending"（供重认）—— 但实测: 失败多为**环境性**（如 runtime 未注册）,
+    #   归还后下一轮又被调度 ⇒ 失败 ⇒ 再归还 ⇒ **打满 max_ticks 空转, 且每轮新建执行**
+    #   （实测: 一棵 13 叶的树创建了 50 个执行）。
+    #   ★ 为什么用 cancelled 而不是 failed: `DecisionKind` 只有
+    #     READY/BLOCKED/COMPLETED/CANCELLED/UNRESOLVED —— **没有 FAILED**,
+    #     `_TERMINAL = {completed, cancelled}`; 用 cancelled 才能让调度器真正停下。
+    #     语义 = "该叶终止, 不再自动重试（需人工介入/修环境后重跑）" —— 失败要显式, 不空转。
     if node_id and task_id and _looks_failed(result):
-        D.release_leaf(root, task_id, node_id, status="pending")
+        D.release_leaf(root, task_id, node_id, status="cancelled")
     return result
 
 
@@ -216,6 +220,44 @@ class PumpReport:
     deferred: list[str] = field(default_factory=list)      # 被容量/预算推迟的叶
     paused: list[str] = field(default_factory=list)        # ★ 被 steering 指令暂停的叶（吸收项 7）
     stopped_because: str = ""                              # 停止原因（可解释）
+
+
+def _pending_leftovers(root: Path, ports: Ports) -> list[str]:
+    """★ 捡起【遗留 PENDING 执行】—— 上一轮中断留下的（已在 RuntimeStore 但没跑完）。
+
+    为什么必须捡: tick 看到该叶"已有活跃执行"（PENDING）⇒ 判 BLOCKED（防重复是对的）,
+    但若不把存量 PENDING 跑掉, 它就**永远挂着** —— 表现为整棵树卡住不动。
+
+    只捡**本任务树**的（按 `task_id == plan_id` 过滤）—— 不干扰别的工作。
+
+    ★ 防死循环（实测踩过）: cr-4 会把"执行返回 FAILED"的叶**归还为 pending**,
+    若失败是**环境性**的（如 `NoAvailableRuntimeError` —— runtime 未注册）,
+    下一轮又会捡起同一个 PENDING ⇒ 失败 ⇒ 归还 ⇒ 再捡 …… **打满 max_ticks 空转**
+    （实测: 13 叶的树创建了 51 个执行、同一 id 重试 50 轮）。
+    ⇒ 规则: **同一叶已有 FAILED 执行（且无 SUCCESS）时不再捡** —— 交给人工/上层处置,
+      不空转（这也符合"失败要显式, 不静默重试"）。
+    """
+    plan_id = str(getattr(ports.work, "_plan_id", "") or "")
+    pending: list[tuple[str, str]] = []       # (execution_id, node_id)
+    by_node: dict[str, set[str]] = {}          # node_id → 见过的状态集合
+    try:
+        for req in open_runtime_store(root).list_executions():
+            st = str(getattr(req.status, "value", req.status) or "").upper()
+            node = str((req.input or {}).get("node_id") or "")
+            if node:
+                by_node.setdefault(node, set()).add(st)
+            if st == "PENDING" and (not plan_id or str(req.task_id or "") == plan_id):
+                pending.append((str(req.id), node))
+    except Exception:  # noqa: BLE001 — 读不到 ⇒ 不捡（保持原行为）
+        return []
+    out: list[str] = []
+    for eid, node in sorted(pending):
+        seen = by_node.get(node, set())
+        # ★ 该叶失败过且从未成功 ⇒ 不重试（防环境性失败空转）
+        if "FAILED" in seen and not (seen & {"SUCCESS", "COMPLETED"}):
+            continue
+        out.append(eid)
+    return out
 
 
 def drive(
@@ -263,19 +305,24 @@ def drive(
         rep.deferred.extend(result.deferred)
 
         if not result.scheduled:
-            # 没有可推进的执行: 要么全完成, 要么全被卡（依赖/能力/容量）
-            ready = [d for d in result.decisions if str(d.kind.value) == "ready"]
-            if not ready:
-                kinds = {str(d.kind.value) for d in result.decisions}
-                rep.stopped_because = (
-                    "无可推进执行（就绪叶为空）: " + ", ".join(sorted(kinds))
-                )
-            else:
-                rep.stopped_because = "有就绪叶但未创建执行（容量/预算受限）"
-            break
+            # ★ 本轮没新调度 —— 但先看有没有**遗留 PENDING**（上一轮中断留下的）:
+            #   有则继续跑（否则它们永远挂着 ⇒ 整棵树卡住）。
+            _left = _pending_leftovers(root, ports)
+            if not _left:
+                # 没有可推进的执行: 要么全完成, 要么全被卡（依赖/能力/容量）
+                ready = [d for d in result.decisions if str(d.kind.value) == "ready"]
+                if not ready:
+                    kinds = {str(d.kind.value) for d in result.decisions}
+                    rep.stopped_because = (
+                        "无可推进执行（就绪叶为空）: " + ", ".join(sorted(kinds))
+                    )
+                else:
+                    rep.stopped_because = "有就绪叶但未创建执行（容量/预算受限）"
+                break
 
         # ★ ① 整批作为"一个驱动单元"; ② 批内并发受 max_parallel 约束
-        batch = list(result.scheduled)
+        #   ★ 并入遗留 PENDING: 同一批一起跑（中断后续跑的入口）
+        batch = list(result.scheduled) + _pending_leftovers(root, ports)
         rep.scheduled.extend(batch)
         # ★ cr-5: 批内文件冲突检测 —— 同层写同一文件的执行**不能并行**（否则静默互相覆盖）。
         #   decomposition.file_conflicts() 自述要求"执行器降级为串行", 此前零调用者。

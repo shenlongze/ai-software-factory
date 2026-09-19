@@ -42,7 +42,7 @@ from typing import Any
 __all__ = [
     "decompose_from_design", "load_tree", "list_trees", "confirm_tree",
     "tree_summary", "tree_leaves", "topological_order",
-    "parallel_groups", "file_conflicts",
+    "parallel_groups", "file_conflicts", "claim_leaf", "release_leaf", "CLAIMABLE",
     "DECOMPOSE_LIMITS",
 ]
 
@@ -59,6 +59,11 @@ DECOMPOSE_LIMITS = {
     "max_leaves": 64,      # 叶子数上限（超限 → 需求该重新审视, 不硬拆）
     "max_title": 200,
 }
+
+
+#: CAS 认领的进程内互斥（保证"读-判-写"三步原子）。
+#: ⚠ 跨进程不在当前形态内 —— 与 services/work/store.py 的约定一致（单 CLI 进程）。
+_CLAIM_LOCK = threading.Lock()
 
 
 def _now_iso() -> str:
@@ -327,6 +332,75 @@ def detect_cycles(nodes: list[dict[str, Any]]) -> list[list[str]]:
 
 
 # ------------------------------------------------------------------ 读取面
+
+
+#: 叶的可认领状态（CAS 的前提）——pending 才可被认领
+CLAIMABLE = ("pending", "candidate")
+
+
+def claim_leaf(
+    root: Path | str,
+    plan_id: str,
+    node_id: str,
+    member_id: str,
+    *,
+    project_id: str = "",
+) -> dict[str, Any]:
+    """★ CAS 认领一个叶 —— 「两个 agent 永不会拿同一张卡」（吸收自 amux）。
+
+    为什么必须有它（并行正确性的硬保证）:
+        调度器判定 READY 后到真正开始干活之间有时间窗 —— 若两个驱动/两轮 tick
+        同时看见了同一个叶, 单靠"判定时是 pending"不足以防双领（判定与写入之间可穿插）。
+        CAS = **写入时再校验一次状态**, 只有把 pending 改成 claimed 的那一方赢。
+
+    实现（单进程本地形态, 与 services/work/store.py 的约定一致: 不做跨进程文件锁）:
+        threading.Lock 保证本进程内"读-判-写"三步原子; 写入用 D._save（原子替换）。
+        ⚠ 跨进程并发不在当前形态内（同 store.py 自述）。未授予跨进程语义, 不假装有。
+
+    返回: {"ok": bool, "reason": str, "node": {...} | None}
+      ok=True  ⇒ 认领成功（status 已置 claimed, 记 claimed_by / claimed_at）
+      ok=False ⇒ 已被人领 / 状态不可领 / 找不到（reason 说明, 调用方换下一个叶）
+    """
+    with _CLAIM_LOCK:
+        tree = _read(root, plan_id, project_id)
+        if tree is None:
+            return {"ok": False, "reason": f"任务树不存在: {plan_id}", "node": None}
+        node = next((n for n in (tree.get("nodes") or [])
+                     if str(n.get("id") or "") == node_id), None)
+        if node is None:
+            return {"ok": False, "reason": f"叶不存在: {node_id}", "node": None}
+        cur = str(node.get("status") or "pending").lower()
+        if cur not in CLAIMABLE:
+            return {"ok": False, "reason": f"已被认领或不可领（status={cur}）", "node": node}
+        # ── CAS 提交点: 检查通过后立刻写（锁内, 中间无让出）
+        node["status"] = "claimed"
+        node["claimed_by"] = str(member_id)
+        node["claimed_at"] = _now_iso()
+        _save(root, plan_id, tree, project_id)
+        return {"ok": True, "reason": "", "node": node}
+
+
+def release_leaf(
+    root: Path | str,
+    plan_id: str,
+    node_id: str,
+    *,
+    project_id: str = "",
+    status: str = "pending",
+) -> bool:
+    """归还/推进一个已被认领的叶（执行完 → completed；失败 → 交回 pending 供重认）。"""
+    with _CLAIM_LOCK:
+        tree = _read(root, plan_id, project_id)
+        if tree is None:
+            return False
+        for n in tree.get("nodes") or []:
+            if str(n.get("id") or "") == node_id:
+                n["status"] = status
+                n.pop("claimed_by", None)
+                n.pop("claimed_at", None)
+                _save(root, plan_id, tree, project_id)
+                return True
+        return False
 
 
 def parallel_groups(tree: dict[str, Any]) -> list[list[str]]:

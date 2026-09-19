@@ -69,6 +69,9 @@ def _write_back_node_status(ports: Ports, execution_id: str, status: str) -> boo
         for n in tree.get("nodes") or []:
             if str(n.get("id") or "") == node_id:
                 n["status"] = status
+                # ★ 完成即归还: 清掉认领痕迹（否则树里永远挂着 claimed_by, 看着像还在跑）
+                n.pop("claimed_by", None)
+                n.pop("claimed_at", None)
                 hit = True
                 break
         if hit:
@@ -79,6 +82,44 @@ def _write_back_node_status(ports: Ports, execution_id: str, status: str) -> boo
     except Exception:  # noqa: BLE001 — 回写失败不影响驱动
         return False
     return False
+
+
+def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str], Any]) -> Any:
+    """★ CAS 认领 → 执行 → 归还（吸收自 amux: "两个 agent 永不会拿同一张卡"）。
+
+    为什么要在执行前认领:
+        调度器判定 READY 之后、真正开跑之前有时间窗 —— 若另一轮 tick / 另一个驱动
+        同时看见同一个叶, 单靠"判定时是 pending"防不住双领。
+        CAS 把它变成: 只有把 pending 改成 claimed 的那一方能继续 ⇒ **恰好一个赢**。
+
+    失败回滚: 认领成功但执行抛异常 ⇒ 交回 pending（供重认）, 不把叶永久占死。
+    """
+    from ai_factory_os.services.work import decomposition as D
+    from ai_factory_os.services.execution.runtime.store import RuntimeStore
+
+    root = Path(getattr(ports.work, "_root", "."))
+    node_id, task_id = "", ""
+    try:
+        store = RuntimeStore(root / "runtime")
+        for req in store.list_executions():
+            if str(req.id) == execution_id:
+                node_id = str((req.input or {}).get("node_id") or "")
+                task_id = str(req.task_id or "")
+                break
+    except Exception:  # noqa: BLE001 — 拿不到就退化为"直接跑"（老行为）
+        return run_execution(execution_id)
+
+    if node_id and task_id:
+        got = D.claim_leaf(root, task_id, node_id, member_id=f"exec:{execution_id}")
+        if not got.get("ok"):
+            # 已被别人领 ⇒ 本执行作废（不跑）—— 这正是 CAS 的意义
+            return {"status": "SKIPPED", "reason": f"CAS 认领失败: {got.get('reason')}"}
+    try:
+        return run_execution(execution_id)
+    except Exception:
+        if node_id and task_id:
+            D.release_leaf(root, task_id, node_id, status="pending")   # 回滚, 供重认
+        raise
 
 
 @dataclass
@@ -138,7 +179,8 @@ def drive(
         batch = list(result.scheduled)
         rep.scheduled.extend(batch)
         with ThreadPoolExecutor(max_workers=max(1, int(max_parallel))) as pool:
-            futures = {pool.submit(run_execution, eid): eid for eid in batch}
+            futures = {pool.submit(_claim_and_run, ports, eid, run_execution): eid
+                       for eid in batch}
             for fut in as_completed(futures):
                 eid = futures[fut]
                 try:
@@ -172,7 +214,8 @@ def drive(
     return rep
 
 
-def make_real_execution_port(root: Path | str, *, task_id: str, logger: Any = None) -> Any:
+def make_real_execution_port(root: Path | str, *, task_id: str, work: Any = None,
+                             logger: Any = None) -> Any:
     """构造**真实**的 ExecutionPort（create 会落库一条 PENDING 执行请求）。
 
     与刀1 的 NullExecution 相对: 这是"能真创建执行"的适配器。
@@ -190,6 +233,17 @@ def make_real_execution_port(root: Path | str, *, task_id: str, logger: Any = No
             from ai_factory_os.services.execution.runtime.store import RuntimeStore
 
             try:
+                # ★ claimed 的叶也算"活跃"（CAS 已把它锁给人了）——
+                #   否则每轮 tick 又判 READY ⇒ 重复创建执行（CAS 虽会拒, 但执行请求已白建）。
+                tree = getattr(work, "_tree", None)
+                if callable(tree):
+                    for n in (tree().get("nodes") or []):
+                        if (str(n.get("id") or "") == node_id
+                                and str(n.get("status") or "").lower() == "claimed"):
+                            from ai_factory_os.contracts.execution import Execution as _Exec
+
+                            return _Exec(id=str(n.get("claimed_by") or "claimed"),
+                                         task_node_id=node_id, member_id="", status="running")
                 store = RuntimeStore(Path(root) / "runtime")
                 for req in store.list_executions(task_id=task_id):
                     if str((req.input or {}).get("node_id") or "") != node_id:

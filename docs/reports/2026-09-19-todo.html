@@ -429,21 +429,22 @@
       未声明公司者只看到公共 ✓<br>
       <b>⏳ 未做（刀3b, 可缓）</b>: FTS5 检索层 + 最近注入 —— 84 条 facts 阶段用不到,
       等体量上来再做（这才是真的"将来用"）。</span></span></label>
-    <label class="item"><input type="checkbox" id="tsc-4"><span class="body">
-      <span class="t"><span class="tag p0">P0</span>★ Founder 拍板的三层结构：第三层 ✅ / 第二层 ⬜</span>
+    <label class="item done"><input type="checkbox" id="tsc-4" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ ★ Founder 拍板的三层结构 <b>三层全通</b></span>
       <span class="meta"><b>Founder 原话</b>: "facts 需要区分 <b>第一层 全量</b>, <b>第二层 索引/摘要</b>,
       <b>第三层 最近的</b>"（补记于 docs/design/…§2.35）。<br>
-      &nbsp;<b>第一层 全量 ✅</b> 已实现（scoped_facts + 会话 understanding 完整落盘, 不丢）<br>
-      &nbsp;<b>第三层 最近的 ✅ 本刀</b>（2026-09-19）: <code>select_facts()</code> ——
-      送 LLM 的<b>不再全量</b>, 只取「最近 8 条 + 与消息相关的前 5 条」并集, 保持时间序;<br>
-      &nbsp;&nbsp;★ 保守规则: <b>IDEA（产品本体）/ CONSTRAINT（硬约束）永久保留</b>,
-      绝不因"不最近"被筛掉; 量 ≤13 条时等于全送（行为不变）; 省略时在 prompt 里显式说明
-      （可解释, LLM 知道可要更多）。<br>
-      &nbsp;&nbsp;实测: 20 条 → 注入 10 条（IDEA+CONSTRAINT+最近 8 全在）✓ · 5 条 ⇒ 全送 ✓ ·
-      8 轮对话后问"产品是什么/什么约束" ⇒ 全答对（含第 1 轮的产品本体）✓<br>
-      &nbsp;<b>第二层 索引/摘要 ⬜ 未做</b>: facts 多了之后"找得回"—— 需要跨会话按内容检索事实
-      （现有 <code>conversation facts</code> 只列本会话; 检索层可复用 FTS5/history_search）。<br>
-      <b>★ 我此前的错（已自认）</b>: 只做第一层却标成"P2 可缓" ⇒ 擅自把 Founder 拍板的设计降级。</span></span></label>
+      &nbsp;<b>第一层 全量 ✅</b> scoped_facts + 会话 understanding（完整落盘, 不丢）<br>
+      &nbsp;<b>第二层 索引 ✅</b>（2026-09-19）: 复用 <code>learning/history_search</code>（FTS5,
+      它自述"把记得住变成找得回"）⇒ 新增 <code>fact</code> 源 + <code>_index_facts()</code>
+      （索引<b>两个来源</b>: 会话 understanding.facts + 分层 knowledge/**/facts.json, ref=fact id 幂等）。<br>
+      &nbsp;&nbsp;实测: <code>history index</code> ⇒ <b>fact=89</b> 条;
+      <code>history search "SQLite" --source fact</code> ⇒ 命中
+      <code>[fact] [DECISION|PROPOSED] …存储方案: SQLite</code> ✓<br>
+      &nbsp;<b>第三层 最近的 ✅</b>: <code>select_facts()</code> —— 送 LLM 不再全量, 取「最近 8 + 相关 5」,
+      ★ IDEA/CONSTRAINT 永久保留; 量 ≤13 全送（行为不变）。实测 20 条→10 条（关键全在）·
+      8 轮对话后仍答对产品本体 ✓<br>
+      <b>★ 我此前的错（已自认）</b>: 只做第一层却标成"P2 可缓" ⇒ 擅自把 Founder 拍板的设计降级为可选项;
+      且设计文档里从没记过这段原话。⇒ 两条都已修正。</span></span></label>
   </div>
 
   <!-- ═══════ 7 ═══════ -->

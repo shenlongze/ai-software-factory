@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-SOURCES: tuple[str, ...] = ("event", "trace", "experience", "message")
+SOURCES: tuple[str, ...] = ("event", "trace", "experience", "message", "fact")
 DEFAULT_DB_NAME = "search.db"
 
 _SCHEMA_VERSION = 3   # 1=external-content+触发器(错) → 2=独立表+代码侧切分
@@ -156,6 +156,7 @@ class HistoryIndex:
         counts["trace"] = self._index_traces(root)
         counts["experience"] = self._index_experiences(root)
         counts["message"] = self._index_conversations(root)
+        counts["fact"] = self._index_facts(root)        # ★ 第二层: facts 索引（找得回）
         self._conn.commit()
         self._rebuild_fts()          # 统一重建 FTS（归一化文本）
         return counts
@@ -285,6 +286,70 @@ class HistoryIndex:
         return n
 
     # ---------------------------------------------------------------- 检索
+
+    def _index_facts(self, root: Path) -> int:
+        """事实（fact）—— ★ 2026-09-19 新增（Founder 拍板"三层结构"的**第二层：索引/摘要**）。
+
+        为什么单列一类: facts 是"产品理解的原子结论"（比消息更精炼、比事件更语义化），
+        但此前**没有索引** ⇒ 事实一多就只剩"本会话能看"（`conversation facts`）,
+        跨会话/跨项目"找不回"。这正是 Founder 三层结构里第二层要解决的事:
+          · 第一层 全量 = 落盘不丢（已有）
+          · 第二层 索引 = **找得回**（本函数）
+          · 第三层 最近 = 送得准（已有: select_facts）
+
+        索引两个来源（都幂等, ref = fact id）:
+          1) 会话文件 <root>/**/conversations/conv-*.json 的 understanding.facts
+          2) 分层存储 <root>/knowledge/**/facts.json（跨会话/按作用域）
+        """
+        n = 0
+        seen: set[str] = set()
+
+        def _emit(fact: dict[str, Any], origin: str) -> None:
+            nonlocal n
+            fid = str(fact.get("id") or "").strip()
+            content = str(fact.get("content") or "").strip()
+            if not fid or not content or fid in seen:
+                return
+            seen.add(fid)
+            ftype = str(fact.get("type") or "?")
+            status = str(fact.get("status") or "")
+            ts = str(fact.get("created_at") or "")
+            self._conn.execute(
+                "INSERT INTO docs(source, ref, ts, title, body) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(source, ref) DO UPDATE SET ts=excluded.ts, body=excluded.body",
+                ("fact", fid, ts, f"[{ftype}|{status}] {origin}", content[:6000]))
+            n += 1
+
+        # 1) 会话文件里的 facts
+        for f in sorted(root.rglob("conv-*.json")):
+            if "/conversations/" not in str(f):
+                continue
+            try:
+                conv = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 — 单个坏文件跳过
+                continue
+            if not isinstance(conv, dict):
+                continue
+            ctitle = str(conv.get("title") or conv.get("id") or f.stem)
+            facts = ((conv.get("understanding") or {}).get("facts") or {})
+            items = list(facts.values()) if isinstance(facts, dict) else list(facts)
+            for fact in items:
+                if isinstance(fact, dict):
+                    _emit(fact, ctitle)
+        # 2) 分层存储 facts.json（作用域层）
+        for f in sorted(root.rglob("facts.json")):
+            if "/knowledge/" not in str(f) and ".factory_rag" not in str(f):
+                continue
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 — 坏文件跳过
+                continue
+            if not isinstance(data, dict):
+                continue
+            for fact in (data.get("facts") or []):
+                if isinstance(fact, dict):
+                    _emit(fact, f"scope:{f.parent.name}")
+        return n
 
     def search(self, query: str, *, limit: int = 8,
                sources: tuple[str, ...] | None = None) -> list[Hit]:

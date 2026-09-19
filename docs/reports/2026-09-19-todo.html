@@ -87,6 +87,19 @@
     <label class="item"><input type="checkbox" id="t1-3"><span class="body">
       <span class="t"><span class="tag p1">P1</span>fleet 的 done/failed 统计未用真 <code>ExecutionRunner</code> 复测</span>
       <span class="meta">测试用 fake_run（不推进 status）⇒ 计数为 0；需用 echo/runtime adapter 真跑一次复测</span></span></label>
+    <label class="item done"><input type="checkbox" id="t1-9" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 修会话「说着说着就忘了」—— 关键词预筛静默丢弃</span>
+      <span class="meta"><b>现象（Founder 问「上下文管理呢, 别说着说着就忘了」后实测）</b>:
+      8 轮对话只有 <b>3 条</b>事实 —— 丢了产品本体「图书管理工具」+ 借书还书 + 导出 Excel + 内部员工 + 公司名。<br>
+      <b>根因</b>: <code>interpreter._PRODUCT_HINT_RE</code> 是**硬编码关键词表**
+      （做|开发|产品|app|功能|需求|界面…）；不命中就<b>完全不调 LLM</b>,
+      且「已有理解」时直接返回 <code>operations=[]</code> ⇒ <b>静默丢弃</b>。
+      实测: 「支持借书和还书」不命中、「需求: 支持借书和还书」命中 ⇒ 纯关键词匹配。<br>
+      <b>修法</b>: 只对三类**明确无产品语义**的短路（纯展示请求 / 纯确认 / 纯寒暄）,
+      其余一律交 LLM 判断（它判无新事实时自己返回空）。<br>
+      <b>★ 实测对比</b>: 修复前 3 条 → 修复后 <b>9 条全在</b>（且类型更准: 内部员工→CONSTRAINT ·
+      公司名→CONSTRAINT · 借书还书拆两条）。<br>
+      <b>★ 教训</b>: 用关键词预筛语义 = 不可靠（此前已有同类教训）; 更坏的是失败模式是<b>静默丢弃</b>。</span></span></label>
     <label class="item"><input type="checkbox" id="t1-8"><span class="body">
       <span class="t"><span class="tag p3">P3</span>CLI print 分支容易插错位置（本轮踩了两次）</span>
       <span class="meta">加新命令时, "dispatch 分支 / print 分支 / 函数定义"是**三处独立插入点**;
@@ -260,6 +273,10 @@
   <!-- ═══════ 7 ═══════ -->
   <h2><span class="n">8</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
+    <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">
+      <span class="t">★ 修会话上下文丢失（P0）—— 关键词预筛静默丢弃 ⇒ 8 轮 3 条变 9 条全在</span>
+      <span class="meta">根因: <code>_PRODUCT_HINT_RE</code> 硬编码关键词 + 「已有理解⇒返回空 ops」静默丢弃;
+      修法: 只短路"明确无产品语义"三类, 其余交 LLM 判; 实测 3 → 9 条, 类型判定也更准</span></span></label>
     <label class="item done"><input type="checkbox" id="t7-19" checked><span class="body">
       <span class="t">补 CLI 入口: <code>tool</code> / <code>mcp</code> / <code>discover</code>（照 Hermes 标准）</span>
       <span class="meta">★ 学的标准（Hermes + OpenClaw）: <b>资源做名词 · 操作做动词 · help 每行说清"能干什么"</b>。

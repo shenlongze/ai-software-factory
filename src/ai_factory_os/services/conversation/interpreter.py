@@ -102,6 +102,30 @@ def _has_understanding(snapshot: dict[str, Any]) -> bool:
     return bool(snapshot.get("facts"))
 
 
+#: 纯展示请求（"你理解了什么"/"总结一下"）—— 不含新信息, 无需调 LLM
+_DISPLAY_RE = re.compile(r"^(请)?(你)?(现在|目前)?(理解|觉得|认为|怎么看|总结|复述)[^。！？]{0,12}[?？]?$")
+#: 纯确认（"对"/"就是这样"/"没错"）—— 必须整句匹配, 避免误伤"对, 但还要加导出"
+_CONFIRM_ONLY_RE = re.compile(r"^(对|对的|是|是的|没错|可以|行|好的|好|就这样|就按这个|ok|okay|ok了)[。.!！~～\s]*$")
+#: 纯寒暄/闲聊 —— 不含任何产品语义
+_GREETING_ONLY_RE = re.compile(r"^(你好|hi|hello|嗨|在吗|早上好|下午好|晚上好)[。.!！~～\s]*$", re.I)
+_CHITCHAT_ONLY_RE = re.compile(r"^(今天|天气|吃饭|你叫什么|你是谁|谢谢|多谢|再见|拜拜)")
+
+
+def _is_pure_display_request(text: str) -> bool:
+    """只要"展示当前理解", 不含新信息。"""
+    return bool(_DISPLAY_RE.match(text))
+
+
+def _is_pure_confirmation(text: str) -> bool:
+    """纯确认（整句就是"对/好的"）—— 带后续要求的（"对, 但…"）不算。"""
+    return bool(_CONFIRM_ONLY_RE.match(text))
+
+
+def _is_pure_chitchat(text: str) -> bool:
+    """纯寒暄/闲聊。"""
+    return bool(_GREETING_ONLY_RE.match(text) or _CHITCHAT_ONLY_RE.match(text))
+
+
 _PRODUCT_HINT_RE = re.compile(
     r"做|开发|产品|app|应用|端|平台|登录|排行|摇杆|按键|操作|游戏|界面|用户|"
     r"功能|需求|版本|设计|横屏|竖屏|声音|广告|内购|账号|同步|离线|"
@@ -230,27 +254,27 @@ def llm_semantic_interpreter(root: str, conversation_id: str, text: str,
     返回与 `proposal.build_proposal` 同构的 dict; LLM 不可用/解析失败 →
     确定性降级: 返回 CLARIFY (诚实引导) — 不猜产品事实, 不部分写 Truth。
     """
-    # 1) 明显无产品语义 (寒暄/确认展示请求) — 不调 LLM (省成本 + 防幻觉)
+    # 1) 明显无产品语义 (寒暄/确认/纯展示请求) — 不调 LLM (省成本 + 防幻觉)
+    #
+    # ★ 2026-09-19 修（Founder 实测「说着说着就忘了」的根因）:
+    #   原实现用 `_PRODUCT_HINT_RE` 做**关键词预筛** —— 不命中就完全不调 LLM;
+    #   且"已有理解"时直接返回 operations=[]（**静默丢弃**）。
+    #   实测漏掉的真实需求: 「支持借书和还书」「数据要能导出 Excel」「只给内部员工用」
+    #   「我们公司叫星辰图书」（加个"需求:"前缀就命中 —— 说明是纯关键词匹配）。
+    #   ⇒ 关键词永远列不全, 而失败模式是"静默丢事实"（最坏的一种）。
+    #   ⇒ 改为: **只对"明确无产品语义"的三类短路**（纯展示请求 / 纯确认 / 寒暄闲聊）,
+    #     其余一律交给 LLM 判断; 若 LLM 判无新事实, 它自己会返回空 operations（那是它的判断, 而非我们的关键词猜）。
     stripped = text.strip()
-    if not _PRODUCT_HINT_RE.search(stripped):
-        # "我目前的理解是?" / "你理解了什么" → show_understanding (无 fact 变更)
-        if re.search(r"理解|你(现在|目前)?(觉得|认为|怎么看)|总结", stripped):
+    if _is_pure_display_request(stripped):
+        return build_proposal(
+            operations=[], reply="", summary="", show_understanding=True)
+    if _is_pure_confirmation(stripped):
+        if _has_understanding(snapshot):
             return build_proposal(
-                operations=[], reply="", summary="", show_understanding=True)
-        # 兜底不再用同一句模板（Founder 实测: 对"对，就是这样/你好/今天天气不错"
-        # 三类输入回复完全相同 → 暴露"没接住"）。改为分场景的、有状态的回应；
-        # 仍不调 LLM（保持省成本 + 防幻觉的设计意图）。
-        if _CONFIRM_RE.match(stripped):
-            if _has_understanding(snapshot):
-                return build_proposal(
-                    operations=[], summary="", show_understanding=True,
-                    reply="收到，就按这个理解继续。需要我「整理成 PRD」吗？")
-            return build_proposal(operations=[], reply="好的。你想做什么？直接说一句就行。")
-        if _GREETING_RE.match(stripped):
-            return build_proposal(operations=[], reply="你好。想做点什么，直接说就行。")
-        if _CHITCHAT_RE.search(stripped):
-            return build_proposal(
-                operations=[], reply="我主要帮你把想法做成产品 —— 有想做的直接说，或问我要怎么开始。")
+                operations=[], summary="", show_understanding=True,
+                reply="收到，就按这个理解继续。需要我「整理成 PRD」吗？")
+        return build_proposal(operations=[], reply="好的。你想做什么？直接说一句就行。")
+    if _is_pure_chitchat(stripped):
         if _has_understanding(snapshot):
             return build_proposal(operations=[], summary="", show_understanding=True, reply="")
         return build_proposal(

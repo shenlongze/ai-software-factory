@@ -88,10 +88,10 @@
       <span class="t"><span class="tag p1">P1</span>fleet 的 done/failed 统计未用真 <code>ExecutionRunner</code> 复测</span>
       <span class="meta">测试用 fake_run（不推进 status）⇒ 计数为 0；需用 echo/runtime adapter 真跑一次复测</span></span></label>
     <label class="item"><input type="checkbox" id="t1-6"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>delivery / release 能力在但 <b>CLI 无入口</b></span>
-      <span class="meta"><code>release_service</code>(create/check/execute/history/recover) + <code>ops</code>
-      (ensure_git_repo/apply_patch/validate_delivery/deliver_patch) 全无命令 ⇒ 接上入口才算可用
-      （依赖上一条裁决先定方向）</span></span></label>
+      <span class="t"><span class="tag p3">P3</span>delivery / release 能力在但 <b>CLI 无入口</b>（并入 t5-4 处理）</span>
+      <span class="meta"><code>ops.py</code> 的 <code>apply_patch</code> 有人在用（artifact_lifecycle）;
+      其余（deliver_patch/validate_delivery/ensure_git_repo + release_service 的 create/check/execute）
+      无入口 —— 等 t5-4 决断后一并处理</span></span></label>
     <label class="item"><input type="checkbox" id="t1-5"><span class="body">
       <span class="t"><span class="tag p3">P3</span>发现一处老路径 import（删死码时顺带看到的）</span>
       <span class="meta"><code>apps/cli/commands.py:66</code> → <code>from recovery.service import …</code>（老路径, 非 <code>ai_factory_os.…</code>）⇒ CLI 仍能跑, 说明该函数是死码或路径碰巧可用 ⇒ 需查清</span></span></label>
@@ -177,12 +177,17 @@
       <span class="t"><span class="tag p2">P2</span>验收标准链条断点：<code>plan.acceptance</code> 无消费方</span>
       <span class="meta">叶写了验收标准, 但没人读它 —— "完成的判据"目前只认 status</span></span></label>
     <label class="item"><input type="checkbox" id="t5-4"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>★ 【架构级】交付链的输入对象断供 —— ⑤ 交付环跑不起来的真根因</span>
-      <span class="meta">实测: <code>release_service</code>(407 行能力齐全) 的前置是 <b>ProductionRun(COMPLETED)</b>,
-      但新区执行链产生的是 <b>EXS</b> ⇒ 两条链没接上。同问题也影响 <code>rollback_service</code> /
-      <code>production_evaluation</code>（都是 <code>get_production_run</code> 的消费者）。<br>
-      <b>需裁决</b>: (a) 让调度链补产 production_run 记录 (b) 改 release/rollback 接 EXS
-      (c) 承认 release 链是老区遗留, 另建新区交付链</span></span></label>
+      <span class="t"><span class="tag p2">P2</span>★ 【要决断】发布/交付链<b>从未装配</b> —— 只有零件, 没入口</span>
+      <span class="meta"><b>实测（2026-09-19 复核）</b>: <code>release_service</code> 407 行能力齐全
+      （create/check/execute/history/recover）, 但 ————<br>
+      ① <b>零调用</b>: 唯一消费者 <code>rollback_service</code> 只用 <code>get_release/list_releases</code>（只读）,
+         <b>没有任何人调用 create/check/execute</b><br>
+      ② <b>零入口</b>: CLI 82 个命令里没有 release/delivery<br>
+      ③ 连带 <code>rollback_service</code> 读不到东西（没有 release 记录可回滚）<br>
+      ⇒ 结论: <b>"⑤ 交付环没跑过"不是"链没接上", 而是【这条链从来没跑起来过】</b>
+      （我此前的说法把"有代码"当成了"有流程" —— 已纠正）<br>
+      <b>选项</b>: (A) 现在把它做出来（加 <code>factory release</code> 入口 + 真跑 create→check→execute）
+      (B) 先不做, 等真有"要发布"的需求 —— <b>当前选择: B（Founder: 先记录在 todolist）</b></span></span></label>
     <label class="item"><input type="checkbox" id="t5-5"><span class="body">
       <span class="t"><span class="tag p3">P3</span>agents.json 与 roles.py 的角色曾漂移（已对齐 16 条）</span>
       <span class="meta">现在覆盖率 8/9（缺 <code>devops</code> 角色的 agent）；保留 4 条外部工具 agent（claude.*/codex.*）</span></span></label>

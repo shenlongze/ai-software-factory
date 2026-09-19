@@ -430,17 +430,20 @@
       <b>⏳ 未做（刀3b, 可缓）</b>: FTS5 检索层 + 最近注入 —— 84 条 facts 阶段用不到,
       等体量上来再做（这才是真的"将来用"）。</span></span></label>
     <label class="item"><input type="checkbox" id="tsc-4"><span class="body">
-      <span class="t"><span class="tag p0">P0</span>★ Founder 拍板的设计：<b>facts 三层结构</b>（第二/三层未做）</span>
+      <span class="t"><span class="tag p0">P0</span>★ Founder 拍板的三层结构：第三层 ✅ / 第二层 ⬜</span>
       <span class="meta"><b>Founder 原话</b>: "facts 需要区分 <b>第一层 全量</b>, <b>第二层 索引/摘要</b>,
-      <b>第三层 最近的</b>"。<br>
-      &nbsp;第一层 全量      ✅ 已实现（scoped_facts + 会话 understanding 完整落盘）<br>
-      &nbsp;第二层 索引/摘要  ❌ 未做（事实无索引 ⇒ 多了之后"找不回"）<br>
-      &nbsp;第三层 最近的    ❌ 未做（实测: <code>build_llm_prompt</code> 里 <code>for f in facts:</code>
-      ⇒ <b>全量送</b>, 无最近/相关筛选）<br>
-      <b>★ 我此前的错（两个, 自认）</b>: ① 只做第一层却把它标成"P2 · 触发条件未到" ⇒
-      <b>擅自把 Founder 拍板的设计降级为可选项</b>; ② 设计文档里<b>从没记过这段原话</b> ⇒
-      没把它当"设计"对待。⇒ 已补记进 <code>docs/design/storage-and-memory-design.md §2.35</code>。<br>
-      <b>为什么三层都要</b>: 全量=不丢 · 索引=找得回 · 最近=送得准。目标不同, 不能只做一层称完成。</span></span></label>
+      <b>第三层 最近的</b>"（补记于 docs/design/…§2.35）。<br>
+      &nbsp;<b>第一层 全量 ✅</b> 已实现（scoped_facts + 会话 understanding 完整落盘, 不丢）<br>
+      &nbsp;<b>第三层 最近的 ✅ 本刀</b>（2026-09-19）: <code>select_facts()</code> ——
+      送 LLM 的<b>不再全量</b>, 只取「最近 8 条 + 与消息相关的前 5 条」并集, 保持时间序;<br>
+      &nbsp;&nbsp;★ 保守规则: <b>IDEA（产品本体）/ CONSTRAINT（硬约束）永久保留</b>,
+      绝不因"不最近"被筛掉; 量 ≤13 条时等于全送（行为不变）; 省略时在 prompt 里显式说明
+      （可解释, LLM 知道可要更多）。<br>
+      &nbsp;&nbsp;实测: 20 条 → 注入 10 条（IDEA+CONSTRAINT+最近 8 全在）✓ · 5 条 ⇒ 全送 ✓ ·
+      8 轮对话后问"产品是什么/什么约束" ⇒ 全答对（含第 1 轮的产品本体）✓<br>
+      &nbsp;<b>第二层 索引/摘要 ⬜ 未做</b>: facts 多了之后"找得回"—— 需要跨会话按内容检索事实
+      （现有 <code>conversation facts</code> 只列本会话; 检索层可复用 FTS5/history_search）。<br>
+      <b>★ 我此前的错（已自认）</b>: 只做第一层却标成"P2 可缓" ⇒ 擅自把 Founder 拍板的设计降级。</span></span></label>
   </div>
 
   <!-- ═══════ 7 ═══════ -->

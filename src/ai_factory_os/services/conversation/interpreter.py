@@ -211,6 +211,54 @@ def _history_section(root: Any, user_message: str, *, limit: int = 3) -> list[st
         return []
 
 
+#: ★ Founder 拍板的「facts 三层结构」（2026-09-19 实现第三层）:
+#:   第一层 全量 = 存储（所有事实完整落盘, 不丢）—— 已实现（scoped_facts/understanding）
+#:   第二层 索引 = 检索（多了之后找得回）—— 见 knowledge/history 检索层
+#:   第三层 最近 = 注入（送 LLM 的【不全量】, 只取"最近 + 相关"）—— 本函数
+#: 为什么: 全量送会随事实增长而稀释/挤爆上下文; 而"最近 + 相关"才是 LLM 真正需要的。
+#: 保守规则（防漏关键事实）:
+#:   · IDEA（产品本体）与 CONSTRAINT（硬约束）**永远保留** —— 它们绝不能因"不最近"被筛掉
+#:   · 其余按「最近 N 条 + 与用户消息相关的前 M 条」并集, 保持原时间序
+FACTS_RECENT = 8
+FACTS_RELEVANT = 5
+_ALWAYS_KEEP = ("IDEA", "CONSTRAINT")
+
+
+def select_facts(facts: list[dict[str, Any]], user_message: str, *,
+                 recent: int = FACTS_RECENT, relevant: int = FACTS_RELEVANT) -> tuple[list[dict], int]:
+    """第三层「最近的」: 从全量事实里选出要注入 LLM 的那部分。
+
+    返回 (选中事实, 被省略条数)。**纯函数, 确定性**。
+    规则: 永久保留 IDEA/CONSTRAINT → 加"最近 N 条" → 加"与消息相关的前 M 条"（按词重叠）。
+    """
+    if not facts:
+        return [], 0
+    total = len(facts)
+    if total <= recent + relevant:                      # 量少 ⇒ 全给（避免无谓筛选）
+        return list(facts), 0
+    keep_idx: set[int] = set()
+    for i, f in enumerate(facts):
+        if str(f.get("type") or "").upper() in _ALWAYS_KEEP:
+            keep_idx.add(i)                             # ★ 产品本体/硬约束永不筛掉
+    for i in range(max(0, total - recent), total):
+        keep_idx.add(i)                                 # 最近 N
+    terms = [t for t in re.split(r"[^\w\u4e00-\u9fff]+", str(user_message or "").lower()) if len(t) > 1]
+    if terms:
+        scored = []
+        for i, f in enumerate(facts):
+            if i in keep_idx:
+                continue
+            text = str(f.get("content") or "").lower()
+            sc = sum(text.count(t) for t in terms)
+            if sc:
+                scored.append((sc, i))
+        scored.sort(key=lambda x: (-x[0], x[1]))
+        for _sc, i in scored[:relevant]:
+            keep_idx.add(i)                             # 相关 M
+    picked = [f for i, f in enumerate(facts) if i in keep_idx]
+    return picked, total - len(picked)
+
+
 def build_llm_prompt(snapshot: dict[str, Any], user_message: str, *,
                      history_root: Any = None) -> str:
     """Context Assembly → LLM prompt (只读, 不猜)。
@@ -219,7 +267,11 @@ def build_llm_prompt(snapshot: dict[str, Any], user_message: str, *,
     "想起过去"，但明确标注为参考非事实（不污染产品理解）。
     缺省 None = 不带历史（行为与之前完全一致 ✓ 向后兼容）。
     """
-    facts = snapshot.get("facts", [])
+    # ★ 2026-09-19（Founder 拍板三层结构 · 第三层「最近的」）: 不再全量送 facts。
+    #   实测此前是 `for f in facts:` 全量 ⇒ 事实一多就稀释/挤爆; 现在只送「最近 + 相关」
+    #   （IDEA/CONSTRAINT 永久保留, 防筛掉关键事实）。量少时等于全送（行为不变）。
+    _all_facts = snapshot.get("facts", [])
+    facts, _omitted = select_facts(_all_facts, user_message)
     deferred = snapshot.get("deferred", [])
     rejected = snapshot.get("rejected", [])
     lines = [
@@ -238,6 +290,11 @@ def build_llm_prompt(snapshot: dict[str, Any], user_message: str, *,
         lines.append(f"- (延后) {f['type']} {f['content']} (id={f['id']})")
     for f in rejected:
         lines.append(f"- (已否决) {f['type']} {f['content']} (id={f['id']})")
+    if _omitted:
+        # 可解释: 让 LLM 知道自己看到的是"最近+相关", 需要更多时可要求
+        lines.append(
+            f"(另有 {_omitted} 条较早/不相关的事实未列出 —— 这是「最近+相关」注入;"
+            f" 若需要完整理解请说明, 或用 factory conversation facts 查全量)")
     lines += _history_section(history_root, user_message)
     # ★ 2026-09-19（记忆主线 · 知识记忆接通）: 附上【项目文档知识】检索结果。
     #   来源 = RAG 索引（已按分档加权 + 单文件限流排序）; 每条带文件名与档位 ⇒ 可引用可审计。

@@ -298,10 +298,17 @@
       <b>★ 踩坑（重要教训）</b>: <code>_mutate(root, conv_id, _fn)</code> 在本文件出现<b>多处</b>,
       我 <code>replace(...,1)</code> 把同步代码接到了 <code>append_message</code> 里而非
       <code>upsert_fact</code> ⇒ 实测表现为"分层 0 条" ⇒ <b>接线后必须实测, 不能只看 patch 成功</b>。</span></span></label>
-    <label class="item"><input type="checkbox" id="tsc-3"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>刀3：可见性接 Authority（跨公司 Default Deny）+ FTS5 检索层 + 最近注入</span>
-      <span class="meta">刀1 的横向可见是"读候选集", <b>权限收紧未接</b>（同公司可读已实现; 跨公司拒绝待接
-      <code>Authority</code>/<code>check_authority</code>）。三层结构里"检索(FTS5)"与"最近注入"也在这一刀。</span></span></label>
+    <label class="item done"><input type="checkbox" id="tsc-3" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 刀3a：可见性接权限 —— 跨公司拒绝（Default Deny）</span>
+      <span class="meta"><b>实现</b>: <code>visible_to(scope, viewer_company)</code> ——
+      全局层任何人可见; <b>查看者未声明公司 ⇒ 只放行全局</b>（不声明就不给跨公司数据）;
+      同公司可见(公司级 + 其下部门/项目); <b>跨公司 ⇒ 拒绝</b>。已在 <code>effective_facts</code> 中逐层过滤。<br>
+      <b>复用而非新造</b>: <code>Employee.knowledge_scope</code> 已声明"公司知识只读所属公司, 绑定即授权" ⇒
+      本刀实现的是**默认拒绝的那一半**; 显式授权走 organization 域（后续按需接）。<br>
+      <b>★ 实测</b>: 星辰图书员工看到 3 条(公司+公共+IT部门) · <b>别的公司员工只看到公共(1 条) ⇒ 无泄露 ✓</b> ·
+      未声明公司者只看到公共 ✓<br>
+      <b>⏳ 未做（刀3b, 可缓）</b>: FTS5 检索层 + 最近注入 —— 84 条 facts 阶段用不到,
+      等体量上来再做（这才是真的"将来用"）。</span></span></label>
   </div>
 
   <!-- ═══════ 7 ═══════ -->

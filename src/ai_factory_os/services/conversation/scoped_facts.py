@@ -232,9 +232,42 @@ def _slot(root: Path | str, scope: dict[str, str], row: dict[str, Any]) -> tuple
         return (ftype, f"exact:{content}")
 
 
+def _company_of(scope: dict[str, str]) -> str:
+    """作用域所属公司（用于跨公司判定）。全局层不属于任何公司 ⇒ 空串。"""
+    lv = scope.get("level") or ""
+    ident = str(scope.get("id") or "")
+    if lv == "company":
+        return ident
+    if lv == "department":
+        return ident.partition("/")[0]
+    if lv == "project":
+        return ""                                     # 项目未带公司信息（诚实: 不猜）
+    return ""
+
+
+def visible_to(root: Path | str, scope: dict[str, str], *,
+               viewer_company: str = "") -> bool:
+    """★ 刀3a: 跨公司可见性判定（Default Deny）。
+
+    规则（Founder: "在公司下可以查全部门的所有信息" + 部门横向可达）:
+      · 全局层        ⇒ 任何人可见
+      · 查看者未声明公司 ⇒ 只放行全局（Default Deny: 不声明就不给跨公司数据）
+      · 同公司        ⇒ 可见（公司级 + 该公司下的部门/项目）
+      · 跨公司        ⇒ ★ 拒绝（默认拒绝; 显式授权见 employee.knowledge_scope, 属 organization 域）
+    """
+    lv = scope.get("level") or ""
+    if lv == "global":
+        return True
+    owner = _company_of(scope)
+    if not owner:
+        return False                                  # 归属不明 ⇒ Default Deny（不猜）
+    return str(viewer_company or "") == owner
+
+
 def effective_facts(root: Path | str, scope: dict[str, str], *,
                     company_id: str = "", department_id: str = "",
-                    horizontal: bool = True) -> dict[str, Any]:
+                    horizontal: bool = True,
+                    viewer_company: str = "") -> dict[str, Any]:
     """**可见 + 继承 + 覆盖**后的有效事实（每条带 provenance）。
 
     顺序: 自己的链（具体→泛） → ★ 同公司横向（其它部门/项目）
@@ -248,6 +281,9 @@ def effective_facts(root: Path | str, scope: dict[str, str], *,
     by_level: dict[str, int] = {}
     hlayers = 0
     for sc in chain + horizon:                        # ★ 自己链优先, 横向在后
+        # ★ 刀3a: 跨公司拒绝（Default Deny）—— 不在可见范围的作用域整个跳过
+        if not visible_to(root, sc, viewer_company=viewer_company or company_id):
+            continue
         rows = read_layer(root, sc)
         by_level[sc["level"]] = by_level.get(sc["level"], 0) + len(rows)
         if sc in horizon:

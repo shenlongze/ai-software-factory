@@ -271,3 +271,36 @@ def stats(root: Path | str, scopes: list[dict[str, str]]) -> dict[str, Any]:
     for sc in scopes:
         out[f"{sc.get('level')}:{sc.get('id') or '-'}"] = len(read_layer(root, sc))
     return {"layers": out, "total": sum(out.values())}
+
+def upsert_fact(root: Path | str, scope: dict[str, str], fact: dict[str, Any]) -> dict[str, Any]:
+    """**按语义槽**写入（同槽 ⇒ 顶替; 而非只是同 key 幂等）。
+
+    与 `add_fact` 的区别: add_fact 只对"完全同 key"幂等;
+    upsert_fact 还会把**同槽的旧值清掉**（例: 「默认语言: 中文」被「默认语言: 英文」顶替）。
+    ⇒ 会话每次写入后调它全量刷, 分层里就始终是"该会话当前的真相"。
+    """
+    scope = make_scope(scope.get("level", ""), scope.get("id", ""))
+    rows = read_layer(root, scope)
+    key = _slot(root, scope, fact)
+    kept: list[dict[str, Any]] = []
+    for r in rows:
+        if _slot(root, scope, r) == key:
+            continue                                   # 同槽旧值 ⇒ 顶替（不保留）
+        kept.append(r)
+    row = {
+        "id": str(fact.get("id") or f"fact-{uuid.uuid4().hex[:12]}"),
+        "scope": scope,
+        "type": str(fact.get("type") or "").upper(),
+        "content": " ".join(str(fact.get("content") or "").split()),
+        "status": str(fact.get("status") or "PROPOSED"),
+        "source_message_id": str(fact.get("source_message_id") or ""),
+        "conversation_id": str(fact.get("conversation_id") or ""),
+        "updated_at": _now(),
+    }
+    kept.append(row)
+    p2 = _facts_file(root, scope)
+    p2.parent.mkdir(parents=True, exist_ok=True)
+    p2.write_text(json.dumps({"scope": scope, "facts": kept}, ensure_ascii=False, indent=2),
+                  encoding="utf-8")
+    return row
+

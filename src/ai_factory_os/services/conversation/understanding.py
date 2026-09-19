@@ -39,6 +39,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from ai_factory_os.services.conversation import scoped_facts as _scoped  # ★ 刀2: 分层同步
 
 # ------------------------------------------------------------------ 常量/注册表
 
@@ -322,6 +323,16 @@ def _bump_understanding_version(doc: dict[str, Any]) -> int:
     return int(u["version"])
 
 
+def _effective_facts_of(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    """会话的**有效事实**（排除 SUPERSEDED / REJECTED）—— 同步到分层时用。"""
+    out: list[dict[str, Any]] = []
+    for f in _facts(doc).values():
+        if str(f.get("status") or "") in ("SUPERSEDED", "REJECTED"):
+            continue
+        out.append(dict(f))
+    return out
+
+
 def upsert_fact(root: Path | str, conv_id: str, *, fact_type: str,
                 content: str, source_message_id: str = "",
                 confidence: float = 1.0, provenance: str = "",
@@ -393,6 +404,21 @@ def upsert_fact(root: Path | str, conv_id: str, *, fact_type: str,
         facts[new_fact["id"]] = new_fact
         _bump_understanding_version(doc)
     _mutate(root, conv_id, _fn)
+
+    # ★ 刀2（2026-09-19）: 同步到**分层存储** —— 让 facts 跨会话可见（Founder 的设计:
+    #   会话绑项目 ⇒ 项目级; 否则公司/部门/全局）。
+    #   做法: 每次写入后把该会话的**有效 facts 全量刷到它的作用域层**（幂等 ——
+    #   分层按**语义槽**顶替, 因此 supersede 也能正确反映）。
+    #   ★ 失败**不阻塞**主路径（facts 已落会话文件）: 分层是"共享视图", 挂了不该让理解失败。
+    #   ⚠ 教训: `_mutate(root, conv_id, _fn)` 在本文件出现多处 —— 首次接线时替换到了
+    #     append_message 里的那一处（实测表现为"分层 0 条"）⇒ 接线后**必须实测**。
+    try:
+        doc2 = _load_conv(root, conv_id) or {}
+        scope = _scoped.scope_from_conversation(doc2)
+        for f in _effective_facts_of(doc2):
+            _scoped.upsert_fact(root, scope, f)
+    except Exception:  # noqa: BLE001 — 共享视图失败不影响理解主路径
+        pass
     return dict(new_fact)
 
 

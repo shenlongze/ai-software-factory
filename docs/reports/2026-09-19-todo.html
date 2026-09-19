@@ -288,10 +288,16 @@
       各层体量分开 ✓<br>
       <b>★ 踩到并修的两个坑</b>: ① 继承链漏公司层 ② 判重用全文 ⇒ 改为**语义槽**,
       且发现 <code>dimension_of</code> 的槽列表是硬编码前缀(与 _PRODUCT_HINT_RE 同类毛病) ⇒ 改通用规则「前缀: 值」</span></span></label>
-    <label class="item"><input type="checkbox" id="tsc-2"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>刀2：会话写入路径切到分层存储</span>
-      <span class="meta">现状: facts 仍在会话文件内（<code>understanding.facts</code>）—— 刀1 只建了能力, <b>未切写入</b>
-      （刻意不切: 避免"一半新一半旧"弄坏现有会话）。刀2 = 让 <code>upsert_fact</code> 按作用域落层 + 迁移旧数据。</span></span></label>
+    <label class="item done"><input type="checkbox" id="tsc-2" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 刀2：会话写入路径接分层 —— 事实跨会话可见</span>
+      <span class="meta"><b>做法</b>: 事实的**唯一 writer** <code>upsert_fact</code> 落盘后, 把该会话的
+      <b>有效 facts 全量刷到它的作用域层</b>（幂等 —— 分层按<b>语义槽</b>顶替, 故 supersede 也正确反映）。<br>
+      <b>读侧未切</b>（仍有会话文件兜底, 老数据不破）—— 属刀2b, 观察一阵再切。<br>
+      <b>★ 实测</b>: 会话 3 条 → 分层 3 条一致 ✓ · 走真实 CLI+LLM 端到端 3 条 ✓ ·
+      <b>跨会话可见 ✓</b>（新会话从分层读到旧会话的事实, 带 conversation_id 可溯源）。<br>
+      <b>★ 踩坑（重要教训）</b>: <code>_mutate(root, conv_id, _fn)</code> 在本文件出现<b>多处</b>,
+      我 <code>replace(...,1)</code> 把同步代码接到了 <code>append_message</code> 里而非
+      <code>upsert_fact</code> ⇒ 实测表现为"分层 0 条" ⇒ <b>接线后必须实测, 不能只看 patch 成功</b>。</span></span></label>
     <label class="item"><input type="checkbox" id="tsc-3"><span class="body">
       <span class="t"><span class="tag p1">P1</span>刀3：可见性接 Authority（跨公司 Default Deny）+ FTS5 检索层 + 最近注入</span>
       <span class="meta">刀1 的横向可见是"读候选集", <b>权限收紧未接</b>（同公司可读已实现; 跨公司拒绝待接

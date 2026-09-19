@@ -110,8 +110,9 @@
       <span class="t"><span class="tag p3">P3</span>lint 存量 48 个（src/）</span>
       <span class="meta">E402 23（刻意延迟导入, 该加 noqa）· E702 9 · F841 9 · E741 5 · F401 2</span></span></label>
     <label class="item"><input type="checkbox" id="t2-6"><span class="body">
-      <span class="t"><span class="tag p3">P3</span>R14/R15 无基线 · 建基线或退役</span>
-      <span class="meta">R14（旧区只减不增）已退役；R15 待处理</span></span></label>
+      <span class="t"><span class="tag p3">P3</span>R14/R15 规则仍在, 只是"无基线 ⇒ 不报红"</span>
+      <span class="meta">实测: <code>check_architecture.py</code> 里 R14/R15 仍写着"需基线文件, 未建则如实报'无基线'"；
+      旧区已整删 ⇒ 该规则已无对象 ⇒ 建议**正式退役**（不是"已经退役"）</span></span></label>
   </div>
 
   <!-- ═══════ 3 ═══════ -->
@@ -194,10 +195,54 @@
       <span class="meta">现在自愈是服务（<code>operations/healing.py</code>）；做成插件才符合"一切皆插件"</span></span></label>
   </div>
 
+  <!-- ═══════ 7 ═══════ -->
+  <h2><span class="n">7</span>已完成（本轮 · 留档不删）</h2>
+  <div class="card" data-group="7">
+    <label class="item done"><input type="checkbox" id="t7-1" checked><span class="body">
+      <span class="t">老区整体删除（240 文件 · 104,618 行）+ 残留清零（stash/文档/数据）</span>
+      <span class="meta">入口切 <code>apps.cli.main</code> · 依赖 0 处 · 六层复核全绿</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-2" checked><span class="body">
+      <span class="t">平台心脏装配 —— <code>core/scheduler</code> 从"零装配骨架"到"能判定"</span>
+      <span class="meta"><code>bootstrap/scheduler_wiring.py</code>(377) · 6 个 Port 全接上 · tick 五态可解释</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-3" checked><span class="body">
+      <span class="t">多 Agent <b>并行调度</b>跑通（§1.7.1「并行 ≥3」从 0 到达标）</span>
+      <span class="meta"><code>bootstrap/scheduler_pump.py</code>(298) · 实测 ticks=3 · 4 执行 · 0.54s · 树全 completed</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-4" checked><span class="body">
+      <span class="t">CAS 认领 —— 三线程同抢恰好一人赢</span>
+      <span class="meta"><code>decomposition.claim_leaf/release_leaf</code> · 认领可审计（claimed_by/claimed_at）</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-5" checked><span class="body">
+      <span class="t">舰队视图（谁在做什么）· 逐步轨迹（走过的每步）</span>
+      <span class="meta"><code>console_view.fleet()/trace()</code> · 实测 agent-architect busy→A 模块 · EXR-be97ffc1 三步链</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-6" checked><span class="body">
+      <span class="t">设置解析链（任务→员工→部门→公司→全局, 逐级继承 + 可解释）</span>
+      <span class="meta"><code>organization/settings.py</code>(119) · 7 用例全过 · 带 provenance</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-7" checked><span class="body">
+      <span class="t">自愈看门狗（检测 → 诊断 → 处置, 默认 dry_run）</span>
+      <span class="meta"><code>operations/healing.py</code>(187) · 实测 scan→dry_run→真修→healthy=True</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-8" checked><span class="body">
+      <span class="t">工作纪律写进 agent 定义（9 角色 · 防"越查越多"）</span>
+      <span class="meta"><code>roles.py discipline + discipline_block()</code> · architect prompt 1379→1511 字</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-9" checked><span class="body">
+      <span class="t">Steering 运行中改向（只影响未派发的）</span>
+      <span class="meta"><code>work/steering.py</code>(146) · 实测中途 stop ⇒ 只跑 2/4 叶</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-10" checked><span class="body">
+      <span class="t">Agent 间消息总线 + 来源戳（实现方案书 §4.4）</span>
+      <span class="meta"><code>work/messages.py</code>(139) · 冒充识别: 自称 executor 而 sent_by=agent-backend</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-11" checked><span class="body">
+      <span class="t">LLM 路由产品化 —— OpenAI 兼容入站端点（可独立交付/变现）</span>
+      <span class="meta"><code>infrastructure/llm/serve.py</code>(187) + <code>factory llm serve</code> · 实测 content='收到'</span></span></label>
+    <label class="item done"><input type="checkbox" id="t7-12" checked><span class="body">
+      <span class="t">修 2 个真 bug（F821）+ 清 17 处 lint + 角色对齐 16 条 + R23 命令登记</span>
+      <span class="meta">contract 的 <code>store_entity</code> 漏导入 · <code>release_service</code> 先用后定义</span></span></label>
+  </div>
+
   <div class="hint" style="margin-top:26px">
     <b>说明</b>：勾选状态只存在你这台机器的浏览器（<code>localStorage</code>），<b>不会进 git</b>、不影响任何代码。<br>
     想改条目内容 ⇒ 直接编辑 <code>docs/reports/2026-09-19-todo.html</code>（每项是一个 <code>&lt;label class="item"&gt;</code>）。<br>
-    新增一项：复制一个 <code>&lt;label&gt;...&lt;/label&gt;</code> 块, <code>id</code> 取个没被占用的名字即可（例：<code>t7-1</code>）。
+    新增一项：复制一个 <code>&lt;label&gt;...&lt;/label&gt;</code> 块, <code>id</code> 取个没被占用的名字即可（例：<code>t8-1</code>）。<br>
+    <b>★ 同步更新的约定（重要）</b>：每完成一项工作, <b>当次就要</b>把这一页更新 ——
+    ① 做完的项移到第 7 组（或勾掉）② 新冒出的问题立刻在第 1-6 组加一条。<br>
+    这页是<b>活清单</b>, 不是一次性快照 —— 过期的清单比没有清单更糟（会让人按错的现状决策）。
   </div>
 
 </div>

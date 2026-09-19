@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Factory · 待办清单（Todo）</title>
+<style>
+  :root{
+    --bg:#f5f5f7; --card:#fff; --ink:#1d1d1f; --sub:#6e6e73; --line:#e5e5ea;
+    --p0:#d70015; --p1:#bf5b00; --p2:#0071e3; --p3:#6e6e73;
+    --done:#2f9e44;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:34px 22px 90px}
+  h1{font-size:27px;letter-spacing:-.4px;margin:0 0 6px}
+  .lede{color:var(--sub);font-size:14px;margin-bottom:22px}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:12px 14px;margin-bottom:20px;position:sticky;top:10px;z-index:9;
+    box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .stat{font-size:13px;color:var(--sub)}
+  .stat b{color:var(--ink);font-size:15px}
+  .prog{flex:1;min-width:150px;height:7px;background:#ececf0;border-radius:99px;overflow:hidden}
+  .prog > i{display:block;height:100%;background:linear-gradient(90deg,#0071e3,#37c2ff);width:0}
+  button{font:inherit;font-size:13px;padding:6px 12px;border-radius:9px;cursor:pointer;
+    border:1px solid var(--line);background:#fff;color:var(--ink)}
+  button:hover{background:#fafafd}
+  h2{font-size:17px;margin:26px 0 10px;letter-spacing:-.2px}
+  h2 .n{display:inline-flex;align-items:center;justify-content:center;
+    width:22px;height:22px;border-radius:7px;background:#0071e3;color:#fff;
+    font-size:12.5px;margin-right:8px;vertical-align:1px;font-weight:600}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:6px 4px;box-shadow:0 1px 3px rgba(0,0,0,.03)}
+  .item{display:flex;gap:11px;padding:11px 14px;border-bottom:1px solid var(--line);align-items:flex-start}
+  .item:last-child{border-bottom:none}
+  .item input{margin:4px 0 0;width:16px;height:16px;accent-color:var(--done);flex:none;cursor:pointer}
+  .body{flex:1;min-width:0}
+  .t{font-size:14px}
+  .item.done .t{color:#a1a1a6;text-decoration:line-through}
+  .meta{font-size:12.5px;color:var(--sub);margin-top:3px}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:6px;
+    border:1px solid var(--line);color:var(--sub);margin-right:6px;background:#fafafd}
+  .p0{color:#fff;background:var(--p0);border-color:var(--p0)}
+  .p1{color:#fff;background:var(--p1);border-color:var(--p1)}
+  .p2{color:#fff;background:var(--p2);border-color:var(--p2)}
+  code{background:#f2f2f7;padding:1px 5px;border-radius:5px;font-size:12.5px}
+  .hint{font-size:13px;color:var(--sub);background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:12px 14px;margin:18px 0}
+  .empty{color:var(--sub);font-size:13px;padding:10px 14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>AI Factory · 待办清单</h1>
+  <div class="lede">
+    来源：2026-09-18/19 这一轮工作的全部遗留、缺口与待裁决（老区清理 · 代码规范审核 · 平台能力吸收 · 里程碑对比）。<br>
+    <b>勾选会自动保存在本机浏览器</b>（localStorage）—— 关掉再打开还在。想清空就点「重置勾选」。
+  </div>
+
+  <div class="bar">
+    <span class="stat">完成 <b id="doneN">0</b> / <b id="allN">0</b></span>
+    <div class="prog"><i id="progBar"></i></div>
+    <span class="stat" id="pct">0%</span>
+    <button id="reset">重置勾选</button>
+    <button id="expand">全部展开/收起</button>
+  </div>
+
+  <div class="hint">
+    <b>怎么用</b>：做事之前先看这一页；做完一项勾一项（勾选状态存在你自己的浏览器里，不会进 git）。
+    标 <span class="tag p0">P0</span> 的是"真 bug / 会崩 / 会卡住"；<span class="tag p1">P1</span> 是"挡住能力"；
+    <span class="tag p2">P2</span> 是"该做但可排期"；<span class="tag">P3</span> 是"债务/观察"。
+  </div>
+
+  <!-- ═══════ 1 ═══════ -->
+  <h2><span class="n">1</span>真 bug / 必须修</h2>
+  <div class="card" data-group="1">
+    <label class="item"><input type="checkbox" id="t1-1"><span class="body">
+      <span class="t"><span class="tag p0">P0</span>5 个真死码未删（841 行, 0 引用）</span>
+      <span class="meta"><code>kernel/employee_executor.py</code>(263) · <code>external/monitor_detail.py</code>(200) · <code>kernel/agent_executor.py</code>(170) · <code>orchestration/tree_bridge.py</code>(113) · <code>exec_checkpoint.py</code>(95)</span></span></label>
+    <label class="item"><input type="checkbox" id="t1-2"><span class="body">
+      <span class="t"><span class="tag p0">P0</span><code>production_run</code> 的执行面是死的（0 消费者）</span>
+      <span class="meta">读面（get/list）4 处在用 ⇒ 保留读面, 砍掉 <code>execute_production_run</code> + 我的波次改动</span></span></label>
+    <label class="item"><input type="checkbox" id="t1-3"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>fleet 的 done/failed 统计未用真 <code>ExecutionRunner</code> 复测</span>
+      <span class="meta">测试用 fake_run（不推进 status）⇒ 计数为 0；需用 echo/runtime adapter 真跑一次复测</span></span></label>
+    <label class="item"><input type="checkbox" id="t1-4"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>LLM 端点<strong>未做鉴权</strong></span>
+      <span class="meta"><code>infrastructure/llm/serve.py</code> 是本地/内网形态；对外售卖前必须补（已写进 docstring）</span></span></label>
+  </div>
+
+  <!-- ═══════ 2 ═══════ -->
+  <h2><span class="n">2</span>代码规范债务（自动门报警）</h2>
+  <div class="card" data-group="2">
+    <label class="item"><input type="checkbox" id="t2-1"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>架构铁律仍有红（R3 54 处 · R11 69 处 · R9 12 · R4 13 · R5 4 · R10 10）</span>
+      <span class="meta">R3=<code>services</code> 跨域 import；R11=域内命名不齐；R4=<code>plugins</code> 越层（<b>全部 agent 都犯</b>）</span></span></label>
+    <label class="item"><input type="checkbox" id="t2-2"><span class="body">
+      <span class="t"><span class="tag p1">P1</span><b>裁决 R4</b>：agent 能不能碰 <code>infrastructure</code>？</span>
+      <span class="meta">铁律 vs 现实：agent 要调 LLM 就得碰它 ⇒ 要么放宽铁律（agent 是执行者可碰 infra），要么全改注入</span></span></label>
+    <label class="item"><input type="checkbox" id="t2-3"><span class="body">
+      <span class="t"><span class="tag p1">P1</span><b>裁决 R3</b>：<code>release_service</code> 跨 4 个域 —— 它是"服务"还是"编排"？</span>
+      <span class="meta">若是编排 ⇒ 该上移到编排层；若是服务 ⇒ 该拆开</span></span></label>
+    <label class="item"><input type="checkbox" id="t2-4"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>分类铁律红：R18 一能力一域 8 项 · R20 清单漂移 1</span>
+      <span class="meta">R23 命令登记已修（13 个命令补进 registry）</span></span></label>
+    <label class="item"><input type="checkbox" id="t2-5"><span class="body">
+      <span class="t"><span class="tag p3">P3</span>lint 存量 48 个（src/）</span>
+      <span class="meta">E402 23（刻意延迟导入, 该加 noqa）· E702 9 · F841 9 · E741 5 · F401 2</span></span></label>
+    <label class="item"><input type="checkbox" id="t2-6"><span class="body">
+      <span class="t"><span class="tag p3">P3</span>R14/R15 无基线 · 建基线或退役</span>
+      <span class="meta">R14（旧区只减不增）已退役；R15 待处理</span></span></label>
+  </div>
+
+  <!-- ═══════ 3 ═══════ -->
+  <h2><span class="n">3</span>空壳未做（目录在, 内容是空的）</h2>
+  <div class="card" data-group="3">
+    <label class="item"><input type="checkbox" id="t3-1"><span class="body">
+      <span class="t"><span class="tag p1">P1</span><code>plugins/healers/</code> 仍是 0 行空壳</span>
+      <span class="meta">我做了 <code>services/operations/healing.py</code>（自愈服务）, 但 <code>plugins/healers</code> 这个插件类别还空着 ⇒ 要决定：heal 动作是否做成插件</span></span></label>
+    <label class="item"><input type="checkbox" id="t3-2"><span class="body">
+      <span class="t"><span class="tag p2">P2</span><code>plugins/models/</code> 模型管理空壳</span>
+      <span class="meta">Provider 有 20 文件 4,789 行, 但"模型清单层"没有（方案书 §5 要 Agent/Skill/Tool/MCP/<b>Model</b>/Provider 统一管理）</span></span></label>
+    <label class="item"><input type="checkbox" id="t3-3"><span class="body">
+      <span class="t"><span class="tag p3">P3</span>另外 5 个空壳插件类 + 1 个空域</span>
+      <span class="meta"><code>connectors</code> · <code>controllers</code> · <code>notifiers</code> · <code>storages</code> · <code>triggers</code>（各 0-1 行）；<code>services/resource</code>（6 行）</span></span></label>
+  </div>
+
+  <!-- ═══════ 4 ═══════ -->
+  <h2><span class="n">4</span>里程碑缺口（方案书 §1.7.3）</h2>
+  <div class="card" data-group="4">
+    <label class="item"><input type="checkbox" id="t4-1"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>M2：7 专家产出链只到 3 个</span>
+      <span class="meta">已有 pm→uxui→architect；缺 <b>writer · security · reviewer · devops · tester</b> 的产出链（角色定义有 9 个, 有执行链的只 3 个）</span></span></label>
+    <label class="item"><input type="checkbox" id="t4-2"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>平台角色缺 4 个</span>
+      <span class="meta">方案书 §4.1 要 <b>Coordinator(协调) · Planner(规划) · Governor(治理) · Learner(学习)</b>；现在的 9 个全是编程工种</span></span></label>
+    <label class="item"><input type="checkbox" id="t4-3"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>M6：<b>第二行业</b>没有</span>
+      <span class="meta">模板只有 2 个（<code>software_company</code>/<code>solo</code>）；方案书 §十"行业工厂体系"整章未实现（运维/电商/自媒体/数据分析/办公自动化）</span></span></label>
+    <label class="item"><input type="checkbox" id="t4-4"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>M5 缺三件：Web 仪表盘 · 消息 P0 5 渠道 · <b>执行重放</b></span>
+      <span class="meta">全链路 8 环已通；Web 面你说暂缓（服务/接口照做）</span></span></label>
+    <label class="item"><input type="checkbox" id="t4-5"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>M7：IDE 集成 · 沙箱长任务</span>
+      <span class="meta">完全没有</span></span></label>
+    <label class="item"><input type="checkbox" id="t4-6"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>评分：只评"决策选项", 不评"执行结果"</span>
+      <span class="meta"><code>learning/decision.score_option</code> 有；执行侧的 quality 评分为空</span></span></label>
+    <label class="item"><input type="checkbox" id="t4-7"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>成本：超预算"<b>阻断</b>"未验证</span>
+      <span class="meta"><code>BudgetPolicy</code> 有策略 + <code>usage.json</code> 有记录, 但没验过它真阻断</span></span></label>
+  </div>
+
+  <!-- ═══════ 5 ═══════ -->
+  <h2><span class="n">5</span>链路与数据层遗留</h2>
+  <div class="card" data-group="5">
+    <label class="item"><input type="checkbox" id="t5-1"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>命令层缺 <b>56 个 CLI 入口</b></span>
+      <span class="meta">老 CLI 独有 66 个命令, 真缺入口 56 个（能力都在服务层, 只需补外壳 ~100-200 行/个）</span></span></label>
+    <label class="item"><input type="checkbox" id="t5-2"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>两套项目存储未统一</span>
+      <span class="meta"><code>factory project list</code> 读 <code>~/.factory/org/projects.json</code> → 0 条, 与任务树的项目不是同一份</span></span></label>
+    <label class="item"><input type="checkbox" id="t5-3"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>验收标准链条断点：<code>plan.acceptance</code> 无消费方</span>
+      <span class="meta">叶写了验收标准, 但没人读它 —— "完成的判据"目前只认 status</span></span></label>
+    <label class="item"><input type="checkbox" id="t5-4"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>⑤ 交付环从没真跑过 · ⑥ 用户验收未签</span>
+      <span class="meta"><code>DLV-a744e61294</code>(health=conflicts/18) 未 accept；uat 3 条未签</span></span></label>
+    <label class="item"><input type="checkbox" id="t5-5"><span class="body">
+      <span class="t"><span class="tag p3">P3</span>agents.json 与 roles.py 的角色曾漂移（已对齐 16 条）</span>
+      <span class="meta">现在覆盖率 8/9（缺 <code>devops</code> 角色的 agent）；保留 4 条外部工具 agent（claude.*/codex.*）</span></span></label>
+    <label class="item"><input type="checkbox" id="t5-6"><span class="body">
+      <span class="t"><span class="tag p3">P3</span>README 架构描述过时</span>
+      <span class="meta">还写着老结构 <code>factory-console + factory-org + factory-exec</code>（实际是 <code>apps/cli</code> + <code>src/ai_factory_os</code> 七层）</span></span></label>
+  </div>
+
+  <!-- ═══════ 6 ═══════ -->
+  <h2><span class="n">6</span>待裁决（需要你拍板, 我不该替你定）</h2>
+  <div class="card" data-group="6">
+    <label class="item"><input type="checkbox" id="t6-1"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>3 个「迁了但没删」</span>
+      <span class="meta"><code>ops_scheduler</code> · <code>control_tower</code> · <code>task_tree</code>（环⑤ 已做 <code>decomposition</code>, 可能自然解决）</span></span></label>
+    <label class="item"><input type="checkbox" id="t6-2"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>两套 release（倾向 A：只留 <code>release_truth</code>）</span>
+      <span class="meta">需你确认</span></span></label>
+    <label class="item"><input type="checkbox" id="t6-3"><span class="body">
+      <span class="t"><span class="tag p2">P2</span><code>WorkflowStatus</code> / <code>Artifact</code> 改名</span>
+      <span class="meta">早前提过, 未执行</span></span></label>
+    <label class="item"><input type="checkbox" id="t6-4"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>heal 动作要不要做成 <code>plugins/healers</code> 插件？</span>
+      <span class="meta">现在自愈是服务（<code>operations/healing.py</code>）；做成插件才符合"一切皆插件"</span></span></label>
+  </div>
+
+  <div class="hint" style="margin-top:26px">
+    <b>说明</b>：勾选状态只存在你这台机器的浏览器（<code>localStorage</code>），<b>不会进 git</b>、不影响任何代码。<br>
+    想改条目内容 ⇒ 直接编辑 <code>docs/reports/2026-09-19-todo.html</code>（每项是一个 <code>&lt;label class="item"&gt;</code>）。<br>
+    新增一项：复制一个 <code>&lt;label&gt;...&lt;/label&gt;</code> 块, <code>id</code> 取个没被占用的名字即可（例：<code>t7-1</code>）。
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var KEY = 'aifactory.todo.v1';
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.item input[type=checkbox]'));
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch(e){ saved = {}; }
+
+  boxes.forEach(function(b){ if (saved[b.id]) { b.checked = true; b.closest('.item').classList.add('done'); } });
+
+  function save(){
+    var o = {};
+    boxes.forEach(function(b){ if (b.checked) o[b.id] = 1; });
+    try { localStorage.setItem(KEY, JSON.stringify(o)); } catch(e){}
+  }
+  function render(){
+    var n = boxes.filter(function(b){ return b.checked; }).length;
+    document.getElementById('doneN').textContent = n;
+    document.getElementById('allN').textContent = boxes.length;
+    var pct = boxes.length ? Math.round(n * 100 / boxes.length) : 0;
+    document.getElementById('progBar').style.width = pct + '%';
+    document.getElementById('pct').textContent = pct + '%';
+  }
+  boxes.forEach(function(b){
+    b.addEventListener('change', function(){
+      b.closest('.item').classList.toggle('done', b.checked);
+      save(); render();
+    });
+  });
+  document.getElementById('reset').addEventListener('click', function(){
+    if (!confirm('清空所有勾选？（只影响本机记录）')) return;
+    boxes.forEach(function(b){ b.checked = false; b.closest('.item').classList.remove('done'); });
+    save(); render();
+  });
+  var collapsed = false;
+  document.getElementById('expand').addEventListener('click', function(){
+    collapsed = !collapsed;
+    document.querySelectorAll('.card').forEach(function(c){
+      c.style.display = collapsed ? 'none' : 'block';
+    });
+  });
+  render();
+})();
+</script>
+</body>
+</html>

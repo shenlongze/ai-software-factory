@@ -1276,6 +1276,52 @@ def cmd_execution_list(ctx: FactoryContext, args: Any) -> dict:
     }
 
 
+
+# ------------------------------------------------------------------ run --plan (第 1 刀)
+
+def cmd_run_plan(ctx: FactoryContext, args: Any) -> dict:
+    """★ `factory run --plan <PLAN-id>` —— 按拓扑序跑**完整棵任务树**（一条命令）。
+
+    【为什么需要】此前只能 `run --task <单个>` ⇒ 13 个任务 = 13 次人工调用;
+    调度器 `drive()` 存在但**零调用者**（实测）⇒ 平台的"调度"这一环没接上。
+
+    【★ 与 `factory run`（无 --plan）的区别 —— 两条执行平面】
+      · `run --task`        → 走 `exec.cli`（旧 factory-exec 域）
+      · `run --plan`（本函数）→ 走 **scheduler 平面**（wire_scheduler + drive）
+        ⇒ 任务树 / 依赖 / 调度 / 舰队视图 同一套（执行存储已统一, 舰队看得到）。
+
+    【两个安全前提（同刀已修, 否则跑起来更糟）】
+      · cr-4: 执行返回 FAILED **结果**时归还被认领的叶（否则永久 claimed = 静默卡死）
+      · cr-5: 批内**文件冲突降级串行**（否则并行写同一文件静默互相覆盖）
+    """
+    from ai_factory_os.bootstrap.scheduler_pump import drive
+    from ai_factory_os.bootstrap.scheduler_wiring import wire_scheduler
+
+    plan_id = str(getattr(args, "plan", "") or "")
+    if not plan_id:
+        raise CliError("--plan 必填（任务树 id, 见 factory tasktree list）", exit_code=2)
+    project_id = str(getattr(args, "project", "") or "")
+    max_parallel = int(getattr(args, "parallel", 3) or 3)
+
+    ports = wire_scheduler(ctx.root, plan_id=plan_id, project_id=project_id)
+    with ctx.logger_scope() as logger:
+        service = _open_execution_service(ctx, logger=logger)
+
+        def _run_one(execution_id: str) -> Any:
+            """跑一个执行 —— 异常也转成 FAILED 结果（让 drive 能归还叶, 不裸抛断整批）。"""
+            try:
+                return service.run(execution_id)
+            except Exception as exc:  # noqa: BLE001 — 单叶失败不终止整棵树
+                return {"status": "FAILED", "error": f"{type(exc).__name__}: {exc}"}
+
+        rep = drive(ports, run_execution=_run_one, max_parallel=max_parallel)
+
+    return {
+        "ok": True, "plan_id": plan_id, "ticks": rep.ticks,
+        "scheduled": list(rep.scheduled), "outcomes": list(rep.outcomes),
+        "deferred": list(rep.deferred), "stopped_because": rep.stopped_because,
+    }
+
 def _open_execution_service(
     ctx: FactoryContext, logger, provider_context=None,
 ) -> ExecutionService:

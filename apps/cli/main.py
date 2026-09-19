@@ -105,6 +105,7 @@ from .commands import (
     cmd_runtime_catalog_list,
     cmd_runtime_catalog_show,
     cmd_runtime_list,
+    cmd_run_plan,
     cmd_runtime_test,
     cmd_skill_add,
     cmd_skill_list,
@@ -406,6 +407,9 @@ def build_parser() -> Any:
     p_run.add_argument("--provider", default=None, help="Provider id (默认 anthropic)")
     p_run.add_argument("--test-cmd", default=None, help="沙箱内测试命令 (验证)")
     p_run.add_argument("--json", action="store_true", help="输出结构化 JSON")
+    # ★ --plan: 按拓扑序跑整棵任务树（第 1 刀; 走 scheduler 平面）
+    p_run.add_argument("--plan", default="", help="任务树 id（factory tasktree list）⇒ 跑整棵树")
+    p_run.add_argument("--parallel", type=int, default=3, help="批内并发上限（默认 3）")
 
     p_run_status = sub.add_parser(
         "run-status", help="执行结果查询 → exec CLI (薄代理: --id 结果 ID)"
@@ -2451,6 +2455,9 @@ def _format_failure(error: str) -> str:
 
 
 def _dispatch_run(ctx: FactoryContext, args: Any) -> dict:
+    # ★ 第 1 刀: 带 --plan ⇒ 跑整棵任务树（scheduler 平面）, 与逐个 --task 分开
+    if str(getattr(args, "plan", "") or ""):
+        return cmd_run_plan(ctx, args)
     """factory run —— 从【目标】创建并执行（薄代理 exec CLI）。
 
     与老 CLI `cli_factory.run_cmd`（L10147）行为一致:
@@ -2482,6 +2489,10 @@ def _dispatch_run(ctx: FactoryContext, args: Any) -> dict:
 
 
 def _print_run(r: dict) -> None:
+    # ★ run --plan 的返回结构与 --task 不同 ⇒ 分流（否则 KeyError: 'proxy'）
+    if r.get("plan_id"):
+        _print_run_plan(r)
+        return
     if r.get("failed"):
         error = r.get("error") or (r.get("result") or {}).get("error") \
             or (r.get("result") or {}).get("status") or "执行失败"
@@ -3632,6 +3643,18 @@ def _print_git(sub: str, r: dict) -> None:
         if r.get("error"):
             print(f"  error     {r['error']}")
 
+
+
+def _print_run_plan(r: dict) -> None:
+    """run --plan 的输出（说人话: 跑了几个 / 为什么停 / 有没有冲突降级）。"""
+    print(f"\n  ▲ 跑任务树: {r.get('plan_id')}")
+    print(f"    轮次 {r.get('ticks')} · 创建执行 {len(r.get('scheduled') or [])} 个")
+    for o in (r.get("outcomes") or [])[:12]:
+        print(f"      · {str(o.get('execution_id'))[:26]:<28} {str(o.get('state'))[:44]}")
+    if r.get("deferred"):
+        print(f"    推迟 {len(r['deferred'])} 个（容量/预算受限）")
+    if r.get("stopped_because"):
+        print(f"    停止原因: {r['stopped_because']}")
 
 def _print_change(sub: str, r: dict) -> None:
     """factory change 输出: commits 提交表; plan 影响面; analyze 路径分析; validate L4 判定;

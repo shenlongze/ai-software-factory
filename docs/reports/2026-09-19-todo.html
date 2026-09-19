@@ -897,16 +897,34 @@
       <code>agents.json</code> 的单个 role 字段（<code>scheduler_wiring.py:234-240</code>）
       ⇒ <b>"developer ≠ reviewer"不会天然覆盖执行层选人</b>。<br>
       <b>要做的</b>: 统一（或明确两者关系）—— 与之前"同名异物/一数据一权威源"同类问题。</span></span></label>
-    <label class="item"><input type="checkbox" id="cr-8"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>正确的实施顺序（Codex 给的, 替换我原设计 4 期）</span>
-      <span class="meta">
-      <b>0</b> 统一执行平面与存储（cr-1）—— 地基<br>
-      <b>1</b> <code>run --plan</code> 真实调度接线, 同时补: <b>Outcome/验证门</b>（cr-3）·
-      <b>失败释放与断点续跑</b>（cr-4）· <b>文件冲突</b>（cr-5）<br>
-      <b>2</b> artifact / 上游上下文传递<br>
-      <b>3</b> 角色消费（cr-2: 先让 runtime 真读角色）与审查员<br>
-      <b>4</b> 最后: <code>isolated</code> 子代理与 <code>MoA</code><br>
-      ⇒ ★ 我原设计把"角色外置"放第 1 期 —— <b>顺序做反了</b>（Codex 纠正）。</span></span></label>
+    <label class="item done"><input type="checkbox" id="cr-8" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>◐ `run --plan` 接通（第 1 刀）—— ★"跑通≠跑得动"</span>
+      <span class="meta"><b>已做</b>: ① <code>cmd_run_plan</code>（走 <b>scheduler 平面</b>: wire_scheduler + drive,
+      复用现成 <code>_open_execution_service</code>）② CLI 给 <code>run</code> 加 <code>--plan/--parallel</code>
+      ③ 四处接入（注册/dispatch/print/import）④ <code>_print_run</code> 分流（否则 KeyError: 'proxy'）。
+      <b>安全前提已备</b>: cr-4（FAILED 归还叶）· cr-5（文件冲突降级串行）。<br>
+      <b>★ 实测</b>: <code>factory run --plan PLAN-e749b8d508 --parallel 2</code> ⇒
+      "轮次 1 · 创建执行 0 个 · 停止原因: 无可推进执行（就绪叶为空）: <b>blocked, unresolved</b>"<br>
+      ⇒ ★★ <b>命令跑通（不崩、装配对、调到了 drive）, 但跑不动</b> —— 诚实标注:
+      <b>"跑通" ≠ "跑得动"</b>（R24 判据的又一次应用）。</span></span></label>
+    <label class="item"><input type="checkbox" id="cr-9"><span class="body">
+      <span class="t"><span class="tag p0">P0</span>★ 下一刀: 解决"叶无法被调度"（unassigned ⇒ unresolved）</span>
+      <span class="meta"><b>实测现象</b>: 就绪叶判定返回 <code>blocked, unresolved</code> ⇒ 一个执行都建不出来。<br>
+      <b>★ 根因（两方都对, 但责任在"执行层"而非"拆解层"）</b>:<br>
+      &nbsp;· 叶的 <code>required_role</code> 全 <code>unassigned</code>（含 project/domain/task 所有节点）;
+      &nbsp;· 但 <code>decomposition</code> 的自述说明这是<b>有意的诚实设计</b>:
+      "关键字推导不可靠（render 可能是 CLI 渲染而非 UI）, 所以只作 hint; required_role 一律诚实留
+      unassigned 除非种子显式给" ⇒ <b>不猜角色是对的</b>。<br>
+      &nbsp;· ★ 所以问题在<b>执行层不认识 unassigned</b>（调度器按 required_role 匹配成员 ⇒ 匹配不到）。<br>
+      <b>★ 现成能力（R25 先查得）</b>: <code>services/work/assignment/</code> 已有
+      <code>AgentAllocator</code>（分配器）· <code>AgentMatcher</code>（匹配器）·
+      <code>NoAvailableAgentError</code> ⇒ <b>分派能力存在, 只是没接进调度</b>。<br>
+      <b>要做的（两个方向, 选一或组合）</b>:<br>
+      &nbsp;① 调度器在 <code>required_role=unassigned</code> 时, 按 <code>required_capabilities</code>
+      （已有值: ['architect','devops','developer'] 等）用 <code>AgentMatcher</code> 选人;<br>
+      &nbsp;② 或在 <code>tasktree confirm</code>（人工确认那一步）加"角色分配" —— 把 unassigned 解析成
+      具体 role/agent（保留人工把关）。<br>
+      <b>验收</b>: 同一棵 13 叶任务树, <code>run --plan</code> 能创建执行并跑起来（不再是 0 个）。</span></span></label>
   </div>
 
   <h2><span class="n">16</span>已完成（本轮 · 留档不删）</h2>

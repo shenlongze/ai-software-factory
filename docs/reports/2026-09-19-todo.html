@@ -582,16 +582,22 @@
       <b>★ 实测</b>: 注册 v1.0.0 ⇒ 修订 v1.0.1（内容已变, id 未变）⇒ 连续修订 v1.0.2;
       修订痕迹正确; 传 id 被忽略; 不存在响亮失败; <b>非法输入被 validate 拒且不写坏</b>;
       <code>get</code> 拿到修订后版本 ✓</span></span></label>
-    <label class="item"><input type="checkbox" id="hm-3"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>写入克制 —— 加"重要性门"（防记垃圾）</span>
-      <span class="meta"><b>Hermes 做法</b>: 写记忆是 <b>agent 显式决定</b>（memory 工具:
-      "save proactively when the user states a preference, correction, or personal detail"),
-      且有明确取舍纪律（"Do NOT save task progress / completed-work logs / TODO state"）。<br>
-      <b>AIF 现状（实测）</b>: 靠 <b>LLM 自动提取</b>（理解时产 operations, 凡"新增产品事实"就 ADD）
-      ⇒ 可能把噪音也记成事实。<br>
-      <b>要做的</b>: 加重要性判据 —— ① 只有"产品事实/约束/决策"级才 ADD ② 寒暄/寒暄式确认不入库（已有）
-      ③ 定期复查: 长期未引用的低价值 fact 降级。<br>
-      <b>验收</b>: facts 里无"闲聊级"条目。</span></span></label>
+    <label class="item done"><input type="checkbox" id="hm-3" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 写入克制 —— 重要性门（防把噪音记成事实）</span>
+      <span class="meta"><b>借 Hermes</b>: 它写记忆是 <b>agent 显式决定</b> + 明确取舍纪律
+      （"Do NOT save task progress / completed-work logs / TODO state"）;
+      AIF 靠 LLM 自动提取 ⇒ 会记噪音。<br>
+      <b>★ 实证噪音（真数据）</b>: project_memory 里就有 ——
+      <code>[decision] "先快速了解一下项目现状，再决定怎么推进。"</code> ·
+      <code>[decision] "根据交接进度…我需要先读取该记录确认现状…"</code> ·
+      <code>[pattern] "好的，那么数据来源呢…"</code> ⇒ <b>正是 Hermes 明令禁记的三类</b>。<br>
+      <b>本刀</b>: interpreter 的 SYSTEM_PROMPT 加 <b>规则 9「重要性门」</b>（原 9/10 顺延为 10/11）——
+      明确列出不该记的四类: 过程/动作描述 · 任务进度 TODO 完成日志 · AI 自己的意图计划 · 孤立寒暄;
+      判据一句话: <b>"这条信息一周后还有用吗? 没用就不记"</b>; 例外: 用户说"记下这点" ⇒ 照记。<br>
+      <b>★ 实测（6 句逐条）</b>: "先快速了解一下项目现状" ⇒ <b>没记</b> · "我需要先读取记录确认现状" ⇒
+      <b>没记</b> · "嗯，好的" ⇒ <b>没记</b> · "产品要支持导出 Excel" ⇒ 记 ✓ ·
+      "记下这点：只给内部员工用" ⇒ 记 ✓（例外生效）⇒ 最终仅 3 条真产品事实。<br>
+      ⚠ 边界: "项目还停留在 idea 阶段" 被记为 CONSTRAINT（状态 vs 阶段约束, 可接受但不完美）。</span></span></label>
     <label class="item"><input type="checkbox" id="hm-4"><span class="body">
       <span class="t"><span class="tag p2">P2</span>对话级上下文压缩（Hermes 最成熟的一块）</span>
       <span class="meta"><b>Hermes 做法（实测）</b>: <code>agent/context_compressor.py</code> ——

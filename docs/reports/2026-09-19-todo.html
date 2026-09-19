@@ -804,7 +804,100 @@
       <b>触发条件</b>: 技能数上量后（现在很少）。</span></span></label>
   </div>
 
-  <h2><span class="n">15</span>已完成（本轮 · 留档不删）</h2>
+  <h2><span class="n">15</span>★ Codex 评审发现（评审我的"执行策略"设计后, 用代码推翻多处）</h2>
+  <div class="hint">
+    Founder 要求: 我评审 + <b>让 Codex 评审</b>。Codex 读了真实仓库, 用<b>代码证据</b>否掉了我设计里的多处声明,
+    并审出<b>比我自评更深的真问题</b>。这些发现比那份设计本身更重要。<br>
+    <b>形态</b>: Codex 是 19 个专业审查员 + evidence-verifier 的体系（见第 14 组 cc-2）—— 本轮正是它"独立视角"的价值。
+  </div>
+  <div class="card" data-group="codexreview">
+    <label class="item done"><input type="checkbox" id="cr-0" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>⊘ 裁决: 我的"执行策略与可插拔角色"设计【暂缓实施】</span>
+      <span class="meta"><b>两方评审结论一致（Codex 更严格）</b>:<br>
+      &nbsp;· 我的自评: 方向对, 但依据部分不实 + 做早了; 该先做 ct-1。<br>
+      &nbsp;· ★ Codex: "该先做别的 —— 暂缓本设计整体实施, 先完成 run --plan 的真实调度接线、
+      统一执行存储、Outcome/验证门、失败续跑、文件冲突与上游产物传递; 角色外置、isolated、MoA 全部后置。"<br>
+      <b>★ 接受的关键否决: "执行策略"是【错误维度】</b> ——
+      <code>isolated</code>=上下文可见性 · <code>parallel</code>=并发度 · <code>moa</code>=模型多样性
+      ⇒ 三者<b>不是同一维度的互斥值</b>（一个任务完全可以 parallel+isolated）⇒ 做成 enum 会损失表达力。
+      <b>应为三个正交属性</b>, 不是一个枚举。</span></span></label>
+
+    <label class="item"><input type="checkbox" id="cr-1"><span class="body">
+      <span class="t"><span class="tag p0">P0</span>★★ 三条执行存储链未统一（Codex 审出 · 我没看到）</span>
+      <span class="meta"><b>Codex 证据</b>: <code>scheduler_pump</code> 用 <code>root/runtime</code>（<code>:56/:285</code>）·
+      CLI <code>execution</code> 用 <code>root/runtimes</code>（<code>apps/cli/commands.py:736-739</code>）·
+      <code>factory run</code> 用 <code>root/exec</code>（<code>services/execution/kernel/cli.py:79-80</code>）<br>
+      <b>后果</b>: pump 创建的 execution 与 CLI 执行服务<b>互不可见</b> ⇒ 两条执行平面各跑各的。<br>
+      <b>要做的</b>: 统一为一个执行存储（并裁决 <code>run --plan</code> 复用哪条执行平面）。<br>
+      <b>为什么 P0</b>: 这是"多 agent 调度"的<u>地基</u> —— 存储不统一, 后面的调度/续跑/舰队视图全无立足点。</span></span></label>
+    <label class="item"><input type="checkbox" id="cr-2"><span class="body">
+      <span class="t"><span class="tag p0">P0</span>★★ 角色定义【根本没有运行时消费者】（Codex 审出）</span>
+      <span class="meta"><b>Codex 证据</b>: <code>RoleDefinition.prompt_template</code> <b>全仓无运行时消费者</b>;
+      当前 <code>factory run</code> 走 <code>exec.cli</code> → <code>AgentRuntime</code>
+      （<code>apps/cli/main.py:2473-2475</code>、<code>services/execution/kernel/cli.py:257-278</code>）,
+      <b>不按 RoleDefinition 选 prompt</b>。<br>
+      <b>★ 这有一条极重要的推论</b>: 我原设计里"删掉 prompt_template 后行为不变"作为
+      <b>角色外置的验收标准</b> —— 那个验收<b>不能证明迁移成功</b>（因为本来就没人读它）。<br>
+      <b>要做的</b>: 先让角色定义<b>真正进入 runtime 选 prompt</b>, 确认消费者存在, 再谈外置。
+      （顺序被 Codex 纠正: 我做反了。）</span></span></label>
+    <label class="item"><input type="checkbox" id="cr-3"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>★ 完成语义绕过了 Outcome（Codex 审出）</span>
+      <span class="meta"><b>Codex 证据</b>: contract 明写
+      "execution success ≠ business completion, <b>必须 accepted Outcome</b>"
+      （<code>contracts/execution/__init__.py:3-4</code>）;
+      但 <code>scheduler_pump</code> 看到结果成功就把 task 写成 <code>completed</code>
+      （<code>:209-220</code>）, <code>TaskTreeWork.has_accepted_outcome()</code> 也把
+      <code>completed/done</code> 当验收（<code>scheduler_wiring.py:186-190</code>）。<br>
+      <b>后果</b>: "任务完成"没有经过验收语义 ⇒ 与"验收判据无消费方"是同一类病。<br>
+      <b>要做的</b>: 完成必须经 accepted Outcome（不能"跑通即完成"）。</span></span></label>
+    <label class="item"><input type="checkbox" id="cr-4"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>★ "失败可续"当前【不成立】（Codex 审出）</span>
+      <span class="meta"><b>Codex 证据</b>: <code>_claim_and_run()</code> <b>只在抛异常时释放 leaf</b>;
+      若 <code>run_execution</code> 返回 <b>FAILED 结果</b>, leaf <b>保持 claimed</b>
+      （<code>scheduler_pump.py:116-126</code>）; 同时 <code>_looks_completed()</code> 不认识
+      <code>ExecutionRunOutcome</code>（<code>:34-40</code>、<code>services/execution/runner.py:54-70</code>）。<br>
+      <b>后果</b>: 一个任务失败后<b>卡在 claimed 永不重试</b> —— 这比"不能续跑"更糟（静默卡死）。<br>
+      <b>要做的</b>: FAILED 结果 ⇒ 释放 claim + 回写状态 + 落 checkpoint。</span></span></label>
+    <label class="item"><input type="checkbox" id="cr-5"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>★ 文件冲突未处理（Codex 审出）</span>
+      <span class="meta"><b>Codex 证据</b>: <code>decomposition.file_conflicts()</code> 明确要求
+      "执行器把<b>同层写同一文件</b>的任务降级串行"（<code>services/work/decomposition.py:473-492</code>）,
+      但 scheduler/pump <b>没有调用它</b>。<br>
+      <b>后果</b>: 并行的两个任务写同一文件 ⇒ 互相覆盖（静默丢改动）。<br>
+      <b>要做的</b>: 并行前做文件冲突检测, 冲突则降级串行。<br>
+      <b>★ 这是并行的安全前提</b> —— 不解决就上并行, 会静默丢代码。</span></span></label>
+    <label class="item"><input type="checkbox" id="cr-6"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>预算门是【假数据】（Codex 审出 · 影响 MoA/资源约束）</span>
+      <span class="meta"><b>Codex 证据</b>: <code>SimpleLoad</code> 直接返回 <code>1e9</code>
+      （<code>bootstrap/scheduler_wiring.py:304-320</code>）, <code>OrgResource.capability()</code>
+      返回 <code>None</code>（<code>:292-299</code>）⇒ <code>cost_estimate</code> 实际为 <b>0</b>
+      （<code>core/scheduler/evaluate.py:102-113</code>）。<br>
+      <b>后果</b>: 预算约束形同虚设（"超限该阻断就阻断"目前无数据支撑）⇒ MoA 的预算门无处可挂。<br>
+      <b>要做的</b>: 让 load/capability 返回真实值（至少从 usage/provider 计费取）。<br>
+      ★ 注: 这与"诚实占位"的既有记录一致（SimpleLoad 容量恒 0 是明知占位）。</span></span></label>
+    <label class="item"><input type="checkbox" id="cr-7"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>两套 Skill/SkillRegistry 体系 + SoD 事实链不统一（Codex 审出）</span>
+      <span class="meta">① <b>两套 Skill</b>: <code>plugins/skills/skill.py</code>（有 tools/check_tool_access）与
+      <code>plugins/agents/*.py</code>（另一个 Skill/SkillRegistry, 无 tools）
+      ⇒ CLI <code>skill add</code> 用的是后者 ⇒ 我设计里"复用 Skill.tools 做工具边界"<b>接不上</b>。<br>
+      ② <b>SoD 事实链不统一</b>: <code>FORBIDDEN_ROLE_COMBINATIONS</code> 只在组织角色分配时校验
+      （<code>organization/lifecycle.py:307-316</code>）, 而 scheduler 的成员来源是
+      <code>agents.json</code> 的单个 role 字段（<code>scheduler_wiring.py:234-240</code>）
+      ⇒ <b>"developer ≠ reviewer"不会天然覆盖执行层选人</b>。<br>
+      <b>要做的</b>: 统一（或明确两者关系）—— 与之前"同名异物/一数据一权威源"同类问题。</span></span></label>
+    <label class="item"><input type="checkbox" id="cr-8"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>正确的实施顺序（Codex 给的, 替换我原设计 4 期）</span>
+      <span class="meta">
+      <b>0</b> 统一执行平面与存储（cr-1）—— 地基<br>
+      <b>1</b> <code>run --plan</code> 真实调度接线, 同时补: <b>Outcome/验证门</b>（cr-3）·
+      <b>失败释放与断点续跑</b>（cr-4）· <b>文件冲突</b>（cr-5）<br>
+      <b>2</b> artifact / 上游上下文传递<br>
+      <b>3</b> 角色消费（cr-2: 先让 runtime 真读角色）与审查员<br>
+      <b>4</b> 最后: <code>isolated</code> 子代理与 <code>MoA</code><br>
+      ⇒ ★ 我原设计把"角色外置"放第 1 期 —— <b>顺序做反了</b>（Codex 纠正）。</span></span></label>
+  </div>
+
+  <h2><span class="n">16</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">
       <span class="t">★ 修会话上下文丢失（P0）—— 关键词预筛静默丢弃 ⇒ 8 轮 3 条变 9 条全在</span>

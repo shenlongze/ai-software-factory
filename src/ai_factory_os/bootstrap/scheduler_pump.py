@@ -21,6 +21,7 @@
   · 不做跨进程锁（单 CLI 进程形态, 与 services/work/store.py 的约定一致）。
 """
 from __future__ import annotations
+import json
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -29,15 +30,33 @@ from typing import Any, Callable
 
 from ai_factory_os.core.scheduler.loop import tick
 from ai_factory_os.core.scheduler.ports import Ports
+from ai_factory_os.services.execution.runtime.store import open_runtime_store
+
+
+def _run_status(out: Any) -> str:
+    """从各种"执行返回形态"里取终态字符串（dict / ExecutionRunOutcome / 普通对象）。
+
+    ★ 2026-09-19（cr-4）：`ExecutionRunOutcome` 把终态放在 `.request.status`
+    （它自己没有 `.status`）⇒ 原先 `_looks_completed()` 对它会一律返回 False,
+    于是"执行成功了但任务树不知道"。
+    """
+    if isinstance(out, dict):
+        return str(out.get("status") or out.get("state") or "").upper()
+    req = getattr(out, "request", None)              # ★ ExecutionRunOutcome 的形态
+    st = getattr(req, "status", None) if req is not None else getattr(out, "status", None)
+    return str(getattr(st, "value", st) or "").upper()
 
 
 def _looks_completed(out: Any) -> bool:
     """执行结果是否算"通过"（保守: 明确 COMPLETED/SUCCESS/ok 才算; 拿不准就不算）。"""
-    if isinstance(out, dict):
-        st = str(out.get("status") or out.get("state") or "").upper()
-        return st in ("COMPLETED", "SUCCESS", "SUCCEEDED", "OK") or out.get("ok") is True
-    st = str(getattr(out, "status", "") or "").upper()
-    return st in ("COMPLETED", "SUCCESS", "SUCCEEDED")
+    if isinstance(out, dict) and out.get("ok") is True:
+        return True
+    return _run_status(out) in ("COMPLETED", "SUCCESS", "SUCCEEDED", "OK")
+
+
+def _looks_failed(out: Any) -> bool:
+    """★ cr-4: 执行结果是否明确失败（用于**归还被认领的叶**, 见 _claim_and_run）。"""
+    return _run_status(out) in ("FAILED", "ERROR", "ERRORED", "CANCELLED")
 
 
 def _write_back_node_status(ports: Ports, execution_id: str, status: str) -> bool:
@@ -47,7 +66,6 @@ def _write_back_node_status(ports: Ports, execution_id: str, status: str) -> boo
     失败安全: 任何一步拿不到 ⇒ 返回 False（调用方记录, 不抛）。
     """
     try:
-        from ai_factory_os.services.execution.runtime.store import open_runtime_store
         from ai_factory_os.services.work import decomposition as D
 
         root = Path(getattr(ports.work, "_root", "."))
@@ -82,6 +100,61 @@ def _write_back_node_status(ports: Ports, execution_id: str, status: str) -> boo
     except Exception:  # noqa: BLE001 — 回写失败不影响驱动
         return False
     return False
+
+
+def _conflicting_nodes(root: Path) -> set[str]:
+    """★ cr-5: 找出"同层写同一文件"的冲突节点（**这些节点不能同时跑**）。
+
+    依据 `decomposition.file_conflicts()` 自述:
+      "两个同层任务若 expected_files 有交集, 并行执行必然互相覆盖
+       ⇒ 执行器需按此把冲突任务**降级为串行**（或报给用户裁决）"
+    为什么必须在此调用: 该函数此前**零调用者** ⇒ 并行批里两个写同一文件的任务
+    会**静默互相覆盖**（丢改动, 且不报错）。
+
+    返回: 需要串行的 node_id 集合（冲突组内**除第一个外**的全部节点）。
+    """
+    from ai_factory_os.services.work import decomposition as D
+
+    serial: set[str] = set()
+    try:
+        for f in sorted((Path(root) / "task_trees").glob("*.json")):
+            try:
+                tree = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            for c in D.file_conflicts(tree) or []:
+                ids = [str(x) for x in (c.get("ids") or [])]
+                serial.update(ids[1:])          # 冲突组只留第一个可并行, 其余串行
+    except Exception:  # noqa: BLE001 — 检测不可用 ⇒ 不退化为"全都并行"（安全优先）
+        return set()
+    return serial
+
+
+def _split_by_conflict(root: Path, batch: list[str],
+                       exec_to_node: dict[str, str]) -> tuple[list[str], list[str]]:
+    """把批内【会写同一文件】的执行拆出来串行 → (可并行批, 需串行批)。"""
+    serial_nodes = _conflicting_nodes(root)
+    if not serial_nodes:
+        return batch, []
+    par: list[str] = []
+    ser: list[str] = []
+    for eid in batch:
+        (ser if exec_to_node.get(eid, "") in serial_nodes else par).append(eid)
+    return par, ser
+
+
+def _exec_node_map(root: Path, batch: list[str]) -> dict[str, str]:
+    """execution_id → node_id（用于冲突判定）。"""
+    out: dict[str, str] = {}
+    try:
+        store = open_runtime_store(root)
+        want = set(batch)
+        for req in store.list_executions():
+            if str(req.id) in want:
+                out[str(req.id)] = str((req.input or {}).get("node_id") or "")
+    except Exception:  # noqa: BLE001 — 拿不到 ⇒ 空表（调用方按"无冲突"处理）
+        return {}
+    return out
 
 
 def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str], Any]) -> Any:
@@ -119,11 +192,18 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
             # 已被别人领 ⇒ 本执行作废（不跑）—— 这正是 CAS 的意义
             return {"status": "SKIPPED", "reason": f"CAS 认领失败: {got.get('reason')}"}
     try:
-        return run_execution(execution_id)
+        result = run_execution(execution_id)
     except Exception:
         if node_id and task_id:
             D.release_leaf(root, task_id, node_id, status="pending")   # 回滚, 供重认
         raise
+    # ★ 2026-09-19（cr-4）: **返回值是 FAILED 时也必须归还** ——
+    #   原先只有"抛异常"才回滚; 若执行正常返回但终态为 FAILED, 叶会**永久停在 claimed**
+    #   ⇒ 该叶再也不会被调度（比"不能续跑"更糟: 静默卡死）。
+    #   归还为 pending ⇒ 下一轮 tick 可重认（配合 checkpoint 可断点续跑）。
+    if node_id and task_id and _looks_failed(result):
+        D.release_leaf(root, task_id, node_id, status="pending")
+    return result
 
 
 @dataclass
@@ -197,6 +277,14 @@ def drive(
         # ★ ① 整批作为"一个驱动单元"; ② 批内并发受 max_parallel 约束
         batch = list(result.scheduled)
         rep.scheduled.extend(batch)
+        # ★ cr-5: 批内文件冲突检测 —— 同层写同一文件的执行**不能并行**（否则静默互相覆盖）。
+        #   decomposition.file_conflicts() 自述要求"执行器降级为串行", 此前零调用者。
+        _emap = _exec_node_map(root, batch)
+        _par, _ser = _split_by_conflict(root, batch, _emap)
+        if _ser:
+            rep.outcomes.append({"execution_id": ",".join(_ser), "ok": True,
+                                 "state": f"★ 文件冲突 ⇒ 降级串行（{len(_ser)} 个）"})
+        batch = _par
         with ThreadPoolExecutor(max_workers=max(1, int(max_parallel))) as pool:
             futures = {pool.submit(_claim_and_run, ports, eid, run_execution): eid
                        for eid in batch}
@@ -249,8 +337,7 @@ def make_real_execution_port(root: Path | str, *, task_id: str, work: Any = None
             10 tick 建了 30 个执行 ⇒ 同一批叶被反复跑）。
             失败安全: 读不到/坏数据 ⇒ 当作"无活跃"（退化为老行为, 不假阻塞）。
             """
-            from ai_factory_os.services.execution.runtime.store import open_runtime_store
-
+    
             try:
                 # ★ claimed 的叶也算"活跃"（CAS 已把它锁给人了）——
                 #   否则每轮 tick 又判 READY ⇒ 重复创建执行（CAS 虽会拒, 但执行请求已白建）。

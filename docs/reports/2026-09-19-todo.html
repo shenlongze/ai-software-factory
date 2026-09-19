@@ -521,10 +521,19 @@
       <b>★ 三次教训同一个根</b>: 判"孤立/无入口/无消费者"时, 我的判据都不可靠 ——
       ① 只比顶级命令（漏子命令）② 只 grep 符号名（漏"谁 import 这个类"）
       ③ 只扫文件名（漏不同路径/继承）⇒ <b>判"没有"之前, 必须先想清楚判据能不能证伪</b>。</span></span></label>
-    <label class="item"><input type="checkbox" id="mem-11"><span class="body">
-      <span class="t"><span class="tag p2">P2</span>用户记忆（偏好 / 画像）—— ★ 完全没有</span>
-      <span class="meta"><b>实测</b>: 全仓无 user_preference / user_profile 机制（只有 agent 角色定义里提到词）。
-      ⇒ 会话里表达过的偏好, 系统不记。要不要做? （与"多角色/多公司"定位的关系需想清）</span></span></label>
+    <label class="item done"><input type="checkbox" id="mem-11" checked><span class="body">
+      <span class="t"><span class="tag p2">P2</span>⊘ 【不做】用户偏好记忆 —— 平台定位下已有正确的形态</span>
+      <span class="meta"><b>为什么不做（技术判断, 自判并报告）</b>:<br>
+      · AIF 是<b>平台</b>（多公司/多员工/多角色）⇒ "用户" = <b>Human Identity</b>
+      （<code>identity.py</code>: "Identity = Human | Agent 的统一 OS Core 主体原语 ·
+      Human Identity: 公司内主体 → company_id 必填"）<br>
+      · 平台该记的是<b>主体的表现与画像</b>, 不是"个人偏好" ⇒ ★ <b>而这已经有了</b>:<br>
+      &nbsp;&nbsp;<code>experience</code>（92 条, 字段: subject_type/subject_id/result/score/
+      quality_score/cost/duration/confidence/usage_count/freshness ⇒ 这就是<b>主体的表现记忆</b>,
+      按结果 success 82 / failure 10）+ <code>identity</code>（主体原语）+ <code>roles</code>（13 角色）+
+      <code>Employee</code>（knowledge_scope 等）<br>
+      · "个人偏好记忆"属于<b>单用户助手</b>的需求（如 Hermes 的 USER.md）⇒ <b>不是平台需求</b>。<br>
+      ⇒ 按 Founder 的两条铁律（"只问现在谁在用" · "不给自己造活"）: <b>不做</b>。</span></span></label>
     <label class="item done"><input type="checkbox" id="mem-12" checked><span class="body">
       <span class="t"><span class="tag p2">P2</span>✅ 其他记忆机制（已通, 无需动作）</span>
       <span class="meta"><code>events</code>(事实源, 170 文件) · <code>history</code>(FTS5 检索) ·

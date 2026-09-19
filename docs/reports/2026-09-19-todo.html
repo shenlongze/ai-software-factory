@@ -288,6 +288,16 @@
       <b>建议</b>: 升级为 <b>AST 级</b>（Python <code>ast</code> 属标准库 ⇒ 仍零依赖）;
       再加「四通道」(静态 · 文本 · 行为契约 · 文档引用) 与影响面清单输出。
       新增 <code>factory change plan SYMBOL</code>：只分析不改，输出影响面清单（含「无测试覆盖」风险标注）。</span></span></label>
+    <label class="item done"><input type="checkbox" id="imp-0" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 设计已交付: <code>docs/design/storage-and-memory-design.md</code>（+HTML 预览）</span>
+      <span class="meta"><b>总纲（一条原则推出全部）</b>: <b>不可派生的才「记」, 可派生的只「算」; 每个数据只有一个权威源</b>。<br>
+      <b>三个真相源</b>: git(内容+决策) · SQLite(运行时状态) · 文件(配置); 派生物(索引/图谱/视图)可丢弃可重建。<br>
+      <b>记忆</b>: 不记全量代码; 记「决策理由 · 任务链 · 运行事实 · 知识文档」; 索引按白名单+新鲜度+分档优先级, <b>且必须被消费</b>。<br>
+      <b>改全</b>: 四通道(静态/文本/行为/文档) + 验证 + ★显式列风险; 唯一技术改动 = 正则级升 <b>AST 级</b>(标准库仍零依赖)
+      + 新增 <code>factory change plan</code>。<br>
+      <b>落地三期</b>: ① 解决真实风险(search.db 改 WAL · 查看类事件出真相层 · 项目产物纳入 git ·
+      索引重建 · 检索接 ContextResolver) ② 改全做实(AST · change plan · acceptance 接消费)
+      ③ 等规模(结构化状态迁库 · 事件投影 · facts 检索层)</span></span></label>
     <label class="item"><input type="checkbox" id="imp-2"><span class="body">
       <span class="t"><span class="tag p2">P2</span>「功能模块 / 数据链 / 任务链 / 调用关系 / 执行顺序」要不要记录 —— 判据已定</span>
       <span class="meta"><b>Founder 问</b>: "是否需要记录功能模块, 数据链、任务链、调用关系、执行顺序等等"<br>

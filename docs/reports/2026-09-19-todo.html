@@ -658,7 +658,70 @@
       <b>触发条件</b>: facts 多到"读全量才能了解项目"时（现在 4 条, 远未到）⇒ 可缓。</span></span></label>
   </div>
 
-  <h2><span class="n">13</span>已完成（本轮 · 留档不删）</h2>
+  <h2><span class="n">13</span>复杂任务处理（Founder 提问后实测）</h2>
+  <div class="hint">
+    Founder: "复杂任务的处理, 我们现在是如何处理的"。实测: 用真实电商需求跑完整条链。<br>
+    <b>实测结论</b>: 零件齐全 + 质量不错, 但★ <b>缺一根主轴（编排）</b> —— 7 步全人工触发。
+  </div>
+  <div class="card" data-group="complex">
+    <label class="item done"><input type="checkbox" id="ct-0" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 实测: 复杂任务全链路能跑通（零件齐全）</span>
+      <span class="meta"><b>用真需求实测</b>（电商: 登录/商品/购物车/支付/订单/后台 + 微信支付 + 双十一）:<br>
+      &nbsp;① 理解 → 9 条事实 ② PRD → <code>PRD-7ad7c9bf4956</code>（7 章节）<br>
+      &nbsp;③a <code>product develop</code> → Product Artifact <code>A-f48cd7304a</code>（7 节）<br>
+      &nbsp;③b <code>product ux</code> → UX/UI Artifact <code>A-8d6723cd04</code>（7 节）<br>
+      &nbsp;④ <code>arch design</code> → Design Artifact <code>A-8bd05765c3</code>
+      （★ <b>双输入溯源</b> ['A-f48cd7304a','A-8d6723cd04'] · 7 节）<br>
+      &nbsp;⑤ <code>tasktree decompose</code> → <code>PLAN-e749b8d508</code> [candidate] · 27 节点 / 13 叶任务<br>
+      &nbsp;⑥ <code>tasktree confirm</code> → [confirmed]<br>
+      <b>★★★★★ 做得好的</b>: 每步有明确 Artifact（带 id + 溯源）· <b>强校验</b>
+      （arch 实测拒绝"脱离双输入": "需双输入: product=✗ ux_ui=✗"）· <b>边界纪律</b>
+      （max_depth 5 / max_leaves 64）· <b>人工确认门</b>（candidate→confirmed 才进执行）·
+      <b>任务树质量高</b>（字段含 depends_on/required_role/expected_files/acceptance;
+      拆出 project-scaffold/database/auth/user 等模块, 依赖链完整）· 每步提示"下一步"。</span></span></label>
+
+    <label class="item"><input type="checkbox" id="ct-1"><span class="body">
+      <span class="t"><span class="tag p0">P0</span>★ 一条命令跑整棵树 —— <code>run --plan</code>（最该先做）</span>
+      <span class="meta"><b>缺口（实测）</b>: 任务树确认后, 执行只能 <code>run --task &lt;单个&gt;</code>
+      ⇒ 13 个任务 = <b>13 次人工调用</b>; 没有"按拓扑序跑完整棵树"。<br>
+      <b>要做的</b>: <code>factory run --plan PLAN-xxx</code> —— 按 <code>depends_on</code> 拓扑序
+      依次/并行跑叶任务, 每步落 <code>EXS-*</code>, 失败即停并可续。<br>
+      <b>为什么优先</b>: 一条命令同时解决「执行不跑整棵树」+「并行调度无入口」
+      （内部可接已实测能跑的 <code>bootstrap/scheduler_pump</code>）。</span></span></label>
+    <label class="item"><input type="checkbox" id="ct-2"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>并行调度接 CLI 入口（<code>scheduler_pump</code> 孤立）</span>
+      <span class="meta"><b>缺口（实测）</b>: <code>bootstrap/scheduler_pump.py</code> + <code>scheduler_wiring.py</code>
+      是并行调度器（我曾实测跑通: 真执行 + 事件回流 + CAS 认领 + 真实成员名）,
+      但★ <b>无 CLI 入口</b> ⇒ 用户用不上（R24: 有代码没入口 = 不算完成）。<br>
+      <b>要做的</b>: 随 ct-1 一起暴露（<code>run --plan --parallel</code> 或 <code>factory drive</code>）。</span></span></label>
+    <label class="item"><input type="checkbox" id="ct-3"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>一键编排（把 7 步串成一条链）</span>
+      <span class="meta"><b>缺口（实测）</b>: 需求→PRD→产品→UX→架构→任务树→确认→执行,
+      <b>7 步全人工</b>, 没有"给个需求自己跑到底"（人得记住顺序）。<br>
+      <b>要做的</b>: 编排入口（如 <code>factory pipeline &lt;需求&gt;</code>）——
+      按顺序调 7 步, 在<b>确认门</b>处停下等人（保留人工把关, 不是全自动）。<br>
+      <b>注意</b>: 不要做成"全自动黑箱" —— 现有的人工确认门是有意设计的（candidate→confirmed）。</span></span></label>
+    <label class="item"><input type="checkbox" id="ct-4"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>舰队视图接入口（<code>console_view.fleet</code>）</span>
+      <span class="meta"><b>缺口（实测）</b>: <code>console_view.fleet()</code>（"谁在做什么·谁空闲·谁干完了"）
+      存在但<b>无 CLI 入口</b>; 多任务并行时看不到全局。<br>
+      <b>要做的</b>: <code>factory console fleet</code>（或并入 ct-1 的输出）。</span></span></label>
+    <label class="item"><input type="checkbox" id="ct-5"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>失败恢复接进任务树执行</span>
+      <span class="meta"><b>现状</b>: <code>CheckpointStore</code> 有（<code>factory checkpoint</code> 可用）·
+      <code>recovery/replay</code> 有 ⇒ <b>能力在</b>, 但没接进"任务树执行"这条链。<br>
+      <b>要做的</b>: ct-1 跑整棵树时, 每个叶任务落检查点 ⇒ 中途失败可从断点续跑。<br>
+      <b>判据</b>: 13 个任务跑到第 7 个失败 ⇒ 修好后能从第 7 个继续, 不重跑前 6 个。</span></span></label>
+    <label class="item"><input type="checkbox" id="ct-6"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>任务间的上下文传递（与记忆主线相关）</span>
+      <span class="meta"><b>缺口</b>: 13 个任务串行跑时, 后一个任务怎么知道前一个做了什么?
+      （现有 <code>expected_files</code>/<code>depends_on</code> 给了"结构", 但没给"上下文"）<br>
+      <b>要做的</b>: 叶任务执行时注入"上游任务的产出摘要"（可复用刚做完的分层记忆 +
+      <code>select_facts</code> 的投影思路）。<br>
+      <b>注意</b>: 这条与 hm-4（对话级压缩）不同 —— 那不需要, 这个需要（任务间是独立 LLM 调用）。</span></span></label>
+  </div>
+
+  <h2><span class="n">14</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">
       <span class="t">★ 修会话上下文丢失（P0）—— 关键词预筛静默丢弃 ⇒ 8 轮 3 条变 9 条全在</span>

@@ -168,6 +168,13 @@ def build_parser() -> Any:
         sp.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
 
     # factory init
+    p_llm = sub.add_parser(
+        "llm", help="LLM 路由产品面: OpenAI 兼容端点 (对外可交付)"
+    )
+    json_opt(p_llm)
+    p_llm.add_argument("llm_command", choices=["serve"], help="serve — 起 OpenAI 兼容端点")
+    p_llm.add_argument("--host", default="127.0.0.1")
+    p_llm.add_argument("--port", type=int, default=8787)
     json_opt(sub.add_parser("init", help="初始化工厂: 目录骨架 + 事件库 (幂等)"))
 
     # factory task <sub>
@@ -1080,6 +1087,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_approval(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
+        elif args.command == "llm":
+            result = _dispatch_llm(ctx, args)
         elif args.command == "provider":
             result = _dispatch_provider(ctx, args)
         elif args.command == "workspace":
@@ -2518,6 +2527,22 @@ def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown project command: {args.project_command}", exit_code=2)
 
 
+def _dispatch_llm(ctx: FactoryContext, args: Any) -> dict:
+    """factory llm serve —— 起 OpenAI 兼容端点（LLM 路由对外产品面）。
+
+    阻塞直到 Ctrl-C。暴露 POST /v1/chat/completions · GET /health · GET /v1/models;
+    任何 OpenAI 客户端把 base_url 指向 http://<host>:<port>/v1 即可接入。
+    """
+    from ai_factory_os.infrastructure.llm.serve import serve
+
+    serve(host=str(getattr(args, "host", "127.0.0.1")), port=int(getattr(args, "port", 8787)))
+    return {"ok": True, "stopped": True}
+
+
+def _print_llm(sub: str, r: dict) -> None:
+    print(f"  llm {sub}: {'已停止' if r.get('stopped') else '完成'}")
+
+
 def _dispatch_provider(ctx: FactoryContext, args: Any) -> dict:
     """provider list/show/test/usage/stats/compare/recommend 分发 (Phase 8A
     ADR-0022 + 8B-2 ADR-0024)。"""
@@ -2775,6 +2800,7 @@ def _print_output(args: Any, result: dict) -> None:
     elif args.command == "project":
         _print_project(args.project_command, result)
     elif args.command == "provider":
+        _print_llm(args.llm_command, result)
         _print_provider(args.provider_command, result)
     elif args.command == "workspace":
         _print_workspace(args.workspace_command, result)

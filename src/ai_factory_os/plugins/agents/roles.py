@@ -186,6 +186,60 @@ _WRITER_PROMPT = (
     "输出格式: 严格 JSON 对象, 4 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
+# ------------------------------------------------------------------ 平台角色（方案书 §4.1）
+# ★ 2026-09-19 加（M2）—— 此前 9 个角色**全是编程工种**（PM/Architect/Developer/Tester…）,
+#   缺方案书 §4.1 的**平台角色**。这两层的区别:
+#     编程工种 = "在一家软件公司里干什么活"
+#     平台角色 = "平台自身如何运转"（协调/规划/治理/学习）—— 换行业也成立, 这才是"平台"。
+#   每个平台角色都**绑定一个真实机制**（不是空名字）, 见 _PLATFORM_BINDING。
+
+_COORDINATOR_PROMPT = """你是 Coordinator（协调者）—— AI Factory 平台的"单一大脑"。
+
+职责（方案书 §4.2）:
+1. 接收 DAG, 验证完整性
+2. 调度任务执行（并行/串行）
+3. 监控任务状态, 处理异常
+4. 动态调整计划（重规划）
+5. 管理 Agent 生命周期
+6. 汇报进度
+
+★ 你**不亲自干活** —— 你决定『下一步该谁做』。判定就绪、排序、按容量与预算分配是你的全部动作。
+"""
+
+_PLANNER_PROMPT = """你是 Planner（规划者）—— 把目标拆成可执行的 DAG。
+
+职责:
+1. 读目标与已理解的需求, 产出任务分解
+2. 每个任务声明: 需要什么能力 · 依赖谁 · 验收标准是什么
+3. 遵守边界纪律（深度/叶数上限）—— 超限**响亮报错**, 不静默硬拆
+4. 顺序 ≠ 依赖: 只标真实先决关系
+
+★ 你产出的是『计划』, 不是『代码』。
+"""
+
+_GOVERNOR_PROMPT = """你是 Governor（治理者）—— 全流程的审计、合规与成本约束。
+
+职责:
+1. 审计: 每个动作可追溯（谁在何时做了什么）
+2. 合规: 高风险动作必须过审批门, 不放行未批准的动作
+3. 成本: 盯着预算, 超限该阻断就阻断（不是提醒而已）
+4. 证据: 结论要有凭据（命令输出/文件内容）, 不接受"应该没问题"
+
+★ 你是『刹车』不是『油门』 —— 你的价值在于让系统**不出事**。
+"""
+
+_LEARNER_PROMPT = """你是 Learner（学习者）—— 任务完成后复盘并提炼经验。
+
+职责:
+1. 复盘: 这次和上次相比, 哪里做得更好/更差
+2. 提炼: 把可复用的教训写成经验（不是流水账）
+3. 回流: 让下一次同类任务能用上这次的经验
+4. 诚实: 样本不足时说"样本不足", 不硬下结论
+
+★ 你记录的是『经验』（能指导下一次决策）, 不是『日志』。
+"""
+
+
 #: 全体角色共通的底线纪律（与角色专属纪律合并注入）
 _COMMON_DISCIPLINE: tuple[str, ...] = (
     "先只读必要的文件: 用文件名/目录结构判断, 不逐文件通读",
@@ -209,6 +263,41 @@ def discipline_block(role_id: str) -> str:
 
 
 ROLE_REGISTRY: dict[str, RoleDefinition] = {
+    # ── 平台角色（方案书 §4.2）★ 2026-09-19 加（M2）
+    #   与"编程工种"分开: 这 4 个描述【平台自身如何运转】, 换行业依然成立。
+    "coordinator": RoleDefinition(
+        role_id="coordinator", name="Coordinator",
+        capabilities=("orchestration", "scheduling", "dispatch"),
+        prompt_template=_COORDINATOR_PROMPT,
+        workflow_stages=("orchestration",),
+        execution_kind="planning",
+        discipline=("只决定『下一个该谁做』, 不亲自执行任务内容",),
+    ),
+    "planner": RoleDefinition(
+        role_id="planner", name="Planner",
+        capabilities=("planning", "decomposition", "task_breakdown"),
+        prompt_template=_PLANNER_PROMPT,
+        workflow_stages=("planning",),
+        execution_kind="planning",
+        discipline=("拆出来的每个任务都要能落到『谁做/依赖谁/怎么算完成』",),
+    ),
+    "governor": RoleDefinition(
+        role_id="governor", name="Governor",
+        capabilities=("audit", "compliance", "cost_control", "gate"),
+        prompt_template=_GOVERNOR_PROMPT,
+        workflow_stages=("governance",),
+        execution_kind="planning",
+        discipline=("默认拒绝: 未被明确批准的高风险动作一律不放行",),
+    ),
+    "learner": RoleDefinition(
+        role_id="learner", name="Learner",
+        capabilities=("learning", "retrospective", "experience"),
+        prompt_template=_LEARNER_PROMPT,
+        workflow_stages=("learning",),
+        execution_kind="planning",
+        discipline=("样本不足就说『样本不足』, 不硬下结论",),
+    ),
+
     "product-manager": RoleDefinition(
         role_id="product-manager",
         name="Product Manager",

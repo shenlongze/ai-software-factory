@@ -139,8 +139,8 @@
     <label class="item"><input type="checkbox" id="t4-1"><span class="body">
       <span class="t"><span class="tag p1">P1</span>M2：7 专家产出链只到 3 个</span>
       <span class="meta">已有 pm→uxui→architect；缺 <b>writer · security · reviewer · devops · tester</b> 的产出链（角色定义有 9 个, 有执行链的只 3 个）</span></span></label>
-    <label class="item"><input type="checkbox" id="t4-2"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>平台角色缺 4 个</span>
+    <label class="item done"><input type="checkbox" id="t4-2" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 平台角色已补 4 个（角色 9 → 13）</span>
       <span class="meta">方案书 §4.1 要 <b>Coordinator(协调) · Planner(规划) · Governor(治理) · Learner(学习)</b>；现在的 9 个全是编程工种</span></span></label>
     <label class="item"><input type="checkbox" id="t4-3"><span class="body">
       <span class="t"><span class="tag p1">P1</span>M6：<b>第二行业</b>没有</span>
@@ -202,6 +202,11 @@
   <!-- ═══════ 7 ═══════ -->
   <h2><span class="n">7</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
+    <label class="item done"><input type="checkbox" id="t7-16" checked><span class="body">
+      <span class="t">补平台角色 —— Coordinator · Planner · Governor · Learner（B 方向）</span>
+      <span class="meta">★ 与"编程工种"分层: 这 4 个描述【平台自身如何运转】, 换行业依然成立。
+      每个都绑定真实机制: coordinator→core/scheduler · planner→work/decomposition ·
+      governor→governance · learner→learning；且各带专属工作纪律</span></span></label>
     <label class="item done"><input type="checkbox" id="t7-15" checked><span class="body">
       <span class="t">LLM 端点加鉴权（Bearer token · 常量时间比较 · 默认本地模式）</span>
       <span class="meta">设 <code>AIFACTORY_GATEWAY_TOKEN</code> 即启用；未设 ⇒ 放行但启动时大声警告。

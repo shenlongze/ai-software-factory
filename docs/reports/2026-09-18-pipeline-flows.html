@@ -736,6 +736,60 @@
     修法：<b>不迁老区代码</b>（会带老依赖），改用新区能力 + stdlib 重写。实测 7 个全部真跑通。
   </div>
 
+  <!-- ═══════════ 模块 9:配置面(引导) ═══════════ -->
+  <h2><span class="n">9</span>配置面 —— 新手怎么把模型接进来（照 Hermes/OpenClaw）</h2>
+  <div class="hint">
+    上文模块 8 讲"外部能力怎么进平台"；这一段讲<b>更靠前的一步</b>：<b>人怎么把 LLM 配进来</b>。<br>
+    学的是 <b>Hermes</b>（<code>setup</code> / <code>model</code> / <code>doctor</code>）与
+    <b>OpenClaw</b>（<code>config</code> / <code>configure</code> / <code>doctor</code>）的做法。
+  </div>
+
+  <h3>学到的标准（两家的共同设计）</h3>
+  <table>
+    <thead><tr><th>设计</th><th>Hermes</th><th>OpenClaw</th><th>本仓落地</th></tr></thead>
+    <tbody>
+      <tr><td><b>交互式配置</b>（人用）</td><td><code>setup model</code> / <code>model</code></td>
+          <td><code>configure</code></td><td><code>provider add</code>（无参数即进入引导）</td></tr>
+      <tr><td><b>非交互式</b>（脚本/CI）</td><td><code>setup --non-interactive</code></td>
+          <td><code>config</code></td><td><code>provider add --id … --base-url … --env …</code></td></tr>
+      <tr><td><b>体检/诊断</b></td><td><code>doctor</code></td><td><code>doctor</code>（含修复）</td>
+          <td><code>provider doctor</code>（五项检查）</td></tr>
+      <tr><td><b>分节配置</b></td><td><code>{model,tts,terminal,gateway,tools,agent}</code></td>
+          <td><code>{credentials,channels,…}</code></td><td>provider 内聚（当前只此一节）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>本仓 <code>provider add</code> 的三步引导</h3>
+  <div class="two">
+    <div class="card bad">
+      <div class="t">引导流程（交互模式）</div>
+      <ul>
+        <li><b>① 选</b>：列出 5 个预设（DeepSeek / OpenAI / Anthropic / Moonshot / 自定义）—— 不用背 base_url</li>
+        <li><b>② 填</b>：粘贴 key ⇒ ★ <b>只写进 <code>~/.hermes/.env</code></b>，不落配置文件</li>
+        <li><b>③ 试连</b>：先落库再 <code>provider test</code> 真调一次，确认能用</li>
+        <li>非 tty / <code>--non-interactive</code> 时自动跳过询问（脚本安全）</li>
+      </ul>
+    </div>
+    <div class="card good">
+      <div class="t">doctor 的五项体检（实测输出）</div>
+      <ul>
+        <li>✓ 配置文件可读 &nbsp;&nbsp;✓ 至少一个 enabled provider</li>
+        <li>✗ <b>key 是否已设置</b>（实测报出「DEEPSEEK_API_KEY 未设置」）</li>
+        <li>✓ 端点 + 模型是否齐全</li>
+        <li>✗ <b>降级链是否配置</b>（报「主 provider 挂了会直接失败，建议配 1-2 个备用」）</li>
+        <li>⇒ <b>3/5 通过</b>，每条都给"怎么修"</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>★ 亲眼验证的一条铁律</b>：<code>provider add</code> 落库后，<code>providers.json</code> 里存的是
+    <code>"api_key_ref": "env:MOONSHOT_API_KEY"</code> —— <b>明文 key 不在配置文件里</b>。
+    这是本仓贯穿始终的约定（key 只存 env），配置引导也遵守。<br>
+    <b>改动前</b>：provider 有 7 个 action（list/show/test/usage/stats/compare/recommend）——
+    <b>全是"看/测"，没有"配"</b>；新人只能手写 JSON。
+  </div>
+
   <div class="note" style="margin-top:26px">
     <b>本页与上一页的区别</b>：上一页是<b>清单视图</b>（有什么命令 / 哪些域厚 / 完成度）；
     本页是<b>流动视图</b>（一条需求如何逐环变成代码，数据落在哪，命令背后经过哪几层）。

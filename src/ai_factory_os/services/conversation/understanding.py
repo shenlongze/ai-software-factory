@@ -51,6 +51,7 @@ FACT_TYPES: tuple[str, ...] = (
 #: Fact 状态注册表 (Golden Path: DEFERRED = 延后但非拒绝, 可恢复/被 supersede)
 FACT_STATUSES: tuple[str, ...] = (
     "PROPOSED", "CONFIRMED", "SUPERSEDED", "REJECTED", "DEFERRED",
+    "ARCHIVED",          # ★ hm-1: 记忆质量门 —— 超上限时软删（不进注入, 仍可查）
 )
 
 #: Conversation 状态
@@ -58,6 +59,15 @@ CONV_STATUSES: tuple[str, ...] = ("OPEN", "ARCHIVED")
 
 #: 有效事实状态 (参与 understanding snapshot; DEFERRED/REJECTED/SUPERSEDED 不参与)
 ACTIVE_STATUSES: tuple[str, ...] = ("PROPOSED", "CONFIRMED")
+
+#: ★ 2026-09-19（hm-1 · 记忆质量门, 借 Hermes 的硬上限思路）:
+#: 单会话**活跃事实上限** —— 超限时把"最老 + 非关键"的事实【归档】(ARCHIVED, 不删可查)。
+#: 为什么: Hermes 的 MEMORY.md 有硬字符上限(2200/1375) ⇒ 超了逼你删/合并 ⇒ 天然防囤积;
+#: AIF 此前**无任何上限** ⇒ 事实只增不减（长期会稀释注入质量、拖慢投影）。
+#: 与"删"的区别: 归档是**软删** —— 状态置 ARCHIVED, 不进注入/ACTIVE, 但仍可查（可审计）。
+MAX_LIVE_FACTS = 500
+#: 归档时**永不归档**的类型（产品本体与硬约束）—— 和第三层 select_facts 的保守规则一致。
+_NEVER_ARCHIVE_TYPES = ("IDEA", "CONSTRAINT")
 
 #: 非终态 (可被后续语义操作改变; SUPERSEDED 终态不可逆转)
 MUTABLE_STATUSES: tuple[str, ...] = ("PROPOSED", "CONFIRMED", "DEFERRED", "REJECTED")
@@ -333,6 +343,38 @@ def _effective_facts_of(doc: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _enforce_fact_limit(doc: dict[str, Any], *,
+                        limit: int = MAX_LIVE_FACTS) -> list[str]:
+    """★ 记忆质量门（hm-1）: 活跃事实超上限 ⇒ 归档最老的、非关键的（软删, 可查）。
+
+    借 Hermes 的思路: 它的 MEMORY.md 有**硬字符上限**(2200/1375) ⇒ 超了逼你删/合并 ⇒ 防囤积。
+    AIF 此前无上限 ⇒ 事实只增不减（稀释注入质量、拖慢投影）。
+
+    规则（保守 —— 防丢关键）:
+      · **IDEA / CONSTRAINT 永不归档**（产品本体与硬约束）
+      · 候选 = 活跃(PROPOSED/CONFIRMED)且非关键; 按 updated_at/created_at **最老的优先**
+      · 归档 = status 置 "ARCHIVED" ⇒ 不进 ACTIVE_STATUSES ⇒ 不会被注入; 但**仍在文档里可查**
+    返回被归档的 fact id 列表（确定性顺序）。
+    """
+    facts = ((doc.get("understanding") or {}).get("facts") or {})
+    if not isinstance(facts, dict):
+        return []
+    live = [(fid, f) for fid, f in facts.items()
+            if isinstance(f, dict)
+            and str(f.get("status") or "") in ACTIVE_STATUSES
+            and str(f.get("type") or "").upper() not in _NEVER_ARCHIVE_TYPES]
+    if len(live) <= limit:                                  # 只按"活跃且非关键"判上限
+        return []
+    live.sort(key=lambda kv: (str(kv[1].get("created_at") or ""), str(kv[0])))   # 最老优先
+    n_archive = len(live) - limit
+    archived: list[str] = []
+    for fid, f in live[:n_archive]:
+        f["status"] = "ARCHIVED"
+        f["archived_at"] = _now_iso()
+        archived.append(fid)
+    return archived
+
+
 def upsert_fact(root: Path | str, conv_id: str, *, fact_type: str,
                 content: str, source_message_id: str = "",
                 confidence: float = 1.0, provenance: str = "",
@@ -402,6 +444,11 @@ def upsert_fact(root: Path | str, conv_id: str, *, fact_type: str,
                 dict.fromkeys(list(superseded_old) + list(superseded)))
         # 3) 落盘新 fact
         facts[new_fact["id"]] = new_fact
+        # ★ hm-1 记忆质量门: 超上限 ⇒ 归档最老的非关键事实（软删, 可查; IDEA/CONSTRAINT 永不归档）
+        _archived = _enforce_fact_limit(doc)
+        if _archived:
+            doc.setdefault("understanding", {})["archived_facts"] = (
+                list(doc["understanding"].get("archived_facts") or []) + _archived)
         _bump_understanding_version(doc)
     _mutate(root, conv_id, _fn)
 

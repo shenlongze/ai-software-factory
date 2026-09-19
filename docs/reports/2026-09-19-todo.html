@@ -556,18 +556,19 @@
     AIF(多租户平台) 强在【结构 + 作用域 + 知识与影响面】⇒ 互补性强。
   </div>
   <div class="card" data-group="hermes">
-    <label class="item"><input type="checkbox" id="hm-1"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>记忆质量门 —— 上限 + 淘汰（Hermes 核心优势）</span>
-      <span class="meta"><b>Hermes 做法（实测）</b>: <code>memories/MEMORY.md</code> + <code>USER.md</code>
-      是 § 分隔的纯文本条目, 有<b>硬字符上限</b>（memory 2200 / user 1375,
-      "Character limits (not tokens) because char counts are model-independent"）
-      ⇒ 超了就<b>逼你删/合并</b> ⇒ 天然防囤积。<br>
-      <b>AIF 现状（实测）</b>: <b>无硬上限</b> —— facts 只靠分层 + <code>select_facts</code> 筛选缓解,
-      另有 <code>max_facts=40</code> 软限 + 会话归档; <code>project_memory</code> 有时间衰减但无上限。<br>
-      <b>要做的</b>: 给 facts / project_memory 加"上限 + 淘汰" —— ① 条目或字符上限
-      ② 长期未用（<code>usage_count</code>/<code>last_used</code> 已有字段）⇒ 降级或归档
-      ③ 超限时的合并/顶替（已有语义槽机制可复用）。<br>
-      <b>验收</b>: 事实增长到上限时行为可预测（不静默丢、有归档可查）。</span></span></label>
+    <label class="item done"><input type="checkbox" id="hm-1" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 记忆质量门 —— 上限 + 归档（软删可查）</span>
+      <span class="meta"><b>借 Hermes</b>: MEMORY.md/USER.md 有硬字符上限（2200/1375, "char counts are
+      model-independent"）⇒ 超了逼你删/合并 ⇒ 防囤积。AIF 此前<b>无任何上限</b>。<br>
+      <b>本刀</b>: ① 新增 fact 状态 <code>ARCHIVED</code>（软删: 不进 ACTIVE/不注入, 但<b>仍在文档可查</b>）
+      ② <code>MAX_LIVE_FACTS = 500</code>（活跃事实上限）③ <code>_enforce_fact_limit()</code> ——
+      超限时归档<b>最老的、非关键</b>的事实, ★ <b>IDEA/CONSTRAINT 永不归档</b>
+      （与第三层 select_facts 的保守规则一致）④ upsert_fact 落盘后自动执行, 记入
+      <code>understanding.archived_facts</code>（可审计）。<br>
+      <b>★ 实测（单元级, 造超限数据）</b>: 60 条 + 上限 50 ⇒ 归档 8 条（最老的 F03/F04/F05）·
+      IDEA/CONSTRAINT 保留 ✓ · 状态=ARCHIVED ✓ · 总条数仍 60（没删）✓ · 未超限时不动 ✓<br>
+      <b>与 Hermes 的差别（有意）</b>: Hermes 是"逼人删", AIF 是"自动软删+可查" ——
+      因为 AIF 要<b>可审计</b>（归档留有痕迹）, 而单用户助手不需要。</span></span></label>
     <label class="item"><input type="checkbox" id="hm-2"><span class="body">
       <span class="t"><span class="tag p1">P1</span>程序性记忆自演化 —— skill 可 update/patch</span>
       <span class="meta"><b>Hermes 做法</b>: skills 不只是加载 —— 用完发现不对可

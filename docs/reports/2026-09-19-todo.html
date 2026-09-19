@@ -254,7 +254,7 @@
   </div>
 
   <!-- ═══════ 6 ═══════ -->
-  <h2><span class="n">7</span>待裁决（需要你拍板, 我不该替你定）</h2>
+  <h2><span class="n">8</span>待裁决（需要你拍板, 我不该替你定）</h2>
   <div class="card" data-group="6">
     <label class="item"><input type="checkbox" id="t6-1"><span class="body">
       <span class="t"><span class="tag p1">P1</span>3 个「迁了但没删」</span>
@@ -270,8 +270,36 @@
       <span class="meta">现在自愈是服务（<code>operations/healing.py</code>）；做成插件才符合"一切皆插件"</span></span></label>
   </div>
 
+  <!-- ═══════ 6.5 记忆分层设计 ═══════ -->
+  <h2><span class="n">7</span>记忆分层设计（Founder 拍板 · 分层隔离 + 三层结构）</h2>
+  <div class="card" data-group="scoped">
+    <label class="item done"><input type="checkbox" id="tsc-1" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 刀1：分层事实存储（作用域 + 继承 + 横向可见 + 覆盖）</span>
+      <span class="meta"><b>设计（Founder 原话）</b>: "会话有区分, 全局有独立记忆; 会话中选项目 ⇒ 项目级;
+      除非明确, 公司有公司的记忆, 部门有部门的 ⇒ facts 分开, 体量小一点" +
+      <b>"比如在公司下可以查全部门的所有信息"</b> + <b>"项目在 IT 部门, 市场部要查"</b>。<br>
+      <b>四条规则</b>: ① 归属线性四级(全局&lt;公司&lt;部门&lt;项目, 每事实只存一份)
+      ② 可见=同公司横向可达(市场部能读 IT 的项目) ③ 继承自下而上 + 同槽下层顶替 + provenance
+      ④ 三层结构(存储/检索/注入 —— 刀3)。<br>
+      <b>实现</b>: <code>services/conversation/scoped_facts.py</code> ·
+      <code>&lt;root&gt;/knowledge/{global,companies/&lt;co&gt;[/departments/&lt;dept&gt;]}/facts.json</code>
+      + <code>projects/&lt;P&gt;/knowledge/facts.json</code>(守"属于项目的文件在项目目录下"铁律)<br>
+      <b>★ 实测</b>: 市场部查到 IT 部门项目事实 ✓ · 公司事实 ✓ · 「默认语言」同槽下层顶替(2→1) ✓ ·
+      各层体量分开 ✓<br>
+      <b>★ 踩到并修的两个坑</b>: ① 继承链漏公司层 ② 判重用全文 ⇒ 改为**语义槽**,
+      且发现 <code>dimension_of</code> 的槽列表是硬编码前缀(与 _PRODUCT_HINT_RE 同类毛病) ⇒ 改通用规则「前缀: 值」</span></span></label>
+    <label class="item"><input type="checkbox" id="tsc-2"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>刀2：会话写入路径切到分层存储</span>
+      <span class="meta">现状: facts 仍在会话文件内（<code>understanding.facts</code>）—— 刀1 只建了能力, <b>未切写入</b>
+      （刻意不切: 避免"一半新一半旧"弄坏现有会话）。刀2 = 让 <code>upsert_fact</code> 按作用域落层 + 迁移旧数据。</span></span></label>
+    <label class="item"><input type="checkbox" id="tsc-3"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>刀3：可见性接 Authority（跨公司 Default Deny）+ FTS5 检索层 + 最近注入</span>
+      <span class="meta">刀1 的横向可见是"读候选集", <b>权限收紧未接</b>（同公司可读已实现; 跨公司拒绝待接
+      <code>Authority</code>/<code>check_authority</code>）。三层结构里"检索(FTS5)"与"最近注入"也在这一刀。</span></span></label>
+  </div>
+
   <!-- ═══════ 7 ═══════ -->
-  <h2><span class="n">8</span>已完成（本轮 · 留档不删）</h2>
+  <h2><span class="n">9</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">
       <span class="t">★ 修会话上下文丢失（P0）—— 关键词预筛静默丢弃 ⇒ 8 轮 3 条变 9 条全在</span>

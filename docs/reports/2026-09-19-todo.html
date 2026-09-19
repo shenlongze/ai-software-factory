@@ -478,15 +478,23 @@
       <span class="t"><span class="tag p2">P2</span>✅ 记忆检索准（IDF 加权）</span>
       <span class="meta">修"长文档万能命中"（CHANGELOG 霸榜）⇒ 稀有词主导排序 · 实测命中相关文档 ✓</span></span></label>
 
-    <label class="item"><input type="checkbox" id="mem-8"><span class="body">
-      <span class="t"><span class="tag p0">P0</span>★ 【要裁决】「跨会话记忆」有<b>两套</b> —— 我做的时候没先查（违反 R25）</span>
-      <span class="meta"><b>已有</b>: <code>conversation/project_memory.py</code>（2026-08-27, 比我的早）——
-      <b>记忆类型化</b>(decision/learning/error/pattern/observation) + <b>权威等级</b>
-      (user_intent &gt; verified_state &gt; repo_evidence &gt; agent_claim &gt; summary) + <b>时间衰减</b>;
-      存 <code>project_memory/&lt;project_id&gt;.json</code>（只追加·可审计）; 消费者 gateway.py:81 ✓<br>
-      <b>我做的</b>: <code>scoped_facts.py</code> —— 作用域层级（全局/公司/部门/项目）+ 继承 + 跨公司拒绝。<br>
-      <b>裁决要点</b>: ① 权威等级/时间衰减该并入哪边? ② 作用域层级是 project_memory 缺的能力 ⇒
-      合并方向可能是「project_memory 升为分层存储」而不是再留两套。③ <b>不动手</b>前先看两者是否有实际冲突。</span></span></label>
+    <label class="item done"><input type="checkbox" id="mem-8" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 【两套跨会话记忆】—— 接线已做（合并仍待裁决）</span>
+      <span class="meta"><b>实测真相（两套各有一半）</b>:<br>
+      &nbsp;<b>project_memory</b>（2026-08-27, 早于我的）: ★ 有真数据（P-b0adfaa6 有 3 条:
+      <code>[pattern]</code>数据来源不统一 · <code>[decision]</code>先了解现状…）· 被读取
+      （gateway.py:81）· 能力更完善（<b>类型化</b> decision/learning/error/pattern/observation +
+      <b>权威等级</b> user_intent&gt;verified_state&gt;repo_evidence&gt;agent_claim&gt;summary +
+      <b>时间衰减</b>）—— ✗ 但 <code>inject_block</code>（注入）<b>零调用</b> ⇒ <b>记了没人用</b>。<br>
+      &nbsp;<b>scoped_facts</b>（我做的）: 真环境实测会写（knowledge/global/facts.json）+ 有注入；
+      独有能力 = <b>作用域层级</b>（全局/公司/部门/项目）+ 跨公司拒绝。<br>
+      <b>★ 本刀（只接线, 不改它的能力）</b>: 把 <code>project_memory.inject_block</code> 接进理解
+      → prompt 的「项目历史记忆」段（原样透传它的权威等级标注）。<br>
+      <b>★ 实测</b>: 绑 P-b0adfaa6 问"项目之前的进展" ⇒ 答出
+      "跨会话记忆里还提到 REQ-97d28735 内容已完整但仍是 draft, 项目可能还停留在 idea 阶段" ✓
+      不绑项目 ⇒ "除此之外还没有其他进展" ✓（隔离正确）。<br>
+      <b>仍待裁决（非接线可解）</b>: 是否把两套合一 —— 方向可能是「project_memory 的语义
+      （类型/权威/衰减）+ scoped_facts 的作用域」, 且<b>动手前先确认有无实际冲突</b>（避免又造活）。</span></span></label>
     <label class="item"><input type="checkbox" id="mem-9"><span class="body">
       <span class="t"><span class="tag p1">P1</span>阶段交接记忆（<code>handoff.closure_memory</code>）—— ★ 孤立</span>
       <span class="meta"><b>实测</b>: 零外部消费者 + <b>无 CLI 入口</b> ⇒ 按 R24 是死码级。

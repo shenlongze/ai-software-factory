@@ -346,17 +346,9 @@
       <code>dimension_of</code> 硬编码前缀）⇒ 能用通用规则表达就别枚举; 必须枚举则<b>双向测试</b>。<br>
       &nbsp;<b>R25</b> 重复造轮子 = 新增 store/索引/记忆机制前先全库查同能力; 一能力只允许<b>一处实现</b>;
       配套: 新增存储前先问「能不能用事件+投影表达」。</span></span></label>
-    <label class="item"><input type="checkbox" id="imp-0b"><span class="body">
-      <span class="t"><span class="tag p0">P0</span>★ 存储【收敛】—— 现状: 24 个 store 类 / 8 处落地 / 2 个同名 KnowledgeStore</span>
-      <span class="meta"><b>Founder 五问"有没有更好的设计"后的实测答案</b>: 病灶不是"设计不够好", 而是
-      <b>"做好几套"</b>（你自己的铁律拒绍那件事）。实测: Store/Index/Memory 类 <b>24 个</b> ·
-      数据落地 <b>8 处</b>（对话/知识/RAG/两个 db/org/memory/ops）· <b>KnowledgeStore 两个不同实现</b>
-      （retrieval 的 RAG 版 vs organization 的组织知识版）+ KnowledgeItem 第三概念 ·
-      "记忆/知识/事实"机制 <b>五套彼此不通</b>。<br>
-      <b>★ 收敛验收（可量化）</b>: store 类 24 → <b>≤3</b>（事件源 + 投影层 + 配置）· 落地处 8 → 3 ·
-      同名 KnowledgeStore 2 → 1 · 记忆机制 5 → 1。<br>
-      <b>方式</b>: 不做大迁移（会造出新的一套）; <b>新增走新机制 + 旧的自然淘汰</b>, 每淘汰一个数字减一。<br>
-      <b>纪律</b>: 新增任何存储前先问「能不能用事件+投影表达」—— 能则<b>不许新增 store</b>。</span></span></label>
+    <label class="item done"><input type="checkbox" id="imp-0b" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 【★ 不做（已作废）】存储收敛 —— "24 store → ≤3" 这个目标是我自己造的</span>
+      <span class="meta"><b>Founder 连问四次"这么做的是对的么 / 这回对么"</b> ⇒ 逼出真相: 「24 个 store / 5 套机制」是<b>我数出来的数字, 不是他的痛点</b>; 我由此推出"该收敛", 再花四轮纠结"怎么收敛"= <b>给自己造活</b>（违反"只问现在谁在用"+"将来可能用不是理由"）。<br>      <b>实测反证（无任何实际症状）</b>: 9 组同名异物里 6 组是<b>不同数据空间</b>各自的实现（符合域隔离 R3, 合并会破坏边界）; <code>approvals.json</code> 在 exec/ 与 org/ <b>都不存在</b>（根本没用过）; <code>artifacts.json</code> 3 处在不同路径、格式一致 <code>{"artifacts": ...}</code> ⇒ 无覆盖/无不一致。<br>      <b>判据三次修正（全被推翻）</b>: ① 同名=重复 ✗（_SectionStore 反证）② 同文件名多写入方 ✗（不同路径也算进来）③ 同完整路径 △（仍有假阳性: 异常类的错误消息被当写入方、把"读"当"写"）⇒ <b>静态扫描不可靠, 需运行时证据</b>（在唯一落盘点记录"谁写了哪个文件"）。<br>      <b>正确做法</b>: 不设数量目标; 只在出现实际症状（数据被覆盖/格式不一致）时动手; 要判就用运行时证据而非 grep。设计文档 §0 已标注作废。</span></span></label>
     <label class="item done"><input type="checkbox" id="imp-1" checked><span class="body">
       <span class="t"><span class="tag p1">P1</span>✅ 「改全」的精确调用图 —— 已由 imp-0e 落地（AST 化）</span>
       <span class="meta"><b>本条的答案就是 imp-0e</b>: 原 callers_of 是正则级（把被调用者当调用者,
@@ -527,12 +519,9 @@
       <span class="t"><span class="tag p2">P2</span>链条记录落地（功能模块/数据链/任务链/调用关系/执行顺序）</span>
       <span class="meta"><b>判据已定</b>（不可派生的才记, 可派生的只算）: 任务链/执行顺序/决策理由=记;
       功能模块/调用/依赖/测试映射=算（现算不落库）。<b>未做</b>: 决策理由的正式记录（现只靠 git commit message）。</span></span></label>
-    <label class="item"><input type="checkbox" id="mem-11"><span class="body">
-      <span class="t"><span class="tag p0">P0</span>存储收敛 —— 5 套"记忆/知识"机制 → 1 套（imp-0b）</span>
-      <span class="meta">实测: Store/Index/Memory 类 <b>24 个</b> · 数据落地 <b>8 处</b> ·
-      <b>KnowledgeStore 两个实现</b> · "记忆/知识/事实"机制 <b>5 套互不通</b>
-      （会话 facts · scoped_facts · .factory_rag · search.db FTS5 · org 知识条目）。<br>
-      目标: store ≤ 3（事件源 + 投影层 + 配置）· 纪律: 新增存储前先问「能不能用事件+投影表达」。</span></span></label>
+    <label class="item done"><input type="checkbox" id="mem-11" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 【★ 不做（已作废）】存储收敛 —— "24 store → ≤3" 这个目标是我自己造的</span>
+      <span class="meta"><b>Founder 连问四次"这么做的是对的么 / 这回对么"</b> ⇒ 逼出真相: 「24 个 store / 5 套机制」是<b>我数出来的数字, 不是他的痛点</b>; 我由此推出"该收敛", 再花四轮纠结"怎么收敛"= <b>给自己造活</b>（违反"只问现在谁在用"+"将来可能用不是理由"）。<br>      <b>实测反证（无任何实际症状）</b>: 9 组同名异物里 6 组是<b>不同数据空间</b>各自的实现（符合域隔离 R3, 合并会破坏边界）; <code>approvals.json</code> 在 exec/ 与 org/ <b>都不存在</b>（根本没用过）; <code>artifacts.json</code> 3 处在不同路径、格式一致 <code>{"artifacts": ...}</code> ⇒ 无覆盖/无不一致。<br>      <b>判据三次修正（全被推翻）</b>: ① 同名=重复 ✗（_SectionStore 反证）② 同文件名多写入方 ✗（不同路径也算进来）③ 同完整路径 △（仍有假阳性: 异常类的错误消息被当写入方、把"读"当"写"）⇒ <b>静态扫描不可靠, 需运行时证据</b>（在唯一落盘点记录"谁写了哪个文件"）。<br>      <b>正确做法</b>: 不设数量目标; 只在出现实际症状（数据被覆盖/格式不一致）时动手; 要判就用运行时证据而非 grep。设计文档 §0 已标注作废。</span></span></label>
   </div>
 
   <h2><span class="n">11</span>已完成（本轮 · 留档不删）</h2>

@@ -206,8 +206,31 @@
       <span class="meta">还写着老结构 <code>factory-console + factory-org + factory-exec</code>（实际是 <code>apps/cli</code> + <code>src/ai_factory_os</code> 七层）</span></span></label>
   </div>
 
+  <!-- ═══════ 5.5 LLM 效果判断 ═══════ -->
+  <h2><span class="n">6</span>LLM 效果判断（怎么知道模型/路由好不好用）</h2>
+  <div class="card" data-group="5b">
+    <label class="item"><input type="checkbox" id="t5b-1"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>★ 缺「结果级」判断 —— 现在只能判"贵不贵/快不快", 判不了"这次输出好不好"</span>
+      <span class="meta"><b>现状（实测 2026-09-19）</b>: <code>CostAwareSelector</code>(selector.py:224) 的三分数
+      = 能力分 0.4 + 成本分 0.3 + 性能分 0.3, <b>四个维度里三个能用</b>:<br>
+      &nbsp;&nbsp;① 能力分（会不会干）✅ 来自能力矩阵 — "无 profile 不参与, 无证据不臆造"<br>
+      &nbsp;&nbsp;② 成本分（贵不贵）✅ 来自 <code>costs.py</code> + <code>usage.json</code><br>
+      &nbsp;&nbsp;③ 性能分（快不快/稳不稳）⚠ 有字段, 靠 usage 实测（无数据→0.5 中性）, 实测数据少<br>
+      &nbsp;&nbsp;④ 人工反馈（这次好不好）✗ <b><code>feedback.py</code> 自述"只记录不消费"</b> —— 全仓零消费<br>
+      ⇒ 断点: 你手评"这次干得不错/不行" ⇒ 落盘了但<b>不影响下次选谁</b></span></span></label>
+    <label class="item"><input type="checkbox" id="t5b-2"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>三级做法（供将来选）</span>
+      <span class="meta">
+      <b>① 结果信号（最实在, 代价小）</b>: 用执行最终结果判 — 成功/失败 · 验收是否通过 · 是否返工;
+      数据已有（<code>execution_records.status</code> + 验收记录）, 只差汇总成 per-model 指标。<br>
+      <b>② 人工反馈回流（最该补, 改动小）</b>: 把 <code>feedback.json</code> 接进 <code>selector</code> 的
+      <code>performance_score</code> —— 你评一次, 下次选得更准; 改动点在 selector 一处。<br>
+      <b>③ LLM-as-judge（先别做）</b>: 用别的模型打分; 有偏, 需校准, 现在做是空中楼阁。<br>
+      ⇒ <b>当前选择: 先不做（Founder: 写到 todolist 中, 先不做）</b>。要做时建议先 ①+②。</span></span></label>
+  </div>
+
   <!-- ═══════ 6 ═══════ -->
-  <h2><span class="n">6</span>待裁决（需要你拍板, 我不该替你定）</h2>
+  <h2><span class="n">7</span>待裁决（需要你拍板, 我不该替你定）</h2>
   <div class="card" data-group="6">
     <label class="item"><input type="checkbox" id="t6-1"><span class="body">
       <span class="t"><span class="tag p1">P1</span>3 个「迁了但没删」</span>
@@ -224,7 +247,7 @@
   </div>
 
   <!-- ═══════ 7 ═══════ -->
-  <h2><span class="n">7</span>已完成（本轮 · 留档不删）</h2>
+  <h2><span class="n">8</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-19" checked><span class="body">
       <span class="t">补 CLI 入口: <code>tool</code> / <code>mcp</code> / <code>discover</code>（照 Hermes 标准）</span>

@@ -430,16 +430,17 @@
       <b>⏳ 未做（刀3b, 可缓）</b>: FTS5 检索层 + 最近注入 —— 84 条 facts 阶段用不到,
       等体量上来再做（这才是真的"将来用"）。</span></span></label>
     <label class="item"><input type="checkbox" id="tsc-4"><span class="body">
-      <span class="t"><span class="tag p2">P2</span>刀3b（未做）：FTS5 检索层 + 最近注入</span>
-      <span class="meta"><b>为什么单列一条</b>: 此前它只写在 tsc-3(已完成)的尾部一句话里 ⇒ 会被当"已了结",
-      而它<b>并未实现</b>（Founder 2026-09-19 问"刀3b 记录到 todolist 中了么, 因为没有做"时发现）。<br>
-      <b>要做什么</b>: ① <b>FTS5 检索层</b> —— facts 多了以后按相关性检索（开源对标 context-mode:
-      索进 FTS5 + <b>BM25</b> 只取相关, 压缩时<b>不倒回上下文</b>）; ② <b>最近注入</b> ——
-      只把"最近 N 条 + 相关若干"送进 prompt, 而非全量。<br>
-      <b>为什么现在不做</b>: 实测当前总 facts <b>84 条</b>、单条 prompt ≈ 570 tokens（上限百万级）
-      ⇒ 用不到检索; 现在做就是"为将来买单"（与既有纪律冲突）。<br>
-      <b>触发条件（做它的信号）</b>: 单作用域 facts 超过几百条, 或 prompt 超 ~20k tokens,
-      或出现"相关事实捞不出来"的实际抱怨。★ 本仓已有 FTS5 能力（<code>learning/history_search</code>）可复用。</span></span></label>
+      <span class="t"><span class="tag p0">P0</span>★ Founder 拍板的设计：<b>facts 三层结构</b>（第二/三层未做）</span>
+      <span class="meta"><b>Founder 原话</b>: "facts 需要区分 <b>第一层 全量</b>, <b>第二层 索引/摘要</b>,
+      <b>第三层 最近的</b>"。<br>
+      &nbsp;第一层 全量      ✅ 已实现（scoped_facts + 会话 understanding 完整落盘）<br>
+      &nbsp;第二层 索引/摘要  ❌ 未做（事实无索引 ⇒ 多了之后"找不回"）<br>
+      &nbsp;第三层 最近的    ❌ 未做（实测: <code>build_llm_prompt</code> 里 <code>for f in facts:</code>
+      ⇒ <b>全量送</b>, 无最近/相关筛选）<br>
+      <b>★ 我此前的错（两个, 自认）</b>: ① 只做第一层却把它标成"P2 · 触发条件未到" ⇒
+      <b>擅自把 Founder 拍板的设计降级为可选项</b>; ② 设计文档里<b>从没记过这段原话</b> ⇒
+      没把它当"设计"对待。⇒ 已补记进 <code>docs/design/storage-and-memory-design.md §2.35</code>。<br>
+      <b>为什么三层都要</b>: 全量=不丢 · 索引=找得回 · 最近=送得准。目标不同, 不能只做一层称完成。</span></span></label>
   </div>
 
   <!-- ═══════ 7 ═══════ -->

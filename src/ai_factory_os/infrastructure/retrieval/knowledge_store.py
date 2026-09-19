@@ -576,6 +576,34 @@ class KnowledgeStore:
             result.skipped.append({"file": ".factory_rag", "reason": "索引写入失败"})
         return result
 
+    def is_stale(self) -> tuple[bool, int]:
+        """索引是否**过期**（有文档比索引更新时间更晚）→ (是否过期, 更新的文档数)。
+
+        ★ 2026-09-19 新增（记忆"不过期"的判据）。
+        为什么需要: 索引原来只在 `project adopt` 时建**一次**，之后文档改了索引不更新 ⇒
+        检索到的是**旧版本** —— 这不是"忘记", 是"记错"（比忘记更糟, 实测: 索引 updated_at
+        2026-09-19T19:01 而设计文档 mtime 2026-09-20 02:52）。`incremental_ingest` 早就有,
+        但**零消费者**（没有触发点）。本方法给自动/手动触发提供判据。
+        """
+        old = self._load_index()
+        if not old:
+            return (True, -1)                              # 没索引 ⇒ 需要建
+        stamp = str(old.get("updated_at") or "")
+        try:
+            from datetime import datetime
+
+            idx_ts = datetime.fromisoformat(stamp).timestamp()
+        except (ValueError, TypeError):
+            return (True, -1)                              # 时间戳不可解析 ⇒ 保守重建
+        newer = 0
+        try:
+            for d in self._scan_docs():
+                if float(d.get("mtime") or 0) > idx_ts:
+                    newer += 1
+        except Exception:  # noqa: BLE001 — 扫描失败 ⇒ 不判定为过期（不阻塞）
+            return (False, 0)
+        return (newer > 0, newer)
+
     # ------------------------------------------------------------ 检索 (确定性)
 
     def query(

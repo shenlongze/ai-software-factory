@@ -298,9 +298,21 @@ def _understand(root: Path, args: Any) -> dict[str, Any]:
     #   说明: workspace=项目目录（扫描源）, index_root=数据根（索引位置）—— 见 knowledge_store 的 index_root。
     try:
         from ai_factory_os.infrastructure.retrieval import rag_query as _rag
+        from ai_factory_os.infrastructure.retrieval.knowledge_store import KnowledgeStore
 
         _ws = _project_dir(root, cid)
         if _ws:
+            # ★ 2026-09-19（mem-6 · 记忆"不过期"）: 检索前先看索引是否过期, 过期就**增量重建**。
+            #   为什么: 索引原来只在 adopt 时建一次 ⇒ 文档改了检索到旧版本（记错, 比忘记更糟）。
+            #   incremental_ingest 早就有但零消费者 —— 这里就是它的触发点。
+            #   失败安全: 重建失败 ⇒ 照旧检索（不阻塞理解）。
+            try:
+                _ks = KnowledgeStore(_ws, _slug_of(_ws, cid), index_root=_root_dir(root))
+                _stale, _n = _ks.is_stale()
+                if _stale:
+                    _ks.incremental_ingest()
+            except Exception:  # noqa: BLE001 — 重建失败不阻塞
+                pass
             _hits, _kmeta = _rag(_root_dir(root), _slug_of(_ws, cid), text, top_k=3)
             if _hits:
                 snap = dict(snap)

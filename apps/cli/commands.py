@@ -9,6 +9,8 @@
 """
 
 from __future__ import annotations
+
+import json
 import sys
 from pathlib import Path
 
@@ -3924,4 +3926,76 @@ def cmd_project_adopt(ctx: FactoryContext, args: Any) -> dict:
             payload=data,
         )
     return data
+
+# --------------------------------------------------------------------------- knowledge (记忆 · 索引)
+
+
+def _knowledge_stores(ctx: FactoryContext, project_id: str) -> list[Any]:
+    """按 project_id（或全部项目）构造 KnowledgeStore 列表（扫描源=repo_path, 索引根=数据根）。"""
+    from ai_factory_os.infrastructure.retrieval.knowledge_store import KnowledgeStore
+
+    stores: list[Any] = []
+    for f in (ctx.root / "org").rglob("projects.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        def _walk(o: Any) -> list[dict]:
+            out = []
+            if isinstance(o, list):
+                out += [x for x in o if isinstance(x, dict)]
+            elif isinstance(o, dict):
+                for k in ("items", "projects", "project"):
+                    v = o.get(k)
+                    if isinstance(v, list):
+                        out += [x for x in v if isinstance(x, dict)]
+                    elif isinstance(v, dict):
+                        out += [x for x in v.values() if isinstance(x, dict)]
+            return out
+        for it in _walk(data):
+            pid = str(it.get("id") or "")
+            rp = str(it.get("repo_path") or "")
+            if not pid or not rp or (project_id and pid != project_id):
+                continue
+            if Path(rp).is_dir():
+                stores.append((pid, KnowledgeStore(Path(rp), Path(rp).name, index_root=ctx.root)))
+    return stores
+
+
+def cmd_knowledge_status(ctx: FactoryContext, args: Any) -> dict:
+    """factory knowledge status — 看每个项目的知识索引是否【过期】（记忆会不会记错）。
+
+    ★ 2026-09-19 新增（mem-6）。判据: 有文档比索引更新时间更晚 ⇒ 过期。
+    """
+    rows = []
+    for pid, ks in _knowledge_stores(ctx, str(getattr(args, "project", "") or "")):
+        stale, newer = ks.is_stale()
+        rows.append({
+            "project_id": pid, "slug": ks.slug, "index_path": str(ks.index_path),
+            "exists": ks.index_path.is_file(), "stale": stale, "newer_docs": newer,
+        })
+    return {"projects": rows, "count": len(rows),
+            "stale_count": sum(1 for r in rows if r["stale"])}
+
+
+def cmd_knowledge_reindex(ctx: FactoryContext, args: Any) -> dict:
+    """factory knowledge reindex — 重建项目知识索引（增量或全量）。
+
+    ★ 2026-09-19 新增（mem-6 的显式入口）。全量 = ingest(); 增量 = incremental_ingest()。
+    """
+    incremental = not bool(getattr(args, "full", False))
+    out = []
+    for pid, ks in _knowledge_stores(ctx, str(getattr(args, "project", "") or "")):
+        try:
+            res = ks.incremental_ingest() if incremental else ks.ingest()
+            out.append({
+                "project_id": pid, "slug": ks.slug, "incremental": incremental,
+                "changed": len(getattr(res, "changed_files", []) or []),
+                "removed": len(getattr(res, "removed_files", []) or []),
+                "chunks": int(getattr(res, "chunks_indexed", 0) or 0),
+                "tiers": getattr(res, "tiers", {}) or {},
+            })
+        except Exception as exc:  # noqa: BLE001 — 单项目失败不影响其它
+            out.append({"project_id": pid, "error": f"{type(exc).__name__}: {str(exc)[:90]}"})
+    return {"projects": out, "count": len(out)}
 

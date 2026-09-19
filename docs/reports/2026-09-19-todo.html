@@ -479,14 +479,21 @@
       <span class="meta">归属四级（全局&lt;公司&lt;部门&lt;项目）· 继承 + 同槽下层顶替 · 同公司横向可见 ·
       跨公司 Default Deny。实测: 市场部读到 IT 部门事实 ✓ · 跨公司无泄露 ✓</span></span></label>
 
-    <label class="item"><input type="checkbox" id="mem-6"><span class="body">
-      <span class="t"><span class="tag p0">P0</span>★ 索引自动更新 —— 否则记忆会【过期】（比忘记更糟）</span>
-      <span class="meta"><b>实测缺口</b>: 索引 <code>updated_at 2026-09-19T19:01</code> 而设计文档 mtime
-      <code>2026-09-20 02:52</code>（更晚）⇒ 检索到的是旧版本; <code>incremental_ingest</code>
-      <b>零消费者</b>（有增量能力, 无触发）。<br>
-      <b>要做</b>: 给索引一个触发点 —— ① <code>factory knowledge reindex [--incremental]</code> 命令
-      ② 或理解前按 mtime 自动增量 ③ 或落成 hook（文档变更事件 → 重建）。<br>
-      <b>验收</b>: 改一个项目文档后, 检索能查到新内容（旧内容不再命中）。</span></span></label>
+    <label class="item done"><input type="checkbox" id="mem-6" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 索引自动更新 —— 记忆不再"记错"</span>
+      <span class="meta"><b>缺口</b>: 索引原来只在 <code>project adopt</code> 时建<b>一次</b> ⇒ 文档改了不更新
+      ⇒ 检索到旧版本（记错比忘记更糟）; <code>incremental_ingest</code> 早就有但<b>零消费者</b>（无触发点）。<br>
+      <b>本刀</b>: ① 新增 <code>KnowledgeStore.is_stale()</code>（有文档比索引更新时间晚 ⇒ 过期, 返回更新数）
+      ② <b>理解前自动增量</b>（_understand 里先查 is_stale, 过期就 incremental_ingest; 失败安全）
+      ③ 新命令 <code>factory knowledge status</code>（看是否过期）+ <code>knowledge reindex [--full]</code>（手动重建）
+      —— 四处接入（parser/dispatch/print/import）。<br>
+      <b>★ 实测</b>: adopt 后 status="最新"; 造一个新文档后 status=★"过期 (1 个文档更新)";
+      走理解路径后 is_stale 自动变 False 且<b>能检索到新文档</b>（哨兵词探针）;
+      reindex → 变更 812 · 片段 37,070 · 恢复"最新" ✓<br>
+      <b>★ 诚实纠正</b>: 我上一条说"当前索引已过期"是<b>算错时区</b>（索引 updated_at 是 UTC,
+      文档 mtime 是本地）—— is_stale 内部统一转 timestamp, 判断本身是对的。<br>
+      <b>过程教训</b>: 加 import 时插到了 <code>from __future__</code> 之前 ⇒ SyntaxError
+      （__future__ 必须首行）。</span></span></label>
     <label class="item"><input type="checkbox" id="mem-7"><span class="body">
       <span class="t"><span class="tag p1">P1</span>④ 影响面记忆 —— 收尾: <code>factory change plan</code> + 落事件</span>
       <span class="meta">精度已修准（mem-4）, 但<b>用户碰不到</b>（无 CLI）⇒ 按 R24 不算完成。<br>

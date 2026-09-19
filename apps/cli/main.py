@@ -70,6 +70,8 @@ from .commands import (
     cmd_exec_status,
     cmd_project_list,
     cmd_project_adopt,
+    cmd_knowledge_status,
+    cmd_knowledge_reindex,
     cmd_project_show,
     cmd_provider_list,
     cmd_provider_show,
@@ -454,6 +456,18 @@ def build_parser() -> Any:
     p_pr_adopt.add_argument("--name", default="", help="项目名 (缺省 = 目录名)")
     p_pr_adopt.add_argument("--goal", default="", help="项目目标 (可选)")
     p_pr_adopt.add_argument("--user-id", default="", help="发起人 (可选)")
+
+    # factory knowledge <sub> —— 记忆 · 知识索引（★ 2026-09-19 mem-6）
+    p_kn = sub.add_parser("knowledge", help="知识索引（记忆第 3 层）: 看是否过期 / 重建")
+    json_opt(p_kn)
+    knsub = p_kn.add_subparsers(dest="knowledge_command", required=True)
+    p_kn_st = knsub.add_parser("status", help="看项目知识索引是否过期（记忆会不会记错）")
+    json_opt(p_kn_st)
+    p_kn_st.add_argument("--project", default="", help="只查某个项目 id")
+    p_kn_re = knsub.add_parser("reindex", help="重建知识索引（默认增量; --full 全量）")
+    json_opt(p_kn_re)
+    p_kn_re.add_argument("--project", default="", help="只重建某个项目 id")
+    p_kn_re.add_argument("--full", action="store_true", help="全量重建（默认增量）")
 
     # factory provider <sub> (Phase 8A, ADR-0022)
     p_provider = sub.add_parser(
@@ -1144,6 +1158,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_update(ctx, args)
         elif args.command == "approval":
             result = _dispatch_approval(ctx, args)
+        elif args.command == "knowledge":
+            result = _dispatch_knowledge(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         elif args.command == "llm":
@@ -2584,6 +2600,14 @@ def _print_backup(sub: str, r: dict) -> None:
     print(f"✅ 恢复完成: {x['restored']} 个文件 (来自 {x['file']})")
 
 
+def _dispatch_knowledge(ctx: FactoryContext, args: Any) -> dict:
+    if args.knowledge_command == "status":
+        return cmd_knowledge_status(ctx, args)
+    if args.knowledge_command == "reindex":
+        return cmd_knowledge_reindex(ctx, args)
+    raise CliError(f"unknown knowledge command: {args.knowledge_command}", exit_code=2)
+
+
 def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
     if args.project_command == "list":
         return cmd_project_list(ctx, args)
@@ -3013,6 +3037,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_approval(result)
     elif args.command == "plugin":
         _print_plugin(result)
+    elif args.command == "knowledge":
+        _print_knowledge(args.knowledge_command, result)
     elif args.command == "project":
         _print_project(args.project_command, result)
     elif args.command == "provider":
@@ -3375,6 +3401,30 @@ def _print_metrics(r: dict) -> None:
         print(format_workspace_comparison(WorkspaceComparison.model_validate(r["comparison"])))
         return
     print(format_metrics(FactoryMetrics.model_validate(r["metrics"])))
+
+
+def _print_knowledge(sub: str, r: dict) -> None:
+    """knowledge status / reindex 的输出（说人话: 会不会记错 + 做了什么）。"""
+    if sub == "status":
+        rows = [[x["project_id"], x["slug"], "有" if x["exists"] else "无",
+                 f"★ 过期 ({x['newer_docs']} 个文档更新)" if x["stale"] else "最新"]
+                for x in r.get("projects") or []]
+        if rows:
+            print(_render_table(["Project", "Slug", "索引", "状态"], rows))
+        sc = int(r.get("stale_count") or 0)
+        tail = "  ⇒ 用 factory knowledge reindex 更新" if sc else "  ✓ 记忆不会记错"
+        print(f"{r.get('count')} 个项目 · 过期 {sc} 个{tail}")
+        return
+    if sub == "reindex":
+        for x in r.get("projects") or []:
+            if x.get("error"):
+                print(f"  ✗ {x['project_id']}: {x['error']}")
+            else:
+                kind = "增量" if x.get("incremental") else "全量"
+                print(f"  ✓ {x['project_id']} ({kind}): 变更 {x.get('changed', 0)} · "
+                      f"删除 {x.get('removed', 0)} · 片段 {x.get('chunks', 0)} · {x.get('tiers')}")
+        print(f"{r.get('count')} 个项目已重建")
+        return
 
 
 def _print_project(sub: str, r: dict) -> None:

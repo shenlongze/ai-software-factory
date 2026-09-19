@@ -614,7 +614,51 @@
       或单会话消息数上百 ⇒ 那时才接 compressor（Hermes 的做法可直接借鉴）。</span></span></label>
   </div>
 
-  <h2><span class="n">12</span>已完成（本轮 · 留档不删）</h2>
+  <h2><span class="n">12</span>借 Codex 的记忆做法（对照实测后得出）</h2>
+  <div class="hint">
+    Founder 要求对比 Codex 与 AIF 的记忆系统 ⇒ 逐维实测后得出该借的 3 条。<br>
+    <b>对比结论</b>: Codex(长窗口 + 记忆经济性) 强在【按使用度淘汰 + 两阶段筛选 + 滚动摘要】;
+    AIF(结构化 + 多租户) 强在【类型/作用域/知识/影响面/技能自演化】。
+  </div>
+  <div class="card" data-group="codex">
+    <label class="item"><input type="checkbox" id="cdx-1"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>★ 记忆层加【使用度】—— 最该借的一条（成本小 · 复用已有能力）</span>
+      <span class="meta"><b>Codex 做法（实测表结构）</b>: <code>memories_1.sqlite</code> 的
+      <code>stage1_outputs</code> 表带 <code>usage_count</code> + <code>last_usage</code> +
+      <code>selected_for_phase2</code> ⇒ 记忆按<b>有没有被用到</b>决定谁进长期。<br>
+      <b>★ AIF 现状（实测, 关键差异）</b>:<br>
+      &nbsp;· <b>经验层已有</b>: <code>experience</code> 有 <code>usage_count / last_used / freshness</code>
+      + 30 天半衰期（<code>effective_score = score × confidence × freshness</code>）✓<br>
+      &nbsp;· <b>记忆层没有</b>: <code>project_memory</code> 与 <code>facts</code> <b>都无使用度字段</b> ✗
+      ⇒ hm-1 的质量门只能按「<b>最老</b>」归档（可能淘汰"很久没碰但仍关键"的事实）。<br>
+      <b>要做的</b>: ① facts / project_memory 加 <code>usage_count</code> + <code>last_used</code>
+      ② <b>被注入/被引用时计数</b>（select_facts 与 inject_block 处打点）
+      ③ 淘汰判据从「最老优先」改为「<b>最没用过 + 最老</b>」
+      ④ ★ <b>复用经验层已有的衰减公式</b>（30 天半衰期, 不新造）。<br>
+      <b>为什么优先</b>: 这是"<b>已有能力没复用</b>"（经验层已有, 记忆层没接）,
+      而不是要造新东西 ⇒ 成本极小, 且直接让 hm-1 的质量门变聪明。</span></span></label>
+    <label class="item"><input type="checkbox" id="cdx-2"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>两阶段记忆提取（写入 ≠ 立即进长期）</span>
+      <span class="meta"><b>Codex 做法</b>: <code>stage1_outputs</code> 产出
+      <code>raw_memory</code> + <code>rollout_summary</code>, 再由 <code>selected_for_phase2</code>
+      标记筛选 ⇒ <b>两道关</b>。<br>
+      <b>AIF 现状</b>: facts <b>一次写入即长期</b>（理解产 operations ⇒ 直接进 understanding/分层）。<br>
+      <b>要做的</b>: 写入先进"暂存"（等同现有 PROPOSED 状态）, 按使用度/权威/被引用<b>筛选</b>后才进
+      "长期"（等同 CONFIRMED 且高权威）⇒ 可利用现有 status 机（无需新概念）。<br>
+      <b>注意</b>: AIF 已有 PROPOSED/CONFIRMED 两态 + 权威等级 ⇒ 这条可能是"<b>把已有状态用起来</b>"
+      而非造新机制。</span></span></label>
+    <label class="item"><input type="checkbox" id="cdx-3"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>滚动摘要（随更新重算的项目/会话摘要）</span>
+      <span class="meta"><b>Codex 做法</b>: <code>rollout_summary</code> 随
+      <code>source_updated_at</code> 变化而重算 —— 摘要是<b>派生物</b>, 不是一次性快照。<br>
+      <b>AIF 现状</b>: 只有<b>阶段级</b> <code>handoff.add_closure</code>（阶段关闭时写一次）;
+      无"随更新滚动"的项目级摘要。<br>
+      <b>要做的</b>: 项目/会话级摘要作为<b>投影</b>（由 facts + 事件派生, 随变更重算）
+      —— 这与设计文档 §1「投影」一致（可重建, 不是账本）。<br>
+      <b>触发条件</b>: facts 多到"读全量才能了解项目"时（现在 4 条, 远未到）⇒ 可缓。</span></span></label>
+  </div>
+
+  <h2><span class="n">13</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">
       <span class="t">★ 修会话上下文丢失（P0）—— 关键词预筛静默丢弃 ⇒ 8 轮 3 条变 9 条全在</span>

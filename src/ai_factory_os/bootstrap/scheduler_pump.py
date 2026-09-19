@@ -47,13 +47,13 @@ def _write_back_node_status(ports: Ports, execution_id: str, status: str) -> boo
     失败安全: 任何一步拿不到 ⇒ 返回 False（调用方记录, 不抛）。
     """
     try:
-        from ai_factory_os.services.execution.runtime.store import RuntimeStore
+        from ai_factory_os.services.execution.runtime.store import open_runtime_store
         from ai_factory_os.services.work import decomposition as D
 
         root = Path(getattr(ports.work, "_root", "."))
         task_id = ""
         node_id = ""
-        store = RuntimeStore(root / "runtime")
+        store = open_runtime_store(root)
         for req in store.list_executions():
             if str(req.id) == execution_id:
                 inp = req.input or {}
@@ -95,12 +95,12 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
     失败回滚: 认领成功但执行抛异常 ⇒ 交回 pending（供重认）, 不把叶永久占死。
     """
     from ai_factory_os.services.work import decomposition as D
-    from ai_factory_os.services.execution.runtime.store import RuntimeStore
+    from ai_factory_os.services.execution.runtime.store import open_runtime_store
 
     root = Path(getattr(ports.work, "_root", "."))
     node_id, task_id, who = "", "", ""
     try:
-        store = RuntimeStore(root / "runtime")
+        store = open_runtime_store(root)
         for req in store.list_executions():
             if str(req.id) == execution_id:
                 inp = req.input or {}
@@ -249,7 +249,7 @@ def make_real_execution_port(root: Path | str, *, task_id: str, work: Any = None
             10 tick 建了 30 个执行 ⇒ 同一批叶被反复跑）。
             失败安全: 读不到/坏数据 ⇒ 当作"无活跃"（退化为老行为, 不假阻塞）。
             """
-            from ai_factory_os.services.execution.runtime.store import RuntimeStore
+            from ai_factory_os.services.execution.runtime.store import open_runtime_store
 
             try:
                 # ★ claimed 的叶也算"活跃"（CAS 已把它锁给人了）——
@@ -263,7 +263,7 @@ def make_real_execution_port(root: Path | str, *, task_id: str, work: Any = None
 
                             return _Exec(id=str(n.get("claimed_by") or "claimed"),
                                          task_node_id=node_id, member_id="", status="running")
-                store = RuntimeStore(Path(root) / "runtime")
+                store = open_runtime_store(root)
                 for req in store.list_executions(task_id=task_id):
                     if str((req.input or {}).get("node_id") or "") != node_id:
                         continue
@@ -279,10 +279,10 @@ def make_real_execution_port(root: Path | str, *, task_id: str, work: Any = None
         def create(self, node_id: str, *, resolution_id: str,
                    member_id: str, identity_id: str) -> Any:
             from ai_factory_os.contracts.execution import Execution as _Exec
-            from ai_factory_os.services.execution.runtime.store import RuntimeStore
+            from ai_factory_os.services.execution.runtime.store import open_runtime_store
             from ai_factory_os.services.execution.runtime.types import ExecutionRequest
 
-            store = RuntimeStore(Path(root) / "runtime")
+            store = open_runtime_store(root)
             eid = store.next_execution_id(prefix="EXR-")
             req = ExecutionRequest(
                 id=eid, task_id=task_id,

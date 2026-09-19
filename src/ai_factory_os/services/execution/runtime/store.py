@@ -187,3 +187,24 @@ class RuntimeStore:
             if rest.isdigit():
                 max_n = max(max_n, int(rest))
         return f"{prefix}{max_n + 1:03d}"
+
+
+#: ★ 运行时状态的唯一目录名 —— 权威依据: ADR-0006
+#:   "执行记录归属: 指令要求 `.factory/runtimes/runtimes.json` + executions 记录"
+RUNTIME_DIR_NAME = "runtimes"
+
+
+def open_runtime_store(root: str | Path) -> RuntimeStore:
+    """★ 全仓唯一的 RuntimeStore 装配点（目录名只在此定义一次）。
+
+    为什么必须有它（2026-09-19 实测教训 —— 不重复造轮子的反面案例）:
+      仓库里曾有 **6 处绕过装配、直接 `RuntimeStore(root / "runtime")`** 并写错了目录名
+      （少一个 s）:  scheduler_pump.py ×4 · console_view.py（舰队视图）· healing.py（自愈）。
+      ⇒ 后果（三个能力**静默失效**, 读空目录不报错）:
+         · 舰队视图永远显示"没人干活"     · 自愈永远认为"没有卡住的任务"
+         · pump 与 CLI 的数据**互不可见**
+      而 CLI 侧因为早就有 `_open_runtime_store`（一处定义 + 14 处引用）**从未写错**。
+      ⇒ 修法（本函数）: 把装配点从 apps 下移到 src（apps 可依赖 src, 反之不行）,
+        全仓统一走这里 ⇒ 目录名**结构上不可能再不一致**。
+    """
+    return RuntimeStore(Path(root) / RUNTIME_DIR_NAME)

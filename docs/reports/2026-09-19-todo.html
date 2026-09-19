@@ -822,14 +822,26 @@
       ⇒ 三者<b>不是同一维度的互斥值</b>（一个任务完全可以 parallel+isolated）⇒ 做成 enum 会损失表达力。
       <b>应为三个正交属性</b>, 不是一个枚举。</span></span></label>
 
-    <label class="item"><input type="checkbox" id="cr-1"><span class="body">
-      <span class="t"><span class="tag p0">P0</span>★★ 三条执行存储链未统一（Codex 审出 · 我没看到）</span>
-      <span class="meta"><b>Codex 证据</b>: <code>scheduler_pump</code> 用 <code>root/runtime</code>（<code>:56/:285</code>）·
-      CLI <code>execution</code> 用 <code>root/runtimes</code>（<code>apps/cli/commands.py:736-739</code>）·
-      <code>factory run</code> 用 <code>root/exec</code>（<code>services/execution/kernel/cli.py:79-80</code>）<br>
-      <b>后果</b>: pump 创建的 execution 与 CLI 执行服务<b>互不可见</b> ⇒ 两条执行平面各跑各的。<br>
-      <b>要做的</b>: 统一为一个执行存储（并裁决 <code>run --plan</code> 复用哪条执行平面）。<br>
-      <b>为什么 P0</b>: 这是"多 agent 调度"的<u>地基</u> —— 存储不统一, 后面的调度/续跑/舰队视图全无立足点。</span></span></label>
+    <label class="item done"><input type="checkbox" id="cr-1" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 执行存储路径不一致 —— 6 处归一（第 0 刀, 已修）</span>
+      <span class="meta"><b>★ 三次判定修正（Founder 两次追问各纠正我一次）</b>:<br>
+      &nbsp;· 我的第 1 版: "三条链分裂, 统一到 exec" ⇒ ★错（exec 是另一类数据: 执行结果/记录,
+      统一到它会混两类数据）<br>
+      &nbsp;· 第 2 版: "4 处笔误" ⇒ 数字不全<br>
+      &nbsp;· <b>最终（有权威依据）</b>: ADR-0006 明写 "<code>.factory/runtimes/runtimes.json</code>"
+      ⇒ 应为 <code>runtimes/</code>（带 s）; <b>6 处</b>写成 <code>runtime/</code>（少一个 s）:
+      <code>scheduler_pump.py:56/103/266/285</code> · <code>console_view.py:245</code>（舰队视图）·
+      <code>healing.py:108</code>（自愈）；而 CLI 侧 2 处（<code>commands.py:739/846</code>）用对了。<br>
+      <b>★ 后果（三个能力静默失效）</b>: 舰队视图永远"没人干活" · 自愈永远认为"没卡住" ·
+      pump 与 CLI 数据互不可见（读空目录不报错）。<br>
+      <b>★ 修法（不写重复逻辑 —— Founder 追问"不会再写重复逻辑了吧"）</b>:
+      差的修法是"把 6 处字符串改成 runtimes"（6 处仍各自硬编码目录名, 下次照样错）;
+      <b>正解</b>: ① 装配点<b>下移</b>到 src（<code>store.py::open_runtime_store</code>,
+      apps 可依赖 src 反之不行）② CLI 的 <code>_open_runtime_store</code> 改为转调它
+      ③ 6 处裸 new 全改为走工厂 ⇒ ★ <b>目录名全仓只定义一次</b>（<code>RUNTIME_DIR_NAME</code>）。<br>
+      <b>★ 实测验收</b>: 旧路径读到 <b>0</b> 个执行 · 新路径读到 <b>3</b> 个;
+      舰队视图从"永远空"变为列出 2 个 worker（idle 2 · done 1）✓<br>
+      <b>★ 量级修正</b>: 从"重构存储"降为"归一 6 处 + 加一个工厂" —— 无数据迁移（runtime/ 不存在）。</span></span></label>
     <label class="item"><input type="checkbox" id="cr-2"><span class="body">
       <span class="t"><span class="tag p0">P0</span>★★ 角色定义【根本没有运行时消费者】（Codex 审出）</span>
       <span class="meta"><b>Codex 证据</b>: <code>RoleDefinition.prompt_template</code> <b>全仓无运行时消费者</b>;

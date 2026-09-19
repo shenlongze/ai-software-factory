@@ -103,9 +103,9 @@ def scan(root: Path | str, *, stale_seconds: int = DEFAULT_STALE_SECONDS) -> dic
 
     # ── ② 悬挂的执行（PENDING/RUNNING 且创建时间超时）+ ③ 失败的执行
     try:
-        from ai_factory_os.services.execution.runtime.store import RuntimeStore
+        from ai_factory_os.services.execution.runtime.store import open_runtime_store
 
-        for req in RuntimeStore(root / "runtime").list_executions():
+        for req in open_runtime_store(root).list_executions():
             st = str(getattr(req.status, "value", req.status)).upper()
             created = _parse_ts(str(getattr(req, "created_at", "") or ""))
             if st in ("PENDING", "RUNNING"):

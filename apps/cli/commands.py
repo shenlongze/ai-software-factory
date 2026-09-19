@@ -43,7 +43,10 @@ from ai_factory_os.services.execution.service import ExecutionService
 from ai_factory_os.services.execution.runtime.adapters import BUILTIN_ADAPTERS
 from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionStatus, RuntimeInfo, RuntimeStatus
 from ai_factory_os.services.execution.runtime.registry import RuntimeExistsError, RuntimeNotFoundError, RuntimeRegistry
-from ai_factory_os.services.execution.runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.store import (
+    RuntimeStore,
+    open_runtime_store,
+)
 from ai_factory_os.services.execution.catalog import RuntimeCatalog
 from ai_factory_os.services.execution.store import CatalogStore
 from ai_factory_os.services.work.types import Task, TaskStatus
@@ -734,9 +737,15 @@ def cmd_workflow_status(ctx: FactoryContext, args: Any) -> dict:
 # ------------------------------------------------------------------ runtime 子命令
 
 def _open_runtime_store(ctx: FactoryContext) -> RuntimeStore:
-    """装配 RuntimeStore (路径 = <root>/runtimes/runtimes.json, 不经 context.py;
-    目录由 store 首次原子写时自动创建, 见 ADR-0006 决策 5)。"""
-    return RuntimeStore(ctx.root / "runtimes")
+    """装配 RuntimeStore —— ★ 已改为复用 src 的唯一点 `open_runtime_store`。
+
+    历史: 本函数原先是"CLI 侧的独立装配"（`RuntimeStore(ctx.root / "runtimes")`）,
+    而其它 6 处（pump/舰队/自愈）各自裸 new 且写错目录名（`runtime` 少一个 s）
+    ⇒ 三个能力静默失效。2026-09-19 统一: 装配点下移到
+    `services/execution/runtime/store.py::open_runtime_store`, 此处只做转调。
+    保留本函数名是为了不动 14 处调用点（改的是定义, 不是每个调用者）。
+    """
+    return open_runtime_store(ctx.root)
 
 
 def _parse_runtime_status(value: str | None) -> RuntimeStatus | None:

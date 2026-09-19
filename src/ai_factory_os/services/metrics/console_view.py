@@ -240,9 +240,9 @@ class ConsoleView:
 
         # ── ② 做过什么: execution 记录（agent_id × status）
         try:
-            from ai_factory_os.services.execution.runtime.store import RuntimeStore
+            from ai_factory_os.services.execution.runtime.store import open_runtime_store
 
-            for req in RuntimeStore(self._root / "runtime").list_executions():
+            for req in open_runtime_store(self._root).list_executions():
                 who = str(req.agent_id or "").strip()
                 if not who:
                     continue

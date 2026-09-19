@@ -451,7 +451,68 @@
   </div>
 
   <!-- ═══════ 7 ═══════ -->
-  <h2><span class="n">10</span>已完成（本轮 · 留档不删）</h2>
+  <!-- ═══════ 记忆专项 ═══════ -->
+  <h2><span class="n">10</span>记忆专项（Founder 主线：项目做久了会忘）</h2>
+  <div class="hint">
+    这一组只看"记忆"——能不能记住、记得准不准、会不会过期。<b>其余组与本组有重叠条目, 以本组为准</b>。
+  </div>
+  <div class="card" data-group="memory">
+    <label class="item done"><input type="checkbox" id="mem-1" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 会话内记忆（第 1 层）</span>
+      <span class="meta">本来就有: <code>conversation say / understand</code> 累积 messages + facts; 消息 append-only 永不丢。</span></span></label>
+    <label class="item done"><input type="checkbox" id="mem-2" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 跨会话记忆（第 2 层）—— imp-0c</span>
+      <span class="meta">修前: 新会话问"我们之前的存储设计是什么" ⇒ 答"暂时查不到";
+      修后: 答出完整三条决策。<b>做法</b>: 理解时并入分层事实（scoped_facts.effective_facts）。
+      实测: 新会话答"项目代号是 Orion" ✓</span></span></label>
+    <label class="item done"><input type="checkbox" id="mem-3" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 知识记忆 · 项目文档（第 3 层）—— imp-0d</span>
+      <span class="meta">链路: <code>project adopt</code>（新增入口）→ 建索引 → <code>conversation new --project</code>
+      → 理解时 <code>rag_query</code> → prompt「项目文档知识」段。<br>
+      ★ 实测: 问「影响面分析为什么要做」⇒ 直接引用 <code>storage-and-memory-design.md</code> 原话。</span></span></label>
+    <label class="item done"><input type="checkbox" id="mem-4" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 影响面精度（第 4 层的基础）—— imp-0e</span>
+      <span class="meta">正则级 → AST 级（标准库, 零依赖）+ 修"包名前缀致跨文件依赖全丢" + "相对导入拼接多点"。
+      实测: <code>upsert_fact</code> 调用者 6 处全对（行号与人工 grep 一致）· 假阳性 0。</span></span></label>
+    <label class="item done"><input type="checkbox" id="mem-5" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 记忆分层 · 作用域（刀1/2/3a）—— tsc-1/2/3</span>
+      <span class="meta">归属四级（全局&lt;公司&lt;部门&lt;项目）· 继承 + 同槽下层顶替 · 同公司横向可见 ·
+      跨公司 Default Deny。实测: 市场部读到 IT 部门事实 ✓ · 跨公司无泄露 ✓</span></span></label>
+
+    <label class="item"><input type="checkbox" id="mem-6"><span class="body">
+      <span class="t"><span class="tag p0">P0</span>★ 索引自动更新 —— 否则记忆会【过期】（比忘记更糟）</span>
+      <span class="meta"><b>实测缺口</b>: 索引 <code>updated_at 2026-09-19T19:01</code> 而设计文档 mtime
+      <code>2026-09-20 02:52</code>（更晚）⇒ 检索到的是旧版本; <code>incremental_ingest</code>
+      <b>零消费者</b>（有增量能力, 无触发）。<br>
+      <b>要做</b>: 给索引一个触发点 —— ① <code>factory knowledge reindex [--incremental]</code> 命令
+      ② 或理解前按 mtime 自动增量 ③ 或落成 hook（文档变更事件 → 重建）。<br>
+      <b>验收</b>: 改一个项目文档后, 检索能查到新内容（旧内容不再命中）。</span></span></label>
+    <label class="item"><input type="checkbox" id="mem-7"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>④ 影响面记忆 —— 收尾: <code>factory change plan</code> + 落事件</span>
+      <span class="meta">精度已修准（mem-4）, 但<b>用户碰不到</b>（无 CLI）⇒ 按 R24 不算完成。<br>
+      <b>要做</b>: <code>factory change plan &lt;符号&gt;</code> —— 只分析不改, 输出影响面清单
+      （调用方/继承/测试覆盖/★未覆盖风险）; 并把结果<b>作为事件落库</b> ⇒ 可查"上次改这个影响了几处"。</span></span></label>
+    <label class="item"><input type="checkbox" id="mem-8"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>检索相关性 —— 词频无 IDF（长文档"万能命中"）</span>
+      <span class="meta">CHANGELOG / 长方案书因"文件长 ⇒ TF 高"挤占结果（已用分档加权 + 单文件限流缓解）。
+      方向: IDF 类修正, 或接 embedding（代码已有 <code>scorer</code> 注入点）。</span></span></label>
+    <label class="item"><input type="checkbox" id="mem-9"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>FTS5 检索层 + 最近注入（刀3b）—— tsc-4</span>
+      <span class="meta">facts 多了以后按相关性检索 + 只注入"最近 N 条 + 相关若干"; 现 84 条阶段用不到
+      （触发条件: 单作用域几百条 / prompt 超 ~20k tokens）。</span></span></label>
+    <label class="item"><input type="checkbox" id="mem-10"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>链条记录落地（功能模块/数据链/任务链/调用关系/执行顺序）</span>
+      <span class="meta"><b>判据已定</b>（不可派生的才记, 可派生的只算）: 任务链/执行顺序/决策理由=记;
+      功能模块/调用/依赖/测试映射=算（现算不落库）。<b>未做</b>: 决策理由的正式记录（现只靠 git commit message）。</span></span></label>
+    <label class="item"><input type="checkbox" id="mem-11"><span class="body">
+      <span class="t"><span class="tag p0">P0</span>存储收敛 —— 5 套"记忆/知识"机制 → 1 套（imp-0b）</span>
+      <span class="meta">实测: Store/Index/Memory 类 <b>24 个</b> · 数据落地 <b>8 处</b> ·
+      <b>KnowledgeStore 两个实现</b> · "记忆/知识/事实"机制 <b>5 套互不通</b>
+      （会话 facts · scoped_facts · .factory_rag · search.db FTS5 · org 知识条目）。<br>
+      目标: store ≤ 3（事件源 + 投影层 + 配置）· 纪律: 新增存储前先问「能不能用事件+投影表达」。</span></span></label>
+  </div>
+
+  <h2><span class="n">11</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">
       <span class="t">★ 修会话上下文丢失（P0）—— 关键词预筛静默丢弃 ⇒ 8 轮 3 条变 9 条全在</span>

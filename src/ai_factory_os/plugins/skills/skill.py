@@ -90,6 +90,29 @@ class SkillPermissionPolicy(BaseModel):
         return agent_id in self.allowed_agent_ids
 
 
+def _now_iso() -> str:
+    """当前时间 ISO 串（hm-2 修订痕迹用）。"""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _bump_version(v: str) -> str:
+    """版本自增: '1.2.3' → '1.2.4'（patch 位 +1）; 非法格式 → '1.0.1'。
+
+    ★ hm-2: Skill 修订时版本必须变 —— 否则"改了哪版"无法追溯（可审计要求）。
+    """
+    parts = str(v or "").split(".")
+    try:
+        nums = [int(p) for p in parts[:3]]
+    except (TypeError, ValueError):
+        return "1.0.1"
+    while len(nums) < 3:
+        nums.append(0)
+    nums[2] += 1
+    return ".".join(str(n) for n in nums[:3])
+
+
 class Skill(BaseModel):
     """Skill Domain Model (职业能力组合 — Tool 之上的组合与约束层)。
 
@@ -209,6 +232,45 @@ class SkillRegistry:
     def get(self, skill_id: str) -> Skill | None:
         """按 id 取 Skill (不存在 → None — 查询语义)。"""
         return self._skills.get(skill_id)
+
+    # ------------------------------------------------------------------ 自演化（hm-2）
+
+    def update(self, skill_id: str, **changes: Any) -> Skill:
+        """★ 2026-09-19（hm-2 · 程序性记忆自演化）: 修订已注册的 Skill。
+
+        **为什么需要（借 Hermes）**: Hermes 的 skills 用完发现不对可以 **patch** ⇒ 经验能回写;
+        AIF 此前只有 `register` / `unregister` ⇒ **注册后不可改** ⇒ 执行中发现的改进无处可落,
+        只能删了重注册（丢历史）。
+
+        规则（保守）:
+          · `id` **不可改**（改 id = 换一个 skill）—— 传了会被忽略并计入 ignored
+          · 复用 `validate` 校验新定义（非法 ⇒ 拒绝, 不写坏）
+          · **版本自增**: `1.2.3` → `1.2.4`（patch 位 +1; 非法格式 → 回落 `1.0.0`+1）
+          · **留修订痕迹**: `metadata["revisions"] += [{at, from_version, to_version, changed}]`（可审计）
+        不存在 → `SkillNotFoundError`（响亮, 不静默）。
+        """
+        if skill_id not in self._skills:
+            raise SkillNotFoundError(f"skill not found: {skill_id}")
+        old = self._skills[skill_id]
+        changes.pop("id", None)                                  # id 不可改
+        data = old.model_dump()
+        data.update({k: v for k, v in changes.items() if v is not None})
+        new_version = _bump_version(str(changes.get("version") or old.version or "1.0.0"))
+        data["version"] = new_version
+        meta = dict(data.get("metadata") or {})
+        revs = list(meta.get("revisions") or [])
+        revs.append({
+            "at": _now_iso(),
+            "from_version": old.version,
+            "to_version": new_version,
+            "changed": sorted(k for k in changes if k != "version"),
+        })
+        meta["revisions"] = revs[-50:]                            # 只留最近 50 条
+        data["metadata"] = meta
+        revised = Skill(**data)
+        self.validate(revised)                                    # 复用校验（非法即拒）
+        self._skills[skill_id] = revised
+        return revised
 
     def list(self) -> list[Skill]:
         """全部 Skill (含 disabled), 按 id 排序。"""

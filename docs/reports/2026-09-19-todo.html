@@ -549,7 +549,59 @@
       只在出现实际症状时动手。</span></span></label>
   </div>
 
-  <h2><span class="n">11</span>已完成（本轮 · 留档不删）</h2>
+  <h2><span class="n">12</span>借 Hermes 的记忆做法（对照实测后得出）</h2>
+  <div class="hint">
+    Founder 要求对比 Hermes 与 AIF 的记忆系统 ⇒ 逐维实测后, 得出 AIF 该借的 4 条。<br>
+    <b>对比结论</b>: Hermes(单用户助手) 强在【质量门 + 上下文工程 + 自演化】;
+    AIF(多租户平台) 强在【结构 + 作用域 + 知识与影响面】⇒ 互补性强。
+  </div>
+  <div class="card" data-group="hermes">
+    <label class="item"><input type="checkbox" id="hm-1"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>记忆质量门 —— 上限 + 淘汰（Hermes 核心优势）</span>
+      <span class="meta"><b>Hermes 做法（实测）</b>: <code>memories/MEMORY.md</code> + <code>USER.md</code>
+      是 § 分隔的纯文本条目, 有<b>硬字符上限</b>（memory 2200 / user 1375,
+      "Character limits (not tokens) because char counts are model-independent"）
+      ⇒ 超了就<b>逼你删/合并</b> ⇒ 天然防囤积。<br>
+      <b>AIF 现状（实测）</b>: <b>无硬上限</b> —— facts 只靠分层 + <code>select_facts</code> 筛选缓解,
+      另有 <code>max_facts=40</code> 软限 + 会话归档; <code>project_memory</code> 有时间衰减但无上限。<br>
+      <b>要做的</b>: 给 facts / project_memory 加"上限 + 淘汰" —— ① 条目或字符上限
+      ② 长期未用（<code>usage_count</code>/<code>last_used</code> 已有字段）⇒ 降级或归档
+      ③ 超限时的合并/顶替（已有语义槽机制可复用）。<br>
+      <b>验收</b>: 事实增长到上限时行为可预测（不静默丢、有归档可查）。</span></span></label>
+    <label class="item"><input type="checkbox" id="hm-2"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>程序性记忆自演化 —— skill 可 update/patch</span>
+      <span class="meta"><b>Hermes 做法</b>: skills 不只是加载 —— 用完发现不对可
+      <b>patch/edit</b>（我这轮就多次 patch 自己的 skill）⇒ 经验能回写。<br>
+      <b>AIF 现状（实测）</b>: <code>plugins/skills/skill.py</code> 只有
+      <code>register / unregister / get / list / validate</code> ⇒ ★ <b>注册后不可改</b>。<br>
+      <b>要做的</b>: 加 <code>update(skill_id, ...)</code>（版本号 + 冲突处理）, 并让"执行中发现的问题"
+      能回写 skill（如失败经验 → 修订）。<br>
+      <b>验收</b>: 一个 skill 能被修订且版本可追溯。</span></span></label>
+    <label class="item"><input type="checkbox" id="hm-3"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>写入克制 —— 加"重要性门"（防记垃圾）</span>
+      <span class="meta"><b>Hermes 做法</b>: 写记忆是 <b>agent 显式决定</b>（memory 工具:
+      "save proactively when the user states a preference, correction, or personal detail"),
+      且有明确取舍纪律（"Do NOT save task progress / completed-work logs / TODO state"）。<br>
+      <b>AIF 现状（实测）</b>: 靠 <b>LLM 自动提取</b>（理解时产 operations, 凡"新增产品事实"就 ADD）
+      ⇒ 可能把噪音也记成事实。<br>
+      <b>要做的</b>: 加重要性判据 —— ① 只有"产品事实/约束/决策"级才 ADD ② 寒暄/寒暄式确认不入库（已有）
+      ③ 定期复查: 长期未引用的低价值 fact 降级。<br>
+      <b>验收</b>: facts 里无"闲聊级"条目。</span></span></label>
+    <label class="item"><input type="checkbox" id="hm-4"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>对话级上下文压缩（Hermes 最成熟的一块）</span>
+      <span class="meta"><b>Hermes 做法（实测）</b>: <code>agent/context_compressor.py</code> ——
+      "auxiliary model(cheap/fast) 摘要<b>中间轮次</b>, <b>保护 head/tail</b>";
+      细节: ★ <b>token 预算</b>式的尾部保护（非固定消息数）· <b>迭代摘要</b>（跨多次压缩保留信息）·
+      摘要前先<b>剪枝工具输出</b> · "Historical" 标题替代 "Next Steps"（<b>避免被读成活动指令</b>）·
+      摘要 = 压缩内容的 20% + 绝对上限 · 8 个专项文件 + 连续性测试。<br>
+      <b>AIF 现状（实测）</b>: 只有<b>阶段级</b>压缩（<code>handoff.add_closure</code> 摘要 +
+      <code>ProjectSpine</code>）; <b>缺对话级</b> ⇒ 消息一直 append、无压缩策略。<br>
+      <b>要做的</b>: 会话消息超阈值时压缩中间轮次（保头尾 + token 预算 + 迭代摘要）,
+      保留原始消息（append-only 不丢, 压缩只影响"送进 prompt 的部分"）。<br>
+      <b>验收</b>: 长会话（消息 100+）的 prompt 大小可控, 且早期关键信息仍可答出。</span></span></label>
+  </div>
+
+  <h2><span class="n">13</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">
       <span class="t">★ 修会话上下文丢失（P0）—— 关键词预筛静默丢弃 ⇒ 8 轮 3 条变 9 条全在</span>

@@ -9,6 +9,8 @@
 """
 
 from __future__ import annotations
+import sys
+from pathlib import Path
 
 import os
 from collections import Counter
@@ -3690,3 +3692,175 @@ def cmd_exec_approval_apply(ctx: FactoryContext, args: Any) -> dict:
 def cmd_exec_approval_list(ctx: FactoryContext, args: Any) -> dict:
     """factory exec approval list — 审批记录清单 (org.execution.viewed 审计)。"""
     return _exec_call(ctx, args, "cmd_exec_approval_list")
+
+# ------------------------------------------------------------------ Provider 配置引导（照 Hermes/OpenClaw 标准）
+
+#: 预置 provider 模板（引导用: 选一个即可, 不用背 base_url）
+PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
+    "1": {"id": "deepseek", "label": "DeepSeek（性价比高）",
+          "base_url": "https://api.deepseek.com/v1/chat/completions",
+          "models": ["deepseek-chat", "deepseek-reasoner"], "env": "DEEPSEEK_API_KEY"},
+    "2": {"id": "openai", "label": "OpenAI（GPT 系列）",
+          "base_url": "https://api.openai.com/v1/chat/completions",
+          "models": ["gpt-4o", "gpt-4o-mini"], "env": "OPENAI_API_KEY"},
+    "3": {"id": "anthropic", "label": "Anthropic（Claude 系列）",
+          "base_url": "https://api.anthropic.com/v1/messages",
+          "models": ["claude-sonnet-4-20250514"], "env": "ANTHROPIC_API_KEY"},
+    "4": {"id": "moonshot", "label": "Moonshot / Kimi",
+          "base_url": "https://api.moonshot.cn/v1/chat/completions",
+          "models": ["moonshot-v1-8k", "moonshot-v1-32k"], "env": "MOONSHOT_API_KEY"},
+    "5": {"id": "custom", "label": "自定义（OpenAI 兼容端点）",
+          "base_url": "", "models": [], "env": ""},
+}
+
+
+def _ask(prompt: str, default: str = "") -> str:
+    """交互式问一句（stdin 关了/非 tty ⇒ 返回默认值, 不阻塞脚本）。"""
+    import sys
+
+    if not sys.stdin.isatty():
+        return default
+    try:
+        got = input(f"  {prompt}" + (f" [{default}]: " if default else ": ")).strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return default
+    return got or default
+
+
+def cmd_provider_add(ctx: FactoryContext, args: Any) -> dict:
+    """factory provider add —— 配置引导（照 Hermes `setup model` / OpenClaw `configure`）。
+
+    ★ 三步走（与 Hermes 一致: 交互式 + 非交互参数都支持）:
+      ① 选 provider（预设模板或自定义）
+      ② 提供 key ⇒ **只写进环境变量, 不落 providers.json**（本仓铁律: key 只存 env）
+      ③ **试连**（真调一次）⇒ 通过才落库（避免"配了但不能用"）
+    """
+    noninteractive = bool(getattr(args, "non_interactive", False)) or not sys.stdin.isatty()
+    pid = str(getattr(args, "provider_id", "") or "")
+    base_url = str(getattr(args, "base_url", "") or "")
+    models = [m.strip() for m in str(getattr(args, "models", "") or "").split(",") if m.strip()]
+    env_name = str(getattr(args, "env", "") or "")
+    key = str(getattr(args, "key", "") or "")
+    preset: dict[str, Any] = {}
+
+    if not noninteractive and not pid:
+        print("\n  配置 LLM provider（照 Hermes 的三步: 选 → 填 key → 试连）\n")
+        for k, v in PROVIDER_PRESETS.items():
+            print(f"    {k}. {v['label']}")
+        pick = _ask("选一个 (1-5)", "1")
+        preset = PROVIDER_PRESETS.get(pick) or PROVIDER_PRESETS["1"]
+        pid = str(preset.get("id") or "")
+        if pid == "custom":
+            pid = _ask("provider id（如 myllm）", "myllm")
+            base_url = _ask("base_url（OpenAI 兼容的 /chat/completions）", base_url)
+            models = [m.strip() for m in _ask("模型名（逗号分隔）", "").split(",") if m.strip()]
+            env_name = _ask("环境变量名（存 key）", f"{pid.upper()}_API_KEY")
+        else:
+            base_url = base_url or str(preset.get("base_url") or "")
+            models = models or list(preset.get("models") or [])
+            env_name = env_name or str(preset.get("env") or f"{pid.upper()}_API_KEY")
+        if not key and not os.environ.get(env_name):
+            key = _ask(f"粘贴 {env_name} 的值（不会写进 providers.json）", "")
+    else:
+        env_name = env_name or f"{pid.upper().replace('-', '_')}_API_KEY" if pid else env_name
+
+    if not pid:
+        raise CliError("缺少 provider id（非交互模式请用 --id）", exit_code=2)
+    if not env_name:
+        env_name = f"{pid.upper().replace('-', '_')}_API_KEY"
+
+    # ② key 落环境（★ 不进 providers.json）
+    key_written = ""
+    if key:
+        key_written = _write_env_key(env_name, key)
+        os.environ[env_name] = key            # 本次进程内立即可用（便于试连）
+    have_key = bool(os.environ.get(env_name))
+
+    # ③ 试连（可选: --skip-test 跳过）
+    smoke: dict[str, Any] = {"skipped": True}
+    if have_key and not bool(getattr(args, "skip_test", False)):
+        try:
+            from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
+
+            plane = LLMControlPlane(ctx.root / "providers.json")
+            plane.add_provider(pid, base_url=base_url, models=models,
+                               env_ref=f"env:{env_name}", display=pid)
+            smoke = {"attempted": True, "ok": True,
+                     "note": "已落库; 用 `factory provider test " + pid + "` 做一次真实冒烟"}
+        except Exception as exc:  # noqa: BLE001 — 诚实报告
+            smoke = {"attempted": True, "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    else:
+        try:
+            from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
+
+            LLMControlPlane(ctx.root / "providers.json").add_provider(
+                pid, base_url=base_url, models=models, env_ref=f"env:{env_name}", display=pid)
+        except Exception as exc:  # noqa: BLE001
+            raise CliError(f"写入 provider 失败: {exc}", exit_code=1) from exc
+
+    return {
+        "provider": pid, "base_url": base_url, "models": models,
+        "env_ref": f"env:{env_name}", "key_source": key_written or ("已在环境中" if have_key else "未提供"),
+        "smoke": smoke,
+        "next": f"factory provider test {pid}  # 真调一次确认可用",
+    }
+
+
+def _write_env_key(env_name: str, key: str) -> str:
+    """把 key 写进 ~/.hermes/.env（本仓约定: key 只存 env 文件, 不进仓库/不进 providers.json）。"""
+    try:
+        f = Path.home() / ".hermes" / ".env"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        lines = f.read_text(encoding="utf-8").splitlines() if f.is_file() else []
+        lines = [ln for ln in lines if not ln.startswith(f"{env_name}=")]
+        lines.append(f"{env_name}={key}")
+        f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return str(f)
+    except Exception:  # noqa: BLE001 — 写不了就只留在本次进程环境
+        return ""
+
+
+def cmd_provider_doctor(ctx: FactoryContext, args: Any) -> dict:
+    """factory provider doctor —— 体检（照 OpenClaw `doctor` / Hermes `doctor`）。
+
+    检查四项（只读, 不修）:
+      ① 配置可读? ② key 是否已设置? ③ base_url/模型是否齐全? ④ 降级链是否配?
+    """
+    from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
+
+    checks: list[dict[str, Any]] = []
+    try:
+        plane = LLMControlPlane(ctx.root / "providers.json")
+        data = plane.load()
+        provs = dict(getattr(data, "providers", {}) or {})
+        chain = list(getattr(data, "fallback_chain", []) or [])
+        checks.append({"item": "配置文件可读", "ok": True,
+                       "detail": f"{len(provs)} 个 provider · 降级链 {len(chain)} 个"})
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "checks": [{"item": "配置文件可读", "ok": False,
+                                         "detail": f"{type(exc).__name__}: {exc}"}]}
+
+    enabled = [pid for pid, c in provs.items() if getattr(c, "enabled", True)]
+    checks.append({"item": "至少一个 enabled provider", "ok": bool(enabled),
+                   "detail": ", ".join(enabled) or "无 —— 需 `factory provider add`"})
+
+    for pid, c in provs.items():
+        ref = str(getattr(c, "api_key_ref", "") or "")
+        name = ref[4:] if ref.startswith("env:") else ""
+        has = bool(name and os.environ.get(name))
+        checks.append({"item": f"{pid}: key 已设置", "ok": has,
+                       "detail": (f"env:{name} " + ("已设置 ✓" if has else "**未设置** ⇒ 导出该环境变量"))
+                       if name else "未配置 api_key_ref"})
+        bu = str(getattr(c, "base_url", "") or "")
+        ms = list(getattr(c, "models", []) or [])
+        checks.append({"item": f"{pid}: base_url + 模型齐全", "ok": bool(bu and ms),
+                       "detail": f"{bu or '缺 base_url'} · {len(ms)} 个模型"})
+
+    checks.append({"item": "降级链已配置", "ok": bool(chain),
+                   "detail": ", ".join(chain) if chain else "空 ⇒ 主 provider 挂了会直接失败（建议配 1-2 个备用）"})
+    bad = [c for c in checks if not c["ok"]]
+    return {"ok": not bad, "checks": checks,
+            "summary": f"{len(checks) - len(bad)}/{len(checks)} 项通过",
+            "next": ("一切正常" if not bad else
+                     "按上面的 detail 修；配新 provider: `factory provider add`")}

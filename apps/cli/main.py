@@ -77,6 +77,8 @@ from .commands import (
     cmd_provider_stats,
     cmd_provider_compare,
     cmd_provider_recommend,
+    cmd_provider_add,
+    cmd_provider_doctor,
     cmd_product_approval_decide,
     cmd_product_approval_history,
     cmd_product_approval_list,
@@ -452,6 +454,19 @@ def build_parser() -> Any:
     )
     json_opt(p_provider)
     pvsub = p_provider.add_subparsers(dest="provider_command", required=True)
+
+    # ★ 配置引导（照 Hermes `setup model` / OpenClaw `configure`）
+    pv_add = pvsub.add_parser("add", help="配置新 provider（交互: 选类型→贴 key→试连→落库）")
+    json_opt(pv_add)
+    pv_add.add_argument("--id", dest="provider_id", default="", help="provider id（非交互时必填）")
+    pv_add.add_argument("--base-url", default="", help="OpenAI 兼容端点")
+    pv_add.add_argument("--models", default="", help="模型名, 逗号分隔")
+    pv_add.add_argument("--env", default="", help="存 key 的环境变量名")
+    pv_add.add_argument("--key", default="", help="key（★ 只写进 env, 不落 providers.json）")
+    pv_add.add_argument("--non-interactive", action="store_true", help="不做交互询问")
+    pv_add.add_argument("--skip-test", action="store_true", help="跳过试连")
+    pv_doctor = pvsub.add_parser("doctor", help="体检: key/端点/模型/降级链")
+    json_opt(pv_doctor)
     p_pv_list = pvsub.add_parser("list", help="Provider 目录列表 (发 provider.viewed)")
     json_opt(p_pv_list)
     p_pv_list.add_argument("--type", default=None, help="按类型过滤 (cloud/local/agent)")
@@ -2570,6 +2585,26 @@ def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown project command: {args.project_command}", exit_code=2)
 
 
+def _print_provider_setup(sub: str, r: dict) -> None:
+    """provider add / doctor 的输出（说人话: 做了什么 + 下一步做什么）。"""
+    if sub == "add":
+        print(f"\n  ✓ 已配置 provider: {r.get('provider')}")
+        print(f"    端点   : {r.get('base_url') or '(默认)'}")
+        print(f"    模型   : {', '.join(r.get('models') or []) or '(未指定)'}")
+        print(f"    key 来源: {r.get('env_ref')} ← {r.get('key_source')}")
+        sm = r.get("smoke") or {}
+        if sm.get("attempted"):
+            print(f"    试连   : {'✓ ' + str(sm.get('note','')) if sm.get('ok') else '✗ ' + str(sm.get('error'))}")
+        else:
+            print("    试连   : 已跳过（未提供 key 或 --skip-test）")
+        print(f"\n  下一步: {r.get('next')}\n")
+    else:
+        print(f"\n  provider doctor: {r.get('summary')}")
+        for c in (r.get("checks") or []):
+            print(f"    {'✓' if c.get('ok') else '✗'} {str(c.get('item')):<30} {c.get('detail')}")
+        print(f"\n  {r.get('next')}\n")
+
+
 def _dispatch_tool(ctx: FactoryContext, args: Any) -> dict:
     """factory tool {list,show,run} —— 工具集的列出/查看/调用。
 
@@ -2728,6 +2763,10 @@ def _dispatch_provider(ctx: FactoryContext, args: Any) -> dict:
         return cmd_provider_compare(ctx, args)
     if args.provider_command == "recommend":
         return cmd_provider_recommend(ctx, args)
+    if args.provider_command == "add":
+        return cmd_provider_add(ctx, args)
+    if args.provider_command == "doctor":
+        return cmd_provider_doctor(ctx, args)
     raise CliError(f"unknown provider command: {args.provider_command}", exit_code=2)
 
 
@@ -2969,6 +3008,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_project(args.project_command, result)
     elif args.command == "provider":
         _print_provider(args.provider_command, result)
+        if args.provider_command in ("add", "doctor"):
+            _print_provider_setup(args.provider_command, result)
     elif args.command == "tool":
         _print_tool(args.tool_command, result)
     elif args.command == "mcp":

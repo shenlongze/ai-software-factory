@@ -431,6 +431,156 @@
     </div>
   </div>
 
+  <!-- ═══════════ 模块 6:平台六维强度评估 ═══════════ -->
+  <h2><span class="n">6</span>平台六维强度评估 —— 多公司 · 多部门 · 多角色 · 多行业 · 调度 · 一切皆插件</h2>
+  <div class="hint">
+    判据：<code>完整产品方案书（终极版）</code>（§1.2 定位 · §4 多 Agent 编排 · §2 模块化）
+    + <code>docs/ssot/architecture.md</code>（七层 / R1–R23 铁律）。
+    方法：逐维<b>实测</b>——机制在不在（代码）· 跑没跑过（数据）· 强度与优化空间。
+  </div>
+  <div class="card">
+
+    <div class="note" style="background:#fff8e6;border-left-color:#b26a00;color:#6b4700;margin-bottom:18px">
+      <b>定位纠偏（Founder 原话）</b>：<b>"我做的是平台, 是多 agent 调度, 不是 vibe coding, 不是编程工具"</b>。
+      方案书 §1.2 原文：<i>"LangChain 创建 AI 员工, LangGraph 编排 AI 工作流,
+      而 AI Software Factory <b>建立和管理整个 AI 生产组织</b>"</i> ·
+      <i>"AI Factory 是<b>造专家的工厂</b>, 不是某一个专家"</i> ·
+      <i>"适用全行业, <b>软件开发只是第一个行业实例</b>"</i>。
+      ⇒ 故本页按<b>平台六维</b>评估, 而非"能不能写代码"。
+    </div>
+
+    <table>
+      <tr>
+        <th style="width:11%">维度</th><th style="width:31%">机制（代码里有什么）</th>
+        <th style="width:20%">实证（数据/命令）</th><th style="width:9%">强度</th><th style="width:29%">优化空间</th>
+      </tr>
+      <tr>
+        <td><b>多公司</b></td>
+        <td><code>lifecycle.create_company(template)</code> —— 模板实例化<br>
+            Company + Department + Role + Authority <b>四处物化</b><br>
+            事件链：company.created → department.created ×N → role.created ×N → authority.granted/denied ×M<br>
+            ★ <b>职责分离(SoD)</b>：<code>FORBIDDEN_ROLE_COMBINATIONS</code><br>
+            　(developer,reviewer) · (developer,qa) · (*,ceo) 硬拒绝</td>
+        <td><code>org company create/list</code> 命令在<br>
+            companies.json <b>1 条</b><br>
+            ★ <b>从没跑过第二个公司</b></td>
+        <td>设计 ★★★★★<br>实证 ★☆☆☆☆</td>
+        <td>① 用 <code>solo</code> + <code>software_company</code> 各建一个公司<b>真跑一次</b>（验证"多"）<br>
+            ② 公司间<b>数据隔离</b>要实测（knowledge 已按公司隔离）<br>
+            ③ 公司级<b>成本/预算</b>归属（budget 现在挂在 execution 层）</td>
+      </tr>
+      <tr>
+        <td><b>多部门</b></td>
+        <td>模板声明 <code>departments=</code>：<br>
+            　software_company → ("Product","Engineering","Quality")<br>
+            　solo → () 扁平无部门<br>
+            RoleSpec 带 <code>department</code> 字段（<code>""</code> = 公司级）</td>
+        <td>departments.json <b>1 条</b></td>
+        <td>设计 ★★★★<br>实证 ★☆☆☆☆</td>
+        <td>① 部门<b>层级</b>（部门→子部门）目前无<br>
+            ② 部门级<b>看板/指标</b>（方案书 §4.7 关键节点卡口）<br>
+            ③ 部门间<b>协作协议</b>（产物交接跨部门时谁批）</td>
+      </tr>
+      <tr>
+        <td><b>多角色</b></td>
+        <td><code>RoleSpec(frozen)</code>：name / department / human / <b>role_ref</b><br>
+            ★ role_ref 设计：<i>"统一角色注册表引用（exec/roles.py 为事实源）<br>
+            　⇒ 消除 org 模板 vs exec roles.py <b>双角色体系</b>(审计风险)"</i><br>
+            现有 9 角色：PM/writer/security/reviewer/ui-designer/architect/developer/tester/devops</td>
+        <td>roles.json <b>1 条</b><br>
+            <code>agent list</code> 出单正常</td>
+        <td>设计 ★★★★<br>实证 ★★☆☆☆</td>
+        <td>★ <b>缺平台角色</b>：方案书 §4.1 要 Coordinator(协调)·Planner(规划)·Governor(治理)·Learner(学习)<br>
+            ⇒ 现在 9 个全是"编程工种"，<b>没有平台治理角色</b><br>
+            ② 角色 → 能力(skill) 绑定已走 role_ref ✓ 可复用</td>
+      </tr>
+      <tr>
+        <td><b>多行业</b></td>
+        <td><code>TEMPLATES = {software_company, solo}</code> · <code>get_template</code> / <code>list_templates</code><br>
+            CompanyTemplate 声明式（departments + roles + policy）<br>
+            plugins/factories/ 有 Factory 抽象（loader/spec）</td>
+        <td>模板 <b>仅 2 个</b><br>
+            examples/ 只有 demo · markpad（全是软件）</td>
+        <td>设计 ★★★★<br>内容 ★☆☆☆☆</td>
+        <td>方案书 §十 要 6 个行业工厂：IT / 运维 / 电商运营 / 自媒体 / 数据分析 / 办公自动化<br>
+            ⇒ 只需<b>新增模板</b>（机制支持，纯内容工作）<br>
+            ② 行业级 skill/MCP/knowledge 预置包（"领域智能"资产）</td>
+      </tr>
+      <tr style="background:#eef7ff">
+        <td><b>调度<br>（平台心脏）</b></td>
+        <td><code>core/scheduler</code>（388 行 · 5 函数 · 端口注入）：<br>
+            <code>ports.py</code> 全部依赖 Protocol 注入（Clock/Work/Resource/Execution/Gate）<br>
+            ★ <code>evaluate.py</code> <b>就绪判定：八条件 → 五态 + reasons</b><br>
+            <code>rank.py</code> 排序（到期→优先级→成本→声明序）<br>
+            <code>allocate.py</code> 分配（<b>容量 + 预算</b>约束，超出推迟下一 tick）<br>
+            <code>loop.py</code> tick = 判定 → 排序 → 分配<br>
+            <code>services/work/assignment/matcher.py</code> AgentMatcher（skill×成功率×成本 评分）</td>
+        <td>★ <b>bootstrap 零装配</b><br>
+            ★ <b>0 消费者</b>（服务域自述都说"不负责调度决策"，却没人调它）<br>
+            <code>services/work/scheduler.py</code> 其实是"定时任务注册表"，非 agent 调度</td>
+        <td>设计 ★★★★★<br>装配 ☆☆☆☆☆</td>
+        <td>★ <b>本页最重要的一条</b>：图纸完整、零件齐备，<b>没装到一起</b><br>
+            ⇒ ① 在 bootstrap 写 Ports 的真实适配（WorkPort→work 域 · ExecutionPort→execution 域 ·<br>
+            　ResourcePort→organization 域 · GatePort→governance 域）<br>
+            ② 让 tick loop 真跑起来（消费任务树的 ready 叶）<br>
+            ③ matcher 的评分接入 evaluate 的八条件（现在两处各算各的）</td>
+      </tr>
+      <tr>
+        <td><b>一切皆插件</b></td>
+        <td>SSoT §一 原文：<i>"plugins/ = <b>一切实现绑定</b>（factories/agents/skills/tools/mcp/models/<br>
+            connectors/controllers/healers/notifiers/triggers/storages）"</i><br>
+            插件内核：bootstrap · register/unregister · get/list · <b>plugin_status 生命周期状态机</b><br>
+            铁律 R4：plugins/* 只许 import contracts</td>
+        <td>12 类里 <b>5 类有实质</b>：<br>
+            　agents 3,811 · tools 1,102 · mcp 615 · skills 567 · factories 529<br>
+            <b>7 类空壳(0–1 行)</b>：<br>
+            　connectors · controllers · healers · models · notifiers · storages · triggers<br>
+            ⚠ R4 有 <b>13 处违反</b>（agent 都 import infrastructure.llm）</td>
+        <td>机制 ★★★★<br>内容 ★★☆☆☆</td>
+        <td>① 7 个空壳要填（尤其 <b>healers 自愈</b>、<b>models 模型管理</b> —— 方案书明写的能力）<br>
+            ② R4 需<b>裁决</b>：agent 必然要调 LLM（infrastructure），铁律与现实有张力<br>
+            ③ 插件<b>热插拔</b>未验证（register 后能否不重启生效）<br>
+            ④ 插件市场/分发（方案书 §9 工具生态）</td>
+      </tr>
+    </table>
+
+    <div class="grid2" style="margin-top:20px">
+      <div>
+        <h3 style="font-size:15px;margin:0 0 8px;color:#1d8f3d">✅ 强项（设计层面世界级）</h3>
+        <table>
+          <tr><th>项</th><th>证据</th></tr>
+          <tr><td>平台本体分离</td><td>core = scheduler + events，只依赖 contracts，≤3000 行纪律</td></tr>
+          <tr><td>端口适配器</td><td>ports.py 全 Protocol 注入 →"换个治理实现，调度器一行不动"</td></tr>
+          <tr><td>就绪判定</td><td>八条件 → 五态 + reasons（不是简单依赖检查）</td></tr>
+          <tr><td>公司治理 SoD</td><td>执行权≠审核权 · CEO 不可兼任 AI 角色（硬拒绝）</td></tr>
+          <tr><td>角色单一事实源</td><td>role_ref 指向 exec/roles.py，消除双角色体系</td></tr>
+          <tr><td>分配可解释</td><td>reason: "skill match 92%, 成功率 95%"</td></tr>
+        </table>
+      </div>
+      <div>
+        <h3 style="font-size:15px;margin:0 0 8px;color:#c0392b">✗ 断点（设计与实现之间）</h3>
+        <table>
+          <tr><th>断点</th><th>后果</th></tr>
+          <tr><td><b>scheduler 零装配</b></td><td>平台心脏不跳 —— 没有任何"决定下一步是谁"的活代码</td></tr>
+          <tr><td><b>无平台角色</b></td><td>缺 Coordinator/Planner/Governor/Learner（只有编程工种）</td></tr>
+          <tr><td><b>行业只有 2 个模板</b></td><td>"多行业"仅是机制，无内容</td></tr>
+          <tr><td><b>7 个插件类空壳</b></td><td>自愈/模型管理/通知/触发器/存储后端都没有</td></tr>
+          <tr><td><b>组织数据各 1 条</b></td><td>多公司/多部门从没真跑过</td></tr>
+          <tr><td><b>无 Replanning / ConflictResolver / ContextAssembly</b></td><td>方案书 §4.7/§4.11 要的协作组件缺</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:20px;background:#eef4ff;border-left-color:#0071e3;color:#1a3f6b">
+      <b>一句话诊断</b>：<br>
+      <b>设计是平台级的，实现是零件级的。</b><br>
+      方案书把"多公司 · 多部门 · 多角色 · 多行业 · 调度 · 一切皆插件"六维都设计清楚了，
+      代码里也都有对应骨架（organization 14,000 行 · core/scheduler 388 行 · 12 类插件）——<br>
+      但<b>没有一维真正跑起来过</b>：组织数据各 1 条、行业模板 2 个、调度器零装配、7 个插件类空壳。<br>
+      <b>⇒ 当前最该做的不是"加功能"，而是"把已有的零件装起来、跑一遍"。</b>
+    </div>
+  </div>
+
   <div class="note" style="margin-top:26px">
     <b>本页与上一页的区别</b>：上一页是<b>清单视图</b>（有什么命令 / 哪些域厚 / 完成度）；
     本页是<b>流动视图</b>（一条需求如何逐环变成代码，数据落在哪，命令背后经过哪几层）。

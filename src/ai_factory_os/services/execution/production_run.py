@@ -354,6 +354,35 @@ def build_executor_factory(
     return _factory
 
 
+def _iter_by_wave(nodes: list[dict[str, Any]], *, done: set[str] | None = None) -> Any:
+    """按依赖【波次】产出 node_spec（波内顺序 = 入参顺序; 波间串行）。
+
+    ★ 2026-09-19 新增（M3 并行调度 · 结构步）—— 本步**不改变执行语义**:
+      仍是逐节点串行执行, 只是顺序由"依赖波"显式给出, 不再依赖
+      "workflow nodes 已按拓扑序注册"这个隐含前提。
+
+    为什么需要: 原 `for node_spec in nodes` 一旦顺序不保证, 依赖检查就会报
+      "未执行 (节点顺序错误)"。显式分波后, 同波节点互不依赖 ⇒ 波内即**可并行边界**
+      （下一步把波内换成线程池即得真并行 —— 边界先立住, 再谈并发）。
+
+    `done`: 已完成的 node_id（resume 场景）⇒ 不占波。
+    环/缺节点: 剩余整体一波（**不阻塞 · 不静默丢弃**）。
+    """
+    done_set = set(done or ())
+    pending = [n for n in nodes if str(n.get("node_id") or "") not in done_set]
+    seen: set[str] = set(done_set)
+    while pending:
+        wave = [n for n in pending
+                if all(str(d) in seen for d in (n.get("depends_on") or []))]
+        if not wave:
+            wave = list(pending)
+        for spec in wave:
+            yield spec
+        seen |= {str(n.get("node_id") or "") for n in wave}
+        wave_ids = {id(n) for n in wave}
+        pending = [n for n in pending if id(n) not in wave_ids]
+
+
 def execute_production_run(
     root: Path | str,
     run_id: str,
@@ -413,7 +442,10 @@ def execute_production_run(
                 if nr.get("artifact_id"):
                     artifacts[nid] = nr["artifact_id"]
 
-    for node_spec in nodes:
+    # ★ 2026-09-19（M3）: 原为 `for node_spec in nodes`（隐含前提=已按拓扑序注册）
+    #   现按【依赖波】产出 —— 波内互不依赖（可并行边界）, 波间串行。
+    #   ★ 本步执行语义不变（仍逐节点串行; 完成态节点不占波）。
+    for node_spec in _iter_by_wave(nodes, done=set(executed)):
         node_id = node_spec["node_id"]
         deps = node_spec.get("depends_on", [])
         # 已完成 → 跳过 (不重建 NodeRun)

@@ -68,6 +68,14 @@ class TaskTreeWork:
         self._cache: dict[str, Any] | None = None
 
     # ── 内部: 载入任务树（惰性 + 失败安全）
+    def invalidate(self) -> None:
+        """丢弃缓存 —— ★ 任务树被外部改动后必须调用（如调度驱动回写叶状态）。
+
+        为什么必须有它: 适配器缓存了树 ⇒ 回写后仍读旧树 ⇒ 下游叶永远"前驱未验收"
+        （实测: A/B/C 回写成 completed 后 D 仍 blocked）。
+        """
+        self._cache = None
+
     def _tree(self) -> dict[str, Any]:
         if self._cache is not None:
             return self._cache

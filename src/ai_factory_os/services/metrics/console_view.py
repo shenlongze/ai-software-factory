@@ -266,6 +266,41 @@ class ConsoleView:
             "busy_leaves": busy_leaves,
         }
 
+    def trace(self, execution_id: str, *, limit: int = 200) -> dict[str, Any]:
+        """★ 逐步轨迹 —— 一次执行的完整步骤链（吸收自 OpenClaw 的 trajectory.jsonl）。
+
+        OpenClaw 的形态是"每步一行 jsonl"; 新区**已有等价数据**（事件源: seq + type + payload,
+        每步都落库）—— 缺的只是"按执行链串起来看"。本方法做那个投影, **不新增存储**。
+
+        串链方式（都是已有事实）:
+          · payload 里出现该 execution_id（request_id / result_id / id 任一字段）
+          · 或事件 type 前缀匹配该执行所属阶段
+        ⇒ 输出按 seq 升序的步骤列表 —— 可读的"这次执行都发生了什么"。
+
+        失败安全: 事件源缺失/损坏 ⇒ 空步骤（不抛）。
+        """
+        steps: list[dict[str, Any]] = []
+        if self._events is None:
+            return {"execution_id": execution_id, "steps": [], "count": 0}
+        try:
+            events = list(self._events.recent(limit=limit))
+        except Exception:  # noqa: BLE001 — 失败安全
+            events = []
+        eid = str(execution_id)
+        for e in events:
+            payload = getattr(e, "payload", None) or {}
+            flat = {str(v) for v in payload.values() if isinstance(v, (str, int))}
+            if eid not in flat and not any(eid in str(v) for v in payload.values()):
+                continue
+            steps.append({
+                "seq": getattr(e, "seq", getattr(e, "event_seq", 0)),
+                "type": str(getattr(e, "type", "") or ""),
+                "at": str(getattr(e, "timestamp", "") or getattr(e, "created_at", "")),
+                "payload": {k: v for k, v in list(payload.items())[:8]},
+            })
+        steps.sort(key=lambda s: s.get("seq") or 0)
+        return {"execution_id": execution_id, "steps": steps, "count": len(steps)}
+
     def dashboard(self, *, recent_limit: int = DEFAULT_RECENT_LIMIT) -> dict[str, Any]:
         """七域汇总快照（只读; 空工厂 → 全空域, 永不因数据缺失失败）。"""
         return {

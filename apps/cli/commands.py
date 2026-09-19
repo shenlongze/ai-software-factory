@@ -4002,6 +4002,33 @@ def cmd_knowledge_reindex(ctx: FactoryContext, args: Any) -> dict:
 # --------------------------------------------------------------------------- change plan (影响面)
 
 
+def _adopted_repos(ctx: FactoryContext) -> list[tuple[str, str]]:
+    """已采纳项目 (project_id, repo_path) 列表 —— 读 org/projects.json（adopt 写入的）。"""
+    out: list[tuple[str, str]] = []
+    for f in (ctx.root / "org").rglob("projects.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        def _walk(o: Any) -> list[dict]:
+            r = []
+            if isinstance(o, list):
+                r += [x for x in o if isinstance(x, dict)]
+            elif isinstance(o, dict):
+                for k in ("items", "projects", "project"):
+                    v = o.get(k)
+                    if isinstance(v, list):
+                        r += [x for x in v if isinstance(x, dict)]
+                    elif isinstance(v, dict):
+                        r += [x for x in v.values() if isinstance(x, dict)]
+            return r
+        for it in _walk(data):
+            pid, rp = str(it.get("id") or ""), str(it.get("repo_path") or "")
+            if pid and rp and Path(rp).is_dir():
+                out.append((pid, rp))
+    return out
+
+
 def cmd_change_plan(ctx: FactoryContext, args: Any) -> dict:
     """factory change plan <符号> — 影响面分析（只分析, 不改动）。
 

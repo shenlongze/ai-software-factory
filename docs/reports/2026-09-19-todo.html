@@ -284,6 +284,27 @@
       （事件是唯一真相 / 配置留文件+git / 收敛到 3 个 store）。<br>
       <b>★ 结论</b>: "更有效果"不是把设计做得更好, 而是<b>把链路接通</b>（写→读闭环）。
       此前 24 store / 5 套记忆机制里, <b>真正产生效果的是这条闭环</b>。</span></span></label>
+    <label class="item done"><input type="checkbox" id="imp-0d" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ ★ 知识记忆接通（记忆主线）—— adopt → 索引 → 会话绑项目 → 理解时引用项目文档</span>
+      <span class="meta"><b>Founder</b>: "你跑偏了, 我们说的是记忆的事" ⇒ 回到记忆主线, 把断链接完。<br>
+      <b>四处修复（都是链上缺一环）</b>: ① <code>factory project adopt</code> 补 CLI 入口
+      （能力早有却无入口 ⇒ 项目永远没 repo_path ⇒ 索引不知扫哪）② <code>conversation new --project</code>
+      新增（★ 并修 move_conv_to_project 只搬文件不写 project_id 字段的老问题）③ adopt 时自动建索引
+      ④ <code>build_llm_prompt</code> 新增「项目文档知识」段（带文件名/档位/score, 标注"供引用·非事实"）。<br>
+      <b>★ 效果对比（同一问题）</b>: 修前"目前还没有记录任何存储设计相关的决定";
+      修后问「项目级 RAG 方案核心思路」⇒ 答出项目文档内容;
+      问「影响面分析为什么要做」⇒ ★ 直接引用 <code>storage-and-memory-design.md</code>
+      （"upsert_fact 有 5 处调用方…该文档标注覆盖 0 处 ⇒ ⚠ 无测试"）—— 连本轮刚写的设计都被引对。<br>
+      <b>过程教训</b>: get_conversation 是投影(不含 project_id, 要用 _load_conv) ·
+      EventType.PROJECT_CREATED 不存在(是 ORG_PROJECT_CREATED) · ProjectStore 在 projects.py ·
+      加命令必须四处接入(本轮又漏 print 分支导致无输出)</span></span></label>
+    <label class="item"><input type="checkbox" id="imp-rr"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>检索相关性待提升（词频打分的"长文档万能命中"）</span>
+      <span class="meta"><b>现象</b>: CHANGELOG.md / 长方案书 因"文件长 ⇒ TF 高"常挤占结果（实测多个查询都命中它）;
+      分档加权与单文件限流已缓解, 但**词频打分本身无 IDF** ⇒ 常见词无降权。<br>
+      <b>方向</b>: 加 IDF 类修正（按"该词在多少文件出现"降权）· 或接 embedding/语义检索
+      （代码里已有 <code>scorer</code> 注入点, 自述"接口先行"）。<br>
+      <b>不阻塞</b>: 当前已能答对"影响面分析"这类问题（引用了正确文档）。</span></span></label>
     <label class="item"><input type="checkbox" id="imp-r"><span class="body">
       <span class="t"><span class="tag p0">P0</span>★ 孤立模块处置 —— 我写的吸收清单 10 项里 6 项"有代码没入口"</span>
       <span class="meta"><b>Founder 问"没有冗余代码吧, 没有写死的代码么, 没有硬代码吧"后的实测</b>:<br>

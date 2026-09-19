@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>execution-strategy-and-roles</title>
+<style>
+  :root{--bg:#f5f5f7;--fg:#1d1d1f;--sub:#6e6e73;--line:#d2d2d7;--blue:#0071e3;--code-bg:#f0f0f2}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.7 -apple-system,"SF Pro SC","PingFang SC",system-ui,sans-serif}
+  main{max-width:960px;margin:0 auto;padding:44px 22px 90px}
+  h1{font-size:30px;letter-spacing:-.4px;margin:0 0 8px}
+  h2{font-size:21px;margin:38px 0 12px;padding-top:16px;border-top:1px solid var(--line)}
+  h3{font-size:17px;margin:26px 0 10px}
+  h4{font-size:15px;margin:20px 0 8px;color:var(--sub)}
+  p{margin:10px 0}
+  blockquote{margin:12px 0;padding:10px 14px;background:#fff;border-left:3px solid var(--blue);
+    border-radius:0 8px 8px 0;color:var(--sub)}
+  pre{background:#1d1d1f;color:#f5f5f7;padding:14px 16px;border-radius:10px;overflow:auto;
+    font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+  code{background:var(--code-bg);padding:1.5px 5px;border-radius:5px;
+    font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre code{background:none;padding:0;color:inherit}
+  table{width:100%;border-collapse:collapse;margin:14px 0;background:#fff;
+    border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05);font-size:14px}
+  th{background:#fafafa;text-align:left;font-weight:600;padding:9px 12px;border-bottom:1px solid var(--line)}
+  td{padding:9px 12px;border-bottom:1px solid #f0f0f2;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  ul{margin:8px 0 8px 4px;padding-left:20px}
+  li{margin:5px 0}
+  strong,b{font-weight:600}
+  .foot{margin-top:44px;color:var(--sub);font-size:12.5px;text-align:center}
+</style></head><body><main>
+<h1>AI Factory OS — 执行策略与可插拔角色设计</h1>
+<blockquote>状态: 设计 (Design) | 日期: 2026-09-19 | 决策人: Founder</blockquote>
+<blockquote>一句话: <b>一件事怎么跑, 由「执行策略」决定; 谁来做, 由「可插拔角色」决定。</b></blockquote>
+<p>---</p>
+<h2>0. 要解决的问题（实测得出）</h2>
+<pre>① 角色/审查员硬编码
+   roles.py 里 10 个 _*_PROMPT 常量 + RoleDefinition + templates.py 登记
+   ⇒ 加一个审查员要改【3 处代码】; 而 Codex 是"一个审查员一个 .toml 文件"
+   ⇒ AIF 要服务多行业（制造/医疗/电商的审查员不同）⇒ 硬编码不可行
+
+② 四个能力各自独立设计（会做成四套）
+   · 审查员体系（借 Codex）
+   · 子代理隔离 + 并发（借 Hermes）
+   · MoA 聚合（借 Hermes）
+   · 任务间上下文传递
+   ⇒ 若各做一套 ⇒ 就是 Founder 铁律里拒绍的"做好几套"
+
+③ 三处冲突没有统一裁决点
+   · MoA ↔ 预算约束      · 隔离 ↔ 传递      · "全都有" ↔ 三家定位不同</pre>
+<h2>1. 设计:两个抽象, 不是四个功能</h2>
+<pre>┌──────────────────────────────────────────────────────────────────────────┐
+│ 抽象一: 「执行策略」(Execution Strategy)                                   │
+│   一件事【怎么跑】 —— 一个维度, 四个值:                                     │
+│                                                                          │
+│   single    单执行者（默认; 最便宜）                                        │
+│   parallel  多执行者并行（任务树里【无依赖】的叶）                            │
+│   isolated  隔离的独立视角（★ 审查/验证 —— 各执行者不共享上下文）             │
+│   moa       多模型参考聚合（★ 受预算门约束）                                 │
+│                                                                          │
+│   ⇒ 隔离 vs 传递 不再是矛盾: 【策略】决定协作模式                             │
+│     isolated ⇒ 各自独立上下文（审查要独立视角, 共享就会趋同）                  │
+│     parallel ⇒ 可传递（并行做不同的部分, 需要知道彼此在做什么）                │
+│                                                                          │
+├──────────────────────────────────────────────────────────────────────────┤
+│ 抽象二: 「可插拔角色」(Role as Plugin)                                     │
+│   谁来做【一件事的某个职能】 —— 从代码里出来, 变成文件:                        │
+│                                                                          │
+│   plugins/roles/&lt;role_id&gt;.md                                             │
+│     ---                                                                  │
+│     id: reviewer.performance                                             │
+│     name: 性能审查员                                                       │
+│     capabilities: [review, performance]          ← 能力标签（可被调度匹配）  │
+│     tools: [read_file, rg, run_test]             ← ★ 工具边界（复用 Skill.tools）│
+│     stages: [review]                             ← 参与哪些环节            │
+│     authority: read_only                         ← 权限（复用 Authority 机制）│
+│     ---                                                                  │
+│     你是一名性能审查工程师。职责: …                                            │
+│     ## Checklist                                                        │
+│     - N+1 查询 / 缺索引 / 无界循环 / 大对象拷贝 …                              │
+│     ## 产出格式（严格 JSON）                                                │
+│     {verdict, findings:[{severity,location,issue,suggestion}], summary}  │
+│                                                                          │
+│   ⇒ ★ 加一个审查员 = 加一个文件（与 Codex 同形态, 但 AIF 更强: Codex 只能改内置）│
+└──────────────────────────────────────────────────────────────────────────┘</pre>
+<h2>2. 冲突的处置(在抽象内解决, 不新增规则)</h2>
+<table><thead><tr><th>冲突</th><th>处置</th><th>落在哪</th></tr></thead><tbody>
+<tr><td>MoA ↔ 预算约束</td><td>策略 = <code>moa</code> 时<b>先问 allocator 要预算</b>; 不够 ⇒ 降级 <code>single</code> 并<b>记录降级原因</b></td><td>抽象一 + 既有 <code>allocate.py</code></td></tr>
+<tr><td>隔离 ↔ 传递</td><td><code>isolated</code> ⇒ 不共享上下文; <code>parallel</code> ⇒ 可传递上游产出摘要</td><td>抽象一（策略值不同）</td></tr>
+<tr><td>"全都有" ↔ 定位不同</td><td>只把"做法"收进来（角色文件 + 策略值）, 不收"硬编码的实现"</td><td>抽象二</td></tr>
+</tbody></table>
+<h2>3. 任务树怎么用这两个抽象</h2>
+<pre>任务树节点已有的字段（实测）:
+  id · kind · title · parent_id · prd_ref · change_type · expected_files ·
+  depends_on · scope · required_role · required_capabilities · role_hint · acceptance
+
+★ 新增一个字段: strategy（缺省 single）
+  ⇒ 无依赖的叶 + 要并行 ⇒ strategy=parallel
+  ⇒ 审查类节点          ⇒ strategy=isolated（required_role=reviewer.*）
+  ⇒ 关键决策点          ⇒ strategy=moa（且预算门先过）
+
+执行时（ct-1 的 run --plan）:
+  按 depends_on 拓扑序取"就绪叶" → 读各自 strategy → 按策略调度
+     single/parallel → 进调度器（allocator 查容量预算）
+     isolated        → 起隔离子代理（不注入上游上下文, 只给"要审查的产物"）
+     moa             → 查预算 → 多模型参考 → 聚合</pre>
+<h2>4. 与现有资产的关系(全部复用, 不新建)</h2>
+<table><thead><tr><th>需要的东西</th><th>现有资产</th><th>关系</th></tr></thead><tbody>
+<tr><td>工具边界</td><td><code>Skill.tools</code>（"Skill 决定可用工具边界"）</td><td>直接复用</td></tr>
+<tr><td>权限</td><td><code>Authority</code> + <code>check_authority_for_roles</code></td><td>直接复用</td></tr>
+<tr><td>预算/容量</td><td><code>core/scheduler/allocate.py</code>（"受容量与预算约束"）</td><td>直接复用（MoA 门就查它）</td></tr>
+<tr><td>隔离</td><td><code>Sandbox</code>（已存在）</td><td>直接复用</td></tr>
+<tr><td>角色注册</td><td><code>RoleDefinition</code> / <code>SkillRegistry</code></td><td>改为<b>从文件加载</b></td></tr>
+<tr><td>任务树</td><td><code>decomposition</code>（已带 depends_on/required_role/acceptance）</td><td>加一个 <code>strategy</code> 字段</td></tr>
+<tr><td>并发执行</td><td><code>bootstrap/scheduler_pump</code>（实测能跑, 待 expose）</td><td>接线（ct-1/ct-2）</td></tr>
+<tr><td>职责分离</td><td><code>FORBIDDEN_ROLE_COMBINATIONS</code>（developer ≠ reviewer）</td><td>审查员天然满足</td></tr>
+</tbody></table>
+<p><b>⇒ 结论: 零新建机制 —— 全是"外置 + 接线 + 加一个字段"。</b></p>
+<h2>5. 落地分期</h2>
+<table><thead><tr><th>期</th><th>内容</th><th>验收</th></tr></thead><tbody>
+<tr><td><b>1</b></td><td>角色外置: <code>plugins/roles/*.md</code> 加载器 + 把现有 10 个角色迁成文件</td><td>删掉 roles.py 里的 prompt 常量后行为不变; 加一个新审查员<b>只加文件</b></td></tr>
+<tr><td><b>2</b></td><td><code>run --plan</code>: 按拓扑序跑整棵树（先只支持 single/parallel）</td><td>13 个任务一条命令跑完; 失败可续</td></tr>
+<tr><td><b>3</b></td><td><code>strategy=isolated</code>: 隔离子代理（审查场景）</td><td>审查员看不到被审者的上下文, 只看到产物</td></tr>
+<tr><td><b>4</b></td><td><code>strategy=moa</code>: 受预算门约束的多模型聚合</td><td>预算不足时<b>降级并记录</b>, 不超支</td></tr>
+</tbody></table>
+<h2>6. 明确不做的</h2>
+<pre>✗ 不做"全自动黑箱" —— 保留人工确认门（candidate → confirmed 是有意设计）
+✗ 不硬编码任何审查员 —— 内置的只是【示例】, 用户可覆盖/增删
+✗ 不让 MoA 全局默认开启 —— 撞预算硬约束
+✗ 不把"隔离"和"传递"做成两套机制 —— 是同一维度的两个值</pre>
+<h2>7. 判据（怎么算做对了）</h2>
+<pre>· 加一个行业审查员 ⇒ 只加一个文件, 不改代码          （对照现在是 3 处）
+· 加一个新的执行模式 ⇒ 只加一个 strategy 值, 不改调度器
+· 13 个任务的树 ⇒ 一条命令跑完（不是 13 次调用）
+· 预算不足时 MoA 自动降级并留痕（不是超支, 也不是静默）
+· 审查员与被审者上下文隔离（否则"审查"就是走过场）</pre>
+<div class="foot">由 execution-strategy-and-roles.md 生成 · 5211 字符</div>
+</main></body></html>

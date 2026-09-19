@@ -231,10 +231,16 @@ def resolve_import_target(
             s = s.split("/", 1)[1]
     # python 点分/单段模块: a.b.c → a/b/c.py; a → a.py / a/__init__.py
     if language == "python" and not s.startswith((".", "/")):
-        rel = s.replace(".", "/")
-        for cand in (rel + ".py", rel + "/__init__.py"):
-            if cand in index_paths:
-                return cand
+        # ★ 2026-09-19 修: 代码里常写**完整包名**(如 `ai_factory_os.services.x.y`),
+        #   而 index_paths 是【相对包根】的(如 `services/x/y.py`) ⇒ 直接替换必然落空
+        #   ⇒ 跨文件依赖边全丢（连带跨文件调用边也丢, "改全"就查不出跨文件调用方）。
+        #   修法: **逐段剥前缀**, 第一个命中即返回（对 `a.b.c` 依次试 a.b.c / b.c / c）。
+        parts = s.split(".")
+        for i in range(len(parts)):
+            rel = "/".join(parts[i:])
+            for cand in (rel + ".py", rel + "/__init__.py"):
+                if cand in index_paths:
+                    return cand
         return None
     # python 相对导入: .util → 当前包; ..util → 上级包
     if language == "python" and s.startswith(".") and not s.startswith(("./", "../")):
@@ -308,9 +314,15 @@ class DependencyAnalyzer:
                 specs: list[str] = []
                 if entry.language == "python" and m.group(1):
                     # from X import Y → X 包 + X.Y 子模块 (双候选, 命中即建边)
-                    specs = [m.group(1)]
+                    base = m.group(1)
+                    specs = [base]
                     if m.group(2):
-                        specs.append(f"{m.group(1)}.{m.group(2)}")
+                        # ★ 2026-09-19 修: 相对导入 `from . import x` 里 base 是 "."（纯点）,
+                        #   原实现统一写 f"{base}.{y}" ⇒ 得到 `..x`（多一个点）⇒ 解析必然失败
+                        #   ⇒ 相对导入的跨文件依赖全丢（proposal.py 用 `from . import understanding`
+                        #   是函数内相对导入, 4 处全丢 ⇒ 跨文件调用边查不出）。
+                        sep = "" if base.endswith(".") else "."
+                        specs.append(f"{base}{sep}{m.group(2)}")
                 else:
                     spec = next((g for g in m.groups() if g), None)
                     if spec:
@@ -395,10 +407,69 @@ class CallGraph(BaseModel):
 
 
 class CallGraphBuilder:
-    """符号级调用关系 (L5; 同文件 + 跨文件, import 感知, 正则级)。"""
+    """符号级调用关系 (L5; 同文件 + 跨文件, import 感知)。
+
+    ★ 2026-09-19 升级: **Python 文件用标准库 `ast` 精确抽取调用边**, 其它语言回落正则。
+      为什么改（实测病）: 原实现用正则 `名(` 在**启发式的 end_line 范围**里匹配 ⇒
+      把"函数定义本身 / 注释里的名字 / 被本函数调用的东西"都算成调用 ⇒ 假阳性
+      （实测 callers_of(upsert_fact) 把 `_load_conv`/`_new_id` 当成"调用者", 方向都反了）。
+      `ast` 能给出: 函数体的**确切范围** + 真正的 `Call` 节点 + 调用者身份 ⇒ 精确。
+      仍是**零依赖**（ast 是标准库）。
+    """
 
     def __init__(self, index: RepositoryIndex) -> None:
         self._index = index
+
+    @staticmethod
+    def _ast_edges(content: str, entry_path: str,
+                   resolve: Any) -> list[CallEdge]:
+        """用 `ast` 抽取一个 Python 文件的调用边。
+
+        resolve(callee_name) → (callee_file, callee_symbol) | None
+          （由调用方按"同文件优先 / 仅 import 过的文件"规则决定跨文件归属）
+        """
+        import ast
+
+        edges: list[CallEdge] = []
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            return edges                                  # 语法不合法 ⇒ 交回正则
+
+        class _V(ast.NodeVisitor):
+            def __init__(self) -> None:
+                self.stack: list[str] = []                # 当前所在的函数/类栈
+
+            def _visit_def(self, node: Any) -> None:
+                self.stack.append(getattr(node, "name", "") or "")
+                self.generic_visit(node)
+                self.stack.pop()
+
+            visit_FunctionDef = _visit_def                 # type: ignore[assignment]
+            visit_AsyncFunctionDef = _visit_def            # type: ignore[assignment]
+            visit_ClassDef = _visit_def                    # type: ignore[assignment]
+
+            def visit_Call(self, node: ast.Call) -> None:
+                fn = node.func
+                name = ""
+                if isinstance(fn, ast.Name):               # f(...)
+                    name = fn.id
+                elif isinstance(fn, ast.Attribute):        # obj.f(...)
+                    name = fn.attr
+                if name and self.stack:
+                    tgt = resolve(name)
+                    if tgt:
+                        edges.append(CallEdge(
+                            caller_file=entry_path,
+                            caller_symbol=self.stack[-1],
+                            callee_file=tgt[0],
+                            callee_symbol=tgt[1],
+                            line=int(getattr(node, "lineno", 0) or 0),
+                        ))
+                self.generic_visit(node)
+
+        _V().visit(tree)
+        return edges
 
     def build(
         self,
@@ -433,6 +504,22 @@ class CallGraphBuilder:
             lines = content.splitlines()
             local_names = {s.name for s in entry.symbols}
             imported_targets = {d.target for d in deps_by_source.get(entry.path, [])}
+
+            # ★ 2026-09-19: Python 文件走 ast（精确）; 其它语言回落下面的正则路径。
+            if entry.path.endswith(".py"):
+                def _resolve(name: str, _ep: str = entry.path,
+                             _ln: set[str] = local_names,
+                             _it: set[str] = imported_targets) -> tuple[str, str] | None:
+                    if name in _ln and _has_local(callee_index, _ep, name):
+                        return (_ep, name)                      # 同文件定义优先
+                    for (tfile, _tsym) in callee_index.get(name, []):
+                        if tfile in _it:                        # 跨文件: 仅 import 过的
+                            return (tfile, name)
+                    return None
+
+                edges.extend(self._ast_edges(content, entry.path, _resolve))
+                continue
+
             for s in entry.symbols:
                 body = lines[s.line - 1 : s.end_line]
                 for j, ln in enumerate(body, start=s.line):

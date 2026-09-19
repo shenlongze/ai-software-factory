@@ -298,6 +298,22 @@
       <b>过程教训</b>: get_conversation 是投影(不含 project_id, 要用 _load_conv) ·
       EventType.PROJECT_CREATED 不存在(是 ORG_PROJECT_CREATED) · ProjectStore 在 projects.py ·
       加命令必须四处接入(本轮又漏 print 分支导致无输出)</span></span></label>
+    <label class="item done"><input type="checkbox" id="imp-0e" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ ★ 影响面分析修准（记忆主线 ④）—— AST 化 + 修两个解析 bug</span>
+      <span class="meta"><b>Founder</b>: "继续" ⇒ 接记忆主线第 ④ 环（影响面记忆）。<br>
+      <b>三个真 bug（全实测）</b>:<br>
+      &nbsp;① <b>正则级 → AST 级</b>: 原实现用正则 <code>名(</code> 在启发式 end_line 范围里匹配
+      ⇒ 把"被本函数调用的东西"当成调用者（实测 <code>callers_of(upsert_fact)</code> 给出
+      <code>_load_conv</code>/<code>_new_id</code> 等 6 处假阳性, 方向都反了）。
+      改为 Python 文件用标准库 <code>ast</code>（函数体确切范围 + 真 Call 节点, 仍零依赖）。<br>
+      &nbsp;② <b>包名前缀</b>: 代码写完整包名(<code>ai_factory_os.services.x.y</code>), 而 index 路径相对包根
+      (<code>services/x/y.py</code>) ⇒ 解析全落空 ⇒ <b>跨文件依赖边全丢</b>。改为逐段剥前缀。<br>
+      &nbsp;③ <b>相对导入拼接</b>: <code>from . import understanding</code> 里 base='.' ,
+      原写法 <code>f"{base}.{y}"</code> 得到 <code>..understanding</code>(多点) ⇒ 解析必然失败
+      （proposal.py 4 处函数内相对导入全丢）。<br>
+      <b>★ 修后实测（双向验证）</b>: <code>upsert_fact</code> 调用者 = <b>6 处全对</b>
+      （proposal.py:242/254/268/282/299 + understanding.py:419, 行号与人工 grep 一致）;
+      <b>假阳性 0 处</b>; proposal.py 依赖里出现 understanding.py ✓</span></span></label>
     <label class="item"><input type="checkbox" id="imp-rr"><span class="body">
       <span class="t"><span class="tag p2">P2</span>检索相关性待提升（词频打分的"长文档万能命中"）</span>
       <span class="meta"><b>现象</b>: CHANGELOG.md / 长方案书 因"文件长 ⇒ TF 高"常挤占结果（实测多个查询都命中它）;

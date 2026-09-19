@@ -199,20 +199,48 @@ def _query_terms(question: str) -> list[str]:
     return out
 
 
-def _tf_score(fragment: str, question: str) -> tuple[float, str, list[tuple[str, int]]]:
+def _idf_map(chunks: list[dict[str, Any]], terms: list[str]) -> dict[str, float]:
+    """查询词的 **IDF**（逆文档频率）—— 用于给"到处都有的词"降权。
+
+    ★ 2026-09-19 新增（mem-8 检索相关性）。
+    为什么需要: 原 `_tf_score` 只看词频 Σtf ⇒ 凡是"**文件长 ⇒ 词多 ⇒ tf 高**"的文档
+    （CHANGELOG / 长方案书）在所有查询里都占优 —— 实测三个不同查询全命中 CHANGELOG.md,
+    这就是"长文档万能命中"。IDF 让**稀有词**（信息量大）主导排序, 常见词降权。
+
+    idf(t) = ln((N + 1) / (df(t) + 1)) + 1 —— 平滑处理, 保证恒正。
+    """
+    n = len(chunks)
+    if n == 0 or not terms:
+        return {}
+    df: dict[str, int] = dict.fromkeys(terms, 0)
+    for c in chunks:
+        text = str(c.get("fragment") or "").lower()
+        if not text:
+            continue
+        for t in terms:
+            if t in text:
+                df[t] += 1
+    import math
+
+    return {t: math.log((n + 1) / (c + 1)) + 1.0 for t, c in df.items()}
+
+
+def _tf_score(fragment: str, question: str, *,
+              idf: dict[str, float] | None = None) -> tuple[float, str, list[tuple[str, int]]]:
     """确定性词频打分 → (score 0-1, reason, matched[(term, tf)])。
 
-    score = 1 - 1/(1 + Σtf) — 单调于总词频, 无随机; 0 命中 → score 0。
+    score = 1 - 1/(1 + Σ(tf × idf)) — 单调, 无随机; 0 命中 → score 0。
+    idf 缺省 None ⇒ 等价于所有权重为 1（**向后兼容**, 行为与原实现一致）。
     reason: "命中关键词 支付(tf=2)、系统(tf=1) in 片段 <chunk>" (调用方补文件)。
     """
     lowered = str(fragment or "").lower()
     matched: list[tuple[str, int]] = []
-    total = 0
+    total = 0.0
     for term in _query_terms(question):
         tf = lowered.count(term)
         if tf > 0:
             matched.append((term, tf))
-            total += tf
+            total += tf * float((idf or {}).get(term, 1.0))     # ★ IDF 加权
     if total <= 0:
         return 0.0, "", []
     score = round(1.0 - 1.0 / (1.0 + total), 4)
@@ -632,18 +660,20 @@ class KnowledgeStore:
         if not tier_set:
             return []
         scored: list[tuple[float, KnowledgeHit]] = []
+        # ★ 2026-09-19（mem-8）: 先算 IDF（给"到处都有的词"降权）⇒ 稀有词主导排序。
+        _idf = _idf_map(chunks, _query_terms(question))
         for c in chunks:
             if str(c.get("tier") or "") not in tier_set:
                 continue
             fragment = str(c.get("fragment") or "")
             file_name = str(c.get("file") or "")
             chunk_id = str(c.get("chunk_id") or "")
-            score, reason, _ = _tf_score(fragment, question)
+            score, reason, _ = _tf_score(fragment, question, idf=_idf)
             if scorer is not None:
                 try:
                     score = float(scorer(c, question) or 0.0)
                 except Exception:  # noqa: BLE001 — 降级不崩: 注入打分异常 → 规则
-                    score, reason, _ = _tf_score(fragment, question)
+                    score, reason, _ = _tf_score(fragment, question, idf=_idf)
             if score <= 0:
                 continue
             reason = f"{reason} in 文件 {file_name} 片段 {chunk_id}"

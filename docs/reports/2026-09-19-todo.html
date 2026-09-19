@@ -506,10 +506,19 @@
       而 <code>change</code> 组<b>早就存在</b>（commits/analyze/validate）⇒ argparse
       <code>conflicting subparser</code> ⇒ <b>整个 CLI 起不来</b>; ② <code>_print_change</code> 同理。
       ⇒ <b>加命令/函数前必须先查是否已有</b>（正是我刚写进 SSoT 的 R25）。</span></span></label>
-    <label class="item"><input type="checkbox" id="mem-8"><span class="body">
-      <span class="t"><span class="tag p2">P2</span>检索相关性 —— 词频无 IDF（长文档"万能命中"）</span>
-      <span class="meta">CHANGELOG / 长方案书因"文件长 ⇒ TF 高"挤占结果（已用分档加权 + 单文件限流缓解）。
-      方向: IDF 类修正, 或接 embedding（代码已有 <code>scorer</code> 注入点）。</span></span></label>
+    <label class="item done"><input type="checkbox" id="mem-8" checked><span class="body">
+      <span class="t"><span class="tag p2">P2</span>✅ 检索相关性 —— 加 IDF（逆文档频率）</span>
+      <span class="meta"><b>缺口</b>: 原 <code>_tf_score</code> 只看词频 Σtf ⇒ <b>文件长 ⇒ 词多 ⇒ tf 高</b>
+      的文档（CHANGELOG / 长方案书）在所有查询里霸榜 —— 实测三个不同查询全命中 CHANGELOG.md
+      （"长文档万能命中"）。<br>
+      <b>本刀</b>: 新增 <code>_idf_map(chunks, terms)</code>（idf = ln((N+1)/(df+1)) + 1, 平滑恒正）
+      + <code>_tf_score(..., idf=)</code> 改为 Σ(tf × idf)（<b>idf 缺省 None ⇒ 完全向后兼容</b>）;
+      <code>query</code> 里先算 IDF 再打分。<br>
+      <b>★ 实测（同四个查询）</b>: "跨会话记忆怎么实现" ⇒ 命中
+      <code>会话系统-万能入口优化计划.md</code> + <code>开源方案调研-会话连续性-记忆-分段.md</code>;
+      "影响面分析怎么改全" ⇒ 命中我们自己的 <code>storage-and-memory-design.md</code>;
+      CHANGELOG 从"所有查询霸榜"降为"部分出现"。<br>
+      <b>仍可再进</b>: embedding/语义检索（代码已有 <code>scorer</code> 注入点）。</span></span></label>
     <label class="item"><input type="checkbox" id="mem-9"><span class="body">
       <span class="t"><span class="tag p2">P2</span>FTS5 检索层 + 最近注入（刀3b）—— tsc-4</span>
       <span class="meta">facts 多了以后按相关性检索 + 只注入"最近 N 条 + 相关若干"; 现 84 条阶段用不到

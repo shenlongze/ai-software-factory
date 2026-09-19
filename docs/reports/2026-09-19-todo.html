@@ -284,6 +284,31 @@
       （事件是唯一真相 / 配置留文件+git / 收敛到 3 个 store）。<br>
       <b>★ 结论</b>: "更有效果"不是把设计做得更好, 而是<b>把链路接通</b>（写→读闭环）。
       此前 24 store / 5 套记忆机制里, <b>真正产生效果的是这条闭环</b>。</span></span></label>
+    <label class="item"><input type="checkbox" id="imp-r"><span class="body">
+      <span class="t"><span class="tag p0">P0</span>★ 孤立模块处置 —— 我写的吸收清单 10 项里 6 项"有代码没入口"</span>
+      <span class="meta"><b>Founder 问"没有冗余代码吧, 没有写死的代码么, 没有硬代码吧"后的实测</b>:<br>
+      <b>可达性判定（import 消费者 + CLI 入口）</b>: ✅ 仅 3 项 ——
+      <code>scoped_facts</code>(理解时读) · <code>adapters</code>(tool run) · <code>serve</code>(llm serve);<br>
+      ❌ <b>6 项用户碰不到</b>: <code>messages</code>(0+无) · <code>healing</code>(0+无) ·
+      <code>settings</code>(0+无) · <code>steering</code>(只被 pump 用, pump 也孤立) ·
+      <code>scheduler_pump/wiring</code>(0+无 ⇒ ★ 并行调度跑通过但没门) · <code>fleet/trace</code>(无入口)。<br>
+      <b>★ 我的问题</b>: 每刀都报"完成", 但我验收的是"代码能跑"(直接 import 测), 该验收的是
+      <b>用户可达</b>(有入口+有消费者+实测走通) —— 即 Founder 纠正过的"迁完≠能用(实跑消费入口)"。<br>
+      <b>处置(按"只问现在谁在用")</b>: 接线优先(能力已验证) ——
+      <code>drive</code>(并行调度) → <code>steer</code> → <code>console fleet/trace</code> →
+      <code>heal</code> → <code>settings</code> → <code>message</code>; 接完才算完成。</span></span></label>
+    <label class="item done"><input type="checkbox" id="imp-l" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 新增铁律 R24 / R25（记进 SSoT + 长期记忆）</span>
+      <span class="meta"><b>Founder 定</b>: "1. 不能死代码, 硬代码 2. 不能重复造轮子"。<br>
+      已写入 <code>docs/ssot/code-placement.md</code>「硬约束」表（照 R7/R20–R23 既有格式）,
+      并给出<b>可执行判据</b>:<br>
+      &nbsp;<b>R24</b> 死码 = 缺①入口②消费者③实测可达任一; 查法须<b>三维</b>(静态 import + 动态加载 + CLI 入口),
+      <code>grep</code> 模块名会误判(通用词/同名异物); ★"代码能跑"≠完成。<br>
+      &nbsp;<b>R24</b> 硬码 = ✗绝对路径作默认值 ✗密钥入码 ✗裸魔法数 ✗★<b>写死的枚举表当判据</b>
+      （枚举必然不全, 失败模式是<b>静默丢数据</b>; 本仓已踩两次: <code>_PRODUCT_HINT_RE</code> 漏真实需求 ·
+      <code>dimension_of</code> 硬编码前缀）⇒ 能用通用规则表达就别枚举; 必须枚举则<b>双向测试</b>。<br>
+      &nbsp;<b>R25</b> 重复造轮子 = 新增 store/索引/记忆机制前先全库查同能力; 一能力只允许<b>一处实现</b>;
+      配套: 新增存储前先问「能不能用事件+投影表达」。</span></span></label>
     <label class="item"><input type="checkbox" id="imp-0b"><span class="body">
       <span class="t"><span class="tag p0">P0</span>★ 存储【收敛】—— 现状: 24 个 store 类 / 8 处落地 / 2 个同名 KnowledgeStore</span>
       <span class="meta"><b>Founder 五问"有没有更好的设计"后的实测答案</b>: 病灶不是"设计不够好", 而是

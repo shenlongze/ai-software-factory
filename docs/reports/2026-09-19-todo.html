@@ -598,18 +598,20 @@
       <b>没记</b> · "嗯，好的" ⇒ <b>没记</b> · "产品要支持导出 Excel" ⇒ 记 ✓ ·
       "记下这点：只给内部员工用" ⇒ 记 ✓（例外生效）⇒ 最终仅 3 条真产品事实。<br>
       ⚠ 边界: "项目还停留在 idea 阶段" 被记为 CONSTRAINT（状态 vs 阶段约束, 可接受但不完美）。</span></span></label>
-    <label class="item"><input type="checkbox" id="hm-4"><span class="body">
-      <span class="t"><span class="tag p2">P2</span>对话级上下文压缩（Hermes 最成熟的一块）</span>
-      <span class="meta"><b>Hermes 做法（实测）</b>: <code>agent/context_compressor.py</code> ——
-      "auxiliary model(cheap/fast) 摘要<b>中间轮次</b>, <b>保护 head/tail</b>";
-      细节: ★ <b>token 预算</b>式的尾部保护（非固定消息数）· <b>迭代摘要</b>（跨多次压缩保留信息）·
-      摘要前先<b>剪枝工具输出</b> · "Historical" 标题替代 "Next Steps"（<b>避免被读成活动指令</b>）·
-      摘要 = 压缩内容的 20% + 绝对上限 · 8 个专项文件 + 连续性测试。<br>
-      <b>AIF 现状（实测）</b>: 只有<b>阶段级</b>压缩（<code>handoff.add_closure</code> 摘要 +
-      <code>ProjectSpine</code>）; <b>缺对话级</b> ⇒ 消息一直 append、无压缩策略。<br>
-      <b>要做的</b>: 会话消息超阈值时压缩中间轮次（保头尾 + token 预算 + 迭代摘要）,
-      保留原始消息（append-only 不丢, 压缩只影响"送进 prompt 的部分"）。<br>
-      <b>验收</b>: 长会话（消息 100+）的 prompt 大小可控, 且早期关键信息仍可答出。</span></span></label>
+    <label class="item done"><input type="checkbox" id="hm-4" checked><span class="body">
+      <span class="t"><span class="tag p2">P2</span>⊘ 【不做】对话级上下文压缩 —— 前提在 AIF 不成立</span>
+      <span class="meta"><b>Hermes 的做法（实测）</b>: <code>context_compressor</code> ——
+      "auxiliary model 摘要<b>中间轮次</b> + <b>保护 head/tail</b>"; token 预算式尾部保护 ·
+      迭代摘要 · 摘要前剪枝工具输出 · "Historical" 标题防被读成指令。<br>
+      <b>★ 为什么 AIF 不需要（实测依据）</b>:<br>
+      &nbsp;① <b>会话消息根本不进 prompt</b> —— 理解只送 snapshot 的 facts/version
+      ⇒ "消息全量 ⇒ prompt 爆"在 AIF 不会发生（架构不同: <b>理解式</b>, 非对话式）<br>
+      &nbsp;② 会话文件最大 <b>7.8 KB</b>（56 个合计 152 KB）⇒ 无增长隐患<br>
+      &nbsp;③ 已有 <code>build_context(recent_messages=8)</code> 截断能力<br>
+      &nbsp;④ 真数据: 最长会话仅 <b>8 条</b>消息 ⇒ 无长会话<br>
+      <b>⇒ 照搬 Hermes 的 compressor = 造活</b>（正是 Founder 反复纠正我的那件事）。<br>
+      <b>★ 将来何时需要</b>: 若 AIF 改成交互式（把对话消息进 LLM, 如"和 AI 员工聊天"场景）
+      或单会话消息数上百 ⇒ 那时才接 compressor（Hermes 的做法可直接借鉴）。</span></span></label>
   </div>
 
   <h2><span class="n">12</span>已完成（本轮 · 留档不删）</h2>

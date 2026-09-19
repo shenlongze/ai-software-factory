@@ -662,6 +662,80 @@
     <code>infrastructure/llm/serve.py</code>(187)
   </div>
 
+  <!-- ═══════════ 模块 8:能力面(扫描 → 注册 → 调用) ═══════════ -->
+  <h2><span class="n">8</span>能力面 —— 扫描 · 注册 · 调用（外部能力怎么进平台）</h2>
+  <div class="hint">
+    这是"一切皆插件"落到<b>可操作</b>的三步：<b>扫描</b>发现本机有什么 → <b>注册</b>纳入平台台账 → <b>调用</b>真执行。<br>
+    全部实测（2026-09-19）：三个 CLI 入口是照 <b>Hermes</b> 的 CLI 标准补的。
+  </div>
+
+  <table>
+    <thead><tr><th>步</th><th>做什么</th><th>在哪实现</th><th>实测结果</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>① 扫描</b></td>
+        <td>发现本机可用的外部能力（AI CLI / MCP / 项目）</td>
+        <td><code>plugins/tools/discovery.py</code><br><code>factory discover</code></td>
+        <td>★ <b>6 项</b>：<code>codex</code> · <code>hermes</code> · <code>openclaw</code> · <code>claude</code>（ai_cli）
+            + <code>node_repl</code> · <code>computer-use</code>（mcp）</td>
+      </tr>
+      <tr>
+        <td><b>② 注册</b></td>
+        <td>纳入平台台账（原子写 upsert, 可审计）</td>
+        <td><code>services/organization/capabilities.py</code></td>
+        <td><code>register_agent</code> · <code>register_skill</code> · <code>register_mcp</code> ·
+            <code>register_llm_config</code> · <code>register_workflow</code> · <code>register_industry</code>
+            —— 六个注册面齐备</td>
+      </tr>
+      <tr>
+        <td><b>③ 调用</b></td>
+        <td>真执行（agent 的"手"）</td>
+        <td><code>plugins/tools/adapters.py</code><br><code>plugins/mcp/client.py</code><br><code>factory tool run</code></td>
+        <td>★ <b>本刀修好</b>：7 个工具原来<b>一调就崩</b>（import 指向已删模块）, 重写后全部真跑通</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>平台的三张台账（已经在用的）</h3>
+  <table>
+    <thead><tr><th>台账</th><th>数量</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><b>工具</b></td><td><b>39 个</b>（23 已实现 / 16 计划）</td>
+          <td>分 5 阶段：设计 7 · 开发 11 · 测试 7 · 部署 5 · 运维 9；每个还标了它的 cli/api 入口</td></tr>
+      <tr><td><b>Agent</b></td><td>53 条</td><td>角色 13（9 工种 + 4 平台角色）</td></tr>
+      <tr><td><b>角色</b></td><td>13</td><td>编程工种 9（PM/Architect/Developer/QA…）+ <b>平台角色 4</b>（Coordinator/Planner/Governor/Learner）</td></tr>
+    </tbody>
+  </table>
+
+  <h3>CLI 标准（照 Hermes 学, 已落地）</h3>
+  <div class="two">
+    <div class="card bad">
+      <div class="t">学到的标准</div>
+      <ul>
+        <li><b>资源做名词</b>：<code>tool</code> · <code>mcp</code> · <code>skills</code> · <code>agents</code></li>
+        <li><b>操作做动词</b>：<code>list</code> / <code>show</code> / <code>run</code> / <code>scan</code> / <code>test</code></li>
+        <li><b>help 每行说清"能干什么"</b>（不重复名字）</li>
+        <li>常用给别名（<code>rm</code>/<code>ls</code>）· 顶层一句总述</li>
+      </ul>
+    </div>
+    <div class="card good">
+      <div class="t">本仓落地（实测输出）</div>
+      <ul>
+        <li><code>factory tool {list,show,run}</code> → 39 工具 · <code>run</code> 真调用</li>
+        <li><code>factory mcp {scan,list,test}</code> → 扫到 2 个 MCP</li>
+        <li><code>factory discover [all|ai-clis|mcp|projects]</code> → 扫到 6 项</li>
+        <li>help 形如：<code>list  列出工具 (可按阶段过滤)</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>本轮修的一个隐蔽断链</b>：<code>plugins/tools/adapters.py</code> 有 <b>7 处 import 指向已删模块</b>
+    （<code>plugins/session/*</code> ×5 · <code>plugins/backup.py</code> · <code>plugins/monitor.py</code>），
+    导致 7 个工具里 6 个<b>一调用就 ModuleNotFoundError</b> —— 也就是 <b>agent 的工具面是坏的</b>。<br>
+    修法：<b>不迁老区代码</b>（会带老依赖），改用新区能力 + stdlib 重写。实测 7 个全部真跑通。
+  </div>
+
   <div class="note" style="margin-top:26px">
     <b>本页与上一页的区别</b>：上一页是<b>清单视图</b>（有什么命令 / 哪些域厚 / 完成度）；
     本页是<b>流动视图</b>（一条需求如何逐环变成代码，数据落在哪，命令背后经过哪几层）。

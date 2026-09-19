@@ -352,6 +352,70 @@ class NullExecution:
 
 # ------------------------------------------------------------------ 装配
 
+class StoreExecution:
+    """★ ExecutionPort 的真实实现 —— 把就绪叶**创建成 PENDING 执行请求**（第 1 刀收尾）。
+
+    【为什么现在做】`NullExecution` 自述: "刀1 不含执行创建 —— 线程池驱动 + 并发上限
+    + 事件回流是**刀2**（照 Hermes async_delegation）"。而刀2 的这三件**已经实现**
+    （`bootstrap/scheduler_pump.drive`）⇒ 缺的只是"创建"这一块（本类）。
+
+    【分工】
+      · 本端口 `create`: 建 PENDING 执行请求（写 RuntimeStore）⇒ tick 能返回 `scheduled`
+      · `drive`: 把 `scheduled` 用线程池跑掉（并发上限 + 事件回流 + 回写叶状态）
+        ⇒ 两者合起来才是"平台心脏"的完整回路。
+
+    【与 NullExecution 的关系】不移除 NullExecution（它是诚实的"未装配"占位, 别的场景仍可用）;
+    本类作为 `wire_scheduler` 的**默认执行端口**。
+    """
+
+    def __init__(self, root: Path | str, *, plan_id: str = "") -> None:
+        from ai_factory_os.services.execution.runtime.store import open_runtime_store
+
+        self._root = Path(root)
+        self._plan_id = plan_id
+        self._store = open_runtime_store(root)
+
+    def active_for(self, node_id: str) -> Any:
+        """该叶是否已有**活跃**执行（PENDING/RUNNING）—— 防同一叶被重复创建。
+
+        ★ 返回**执行请求对象**（不是 id 字符串）—— `evaluate.py:37` 会读 `active.id`
+        （实测: 返回 str 会 `AttributeError: 'str' object has no attribute 'id'`）。
+        无活跃 ⇒ None。
+        """
+        try:
+            for r in self._store.list_executions():
+                if str((r.input or {}).get("node_id") or "") != node_id:
+                    continue
+                st = str(getattr(r.status, "value", r.status) or "").upper()
+                if st in ("PENDING", "RUNNING"):
+                    return r
+        except Exception:  # noqa: BLE001 — 查不到 ⇒ 视为无活跃（调用方另有限流）
+            return None
+        return None
+
+    def create(self, node_id: str, *, resolution_id: str,
+               member_id: str, identity_id: str) -> Any:
+        """建一个 PENDING 执行请求（**不**真跑 —— 跑是 drive 的事, 与 ADR-0006 决策 2 一致）。"""
+        from ai_factory_os.services.execution.runtime.types import (
+            ExecutionRequest, ExecutionStatus,
+        )
+
+        eid = self._store.next_execution_id(prefix="EXR-")
+        req = ExecutionRequest(
+            id=eid,
+            task_id=self._plan_id,                      # ★ 任务树 id（pump 用它定位叶）
+            status=ExecutionStatus.PENDING,
+            input={                                    # ★ pump/_claim_and_run 读这几个键
+                "node_id": node_id,
+                "resolution_id": resolution_id,
+                "member_id": member_id,
+                "identity_id": identity_id,
+            },
+        )
+        self._store.save_execution(req)
+        return req
+
+
 def wire_scheduler(
     root: Path | str,
     *,
@@ -373,5 +437,8 @@ def wire_scheduler(
         resource=OrgResource(root),
         load=SimpleLoad(root, budget=budget),
         gate=AllowAllGate(),
-        execution=NullExecution(),
+        # ★ 2026-09-19（第 1 刀收尾）: 用真实执行端口（创建 PENDING 请求）——
+        #   原为 NullExecution（刀1 占位, create 响亮抛错）⇒ run --plan 一个执行都建不出来。
+        #   NullExecution 保留（诚实占位, 别的场景仍可用）。
+        execution=StoreExecution(root, plan_id=plan_id),
     )

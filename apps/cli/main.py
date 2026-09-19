@@ -175,6 +175,43 @@ def build_parser() -> Any:
     p_llm.add_argument("llm_command", choices=["serve"], help="serve — 起 OpenAI 兼容端点")
     p_llm.add_argument("--host", default="127.0.0.1")
     p_llm.add_argument("--port", type=int, default=8787)
+    p_tool = sub.add_parser(
+        "tool", help="工具集: 列出 / 查看 / 调用已注册工具 (39 个, 分 5 阶段)"
+    )
+    json_opt(p_tool)
+    p_tool_sub = p_tool.add_subparsers(dest="tool_command", required=True)
+    t_list = p_tool_sub.add_parser("list", help="列出工具 (可按阶段过滤)")
+    json_opt(t_list)
+    t_list.add_argument("--stage", default="", help="按阶段过滤: 设计/开发/测试/部署/运维")
+    t_list.add_argument("--status", default="", help="按状态过滤: implemented/planned")
+    t_show = p_tool_sub.add_parser("show", help="查看一个工具的完整定义")
+    json_opt(t_show)
+    t_show.add_argument("tool_id", help="工具 id (如 code_search)")
+    t_run = p_tool_sub.add_parser("run", help="调用一个工具 (真执行)")
+    json_opt(t_run)
+    t_run.add_argument("tool_id", help="工具 id")
+    t_run.add_argument("--param", action="append", default=[], help="参数 k=v (可多次)")
+    t_run.add_argument("--project", default="", help="项目 id (可选)")
+
+    p_mcp = sub.add_parser(
+        "mcp", help="MCP 服务器: 扫描发现 / 列出 / 连接测试"
+    )
+    json_opt(p_mcp)
+    p_mcp_sub = p_mcp.add_subparsers(dest="mcp_command", required=True)
+    m_scan = p_mcp_sub.add_parser("scan", help="扫描本机可发现的 MCP 服务器")
+    json_opt(m_scan)
+    m_list = p_mcp_sub.add_parser("list", help="列出已注册的 MCP")
+    json_opt(m_list)
+    m_test = p_mcp_sub.add_parser("test", help="测试 MCP 连接")
+    json_opt(m_test)
+    m_test.add_argument("mcp_id", help="MCP id")
+
+    p_disc = sub.add_parser(
+        "discover", help="扫描本机可用的外部能力 (AI CLI / MCP / 项目)"
+    )
+    json_opt(p_disc)
+    p_disc.add_argument("what", nargs="?", default="all",
+                        choices=["all", "ai-clis", "mcp", "projects"], help="扫描对象")
     json_opt(sub.add_parser("init", help="初始化工厂: 目录骨架 + 事件库 (幂等)"))
 
     # factory task <sub>
@@ -1089,6 +1126,12 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_project(ctx, args)
         elif args.command == "llm":
             result = _dispatch_llm(ctx, args)
+        elif args.command == "tool":
+            result = _dispatch_tool(ctx, args)
+        elif args.command == "mcp":
+            result = _dispatch_mcp(ctx, args)
+        elif args.command == "discover":
+            result = _dispatch_discover(ctx, args)
         elif args.command == "provider":
             result = _dispatch_provider(ctx, args)
         elif args.command == "workspace":
@@ -2527,6 +2570,131 @@ def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown project command: {args.project_command}", exit_code=2)
 
 
+def _dispatch_tool(ctx: FactoryContext, args: Any) -> dict:
+    """factory tool {list,show,run} —— 工具集的列出/查看/调用。
+
+    照 Hermes 的 CLI 惯例: **资源做名词(tool) · 操作做动词(list/show/run)**, help 说清"能干什么"。
+    """
+    from ai_factory_os.plugins.tools import registry as R
+
+    sub = str(getattr(args, "tool_command", "") or "")
+    if sub == "list":
+        rows = R.list_tools(stage=str(getattr(args, "stage", "") or ""))
+        st = str(getattr(args, "status", "") or "")
+        if st:
+            rows = [r for r in rows if str((r if isinstance(r, dict) else {}).get("status", "")) == st]
+        return {"count": len(rows), "tools": rows, "summary": R.summary()}
+    if sub == "show":
+        return {"tool": R.get_tool(str(args.tool_id))}
+    if sub == "run":
+        # ★ 真调用: 走 plugins/tools/adapters 的统一签名 fn(root, project_id, params)
+        from ai_factory_os.plugins.tools import adapters as A
+
+        tid = str(args.tool_id)
+        params: dict[str, Any] = {}
+        for kv in (getattr(args, "param", None) or []):
+            if "=" in str(kv):
+                k, _, v = str(kv).partition("=")
+                params[k.strip()] = v.strip()
+        fn = getattr(A, tid, None)
+        if not callable(fn):
+            raise CliError(
+                f"工具未接适配器: {tid}（可用: code_search/scan/list_tasks/read_doc/"
+                f"backup/git_status/monitor/quality_score）", exit_code=2)
+        return {"tool_id": tid,
+                "result": fn(str(ctx.root), str(getattr(args, "project", "") or ""), params)}
+    raise CliError(f"unknown tool command: {sub}", exit_code=2)
+
+
+def _print_tool(sub: str, r: dict) -> None:
+    if sub == "list":
+        s = r.get("summary") or {}
+        print(f"  工具 {r.get('count')} 个 · 共 {s.get('total')} · {s.get('by_status')}")
+        for x in (r.get("tools") or [])[:40]:
+            d = x if isinstance(x, dict) else {}
+            print(f"    {str(d.get('id')):<22} {str(d.get('name'))[:14]:<16} "
+                  f"{str(d.get('stage')):<4} {str(d.get('status'))}")
+    elif sub == "show":
+        t = r.get("tool")
+        print("  " + (json.dumps(t, ensure_ascii=False, indent=2) if t else "（未找到该工具）"))
+    else:
+        print(f"  {r.get('tool_id')} → {json.dumps(r.get('result'), ensure_ascii=False)[:600]}")
+
+
+def _dispatch_mcp(ctx: FactoryContext, args: Any) -> dict:
+    """factory mcp {scan,list,test} —— MCP 服务器的扫描/列出/连接测试。"""
+    sub = str(getattr(args, "mcp_command", "") or "")
+    if sub == "scan":
+        from ai_factory_os.plugins.tools.discovery import discover_mcp_servers
+
+        rows = discover_mcp_servers()
+        return {"count": len(rows),
+                "servers": [r if isinstance(r, dict) else r.__dict__ for r in rows]}
+    if sub == "list":
+        from ai_factory_os.infrastructure.plugins.kernel import list_plugins
+
+        try:
+            got = list_plugins(ctx.root)
+        except TypeError:                     # 签名不同 ⇒ 退回无参调用
+            got = list_plugins()
+        rows = got if isinstance(got, list) else list(got or [])
+        return {"count": len(rows),
+                "plugins": [r if isinstance(r, (dict, str)) else getattr(r, "id", str(r))
+                            for r in rows]}
+    if sub == "test":
+
+        mid = str(args.mcp_id)
+        return {"mcp_id": mid, "connected": False,
+                "note": f"MCPClient 可用（真连接需 {mid} 的启动命令；客户端构造见 plugins/mcp/client.py）"}
+    raise CliError(f"unknown mcp command: {sub}", exit_code=2)
+
+
+def _print_mcp(sub: str, r: dict) -> None:
+    if sub == "scan":
+        print(f"  发现 MCP 服务器 {r.get('count')} 个:")
+        for s in (r.get("servers") or []):
+            print(f"    {str(s.get('id') or s.get('name')):<20} {str(s.get('path') or '')[:56]}")
+    elif sub == "list":
+        print(f"  已注册 MCP/插件 {r.get('count')} 个")
+    else:
+        print(f"  {r.get('mcp_id')}: connected={r.get('connected')} {r.get('error') or r.get('note') or ''}")
+
+
+def _dispatch_discover(ctx: FactoryContext, args: Any) -> dict:
+    """factory discover [all|ai-clis|mcp|projects] —— 扫描本机可用的外部能力。
+
+    ★ 这是「扫描 → 注册 → 调用」里的**第一步**。
+    """
+    from ai_factory_os.plugins.tools.discovery import (
+        discover_ai_clis, discover_all, discover_mcp_servers,
+    )
+
+    what = str(getattr(args, "what", "all") or "all")
+    if what == "ai-clis":
+        rows = discover_ai_clis()
+    elif what == "mcp":
+        rows = discover_mcp_servers()
+    elif what == "projects":
+        from ai_factory_os.plugins.factories.loader import discover_projects
+
+        ex = ctx.root / "examples"
+        return {"what": what, "count": 0,
+                "projects": discover_projects(ex) if ex.is_dir() else []}
+    else:
+        rows = discover_all()
+    return {"what": what, "count": len(rows),
+            "items": [r if isinstance(r, dict) else r.__dict__ for r in rows]}
+
+
+def _print_discover(what: str, r: dict) -> None:
+    print(f"  扫描 {r.get('what') or what}: 发现 {r.get('count')} 项")
+    for x in (r.get("items") or [])[:20]:
+        d = x if isinstance(x, dict) else {}
+        print(f"    {str(d.get('id') or d.get('name')):<20} "
+              f"{str(d.get('kind') or d.get('type') or ''):<12} "
+              f"{str(d.get('path') or d.get('command') or '')[:50]}")
+
+
 def _dispatch_llm(ctx: FactoryContext, args: Any) -> dict:
     """factory llm serve —— 起 OpenAI 兼容端点（LLM 路由对外产品面）。
 
@@ -2800,8 +2968,15 @@ def _print_output(args: Any, result: dict) -> None:
     elif args.command == "project":
         _print_project(args.project_command, result)
     elif args.command == "provider":
-        _print_llm(args.llm_command, result)
         _print_provider(args.provider_command, result)
+    elif args.command == "tool":
+        _print_tool(args.tool_command, result)
+    elif args.command == "mcp":
+        _print_mcp(args.mcp_command, result)
+    elif args.command == "discover":
+        _print_discover(args.what, result)
+    elif args.command == "llm":
+        _print_llm(args.llm_command, result)
     elif args.command == "workspace":
         _print_workspace(args.workspace_command, result)
     elif args.command == "git":

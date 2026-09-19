@@ -32,10 +32,18 @@ def _root(ctx_root: Any) -> Path | None:
 
 
 def _proj(root: Any, project_id: str) -> Path:
-    """定位项目目录: <root>/projects/<project_id>；取不到就用 root 本身（只读工具的合理回落）。"""
+    """定位项目目录。
+
+    project_id 为空 / "." / 绝对路径 ⇒ 直接当路径用（CLI 传 --project . 的常见情况）;
+    否则按 <root>/projects/<id> 找, 找不到回落 root。
+    """
     base = _root(root) or (Path.home() / ".factory")
-    if project_id:
-        cand = base / "projects" / Path(project_id).name
+    pid = str(project_id or "").strip()
+    if pid and pid not in (".", "./"):
+        p = Path(pid).expanduser()
+        if p.is_absolute() and p.is_dir():
+            return p
+        cand = base / "projects" / Path(pid).name
         if cand.is_dir():
             return cand
     return base

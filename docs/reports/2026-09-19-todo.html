@@ -80,9 +80,10 @@
     <label class="item done"><input type="checkbox" id="t1-1" checked><span class="body">
       <span class="t"><span class="tag p0">P0</span>✅ 5 个真死码已删（841 行）</span>
       <span class="meta"><code>kernel/employee_executor.py</code>(263) · <code>external/monitor_detail.py</code>(200) · <code>kernel/agent_executor.py</code>(170) · <code>orchestration/tree_bridge.py</code>(113) · <code>exec_checkpoint.py</code>(95)</span></span></label>
-    <label class="item"><input type="checkbox" id="t1-2"><span class="body">
-      <span class="t"><span class="tag p0">P0</span><code>production_run</code> 的执行面是死的（0 消费者）</span>
-      <span class="meta">读面（get/list）4 处在用 ⇒ 保留读面, 砍掉 <code>execute_production_run</code> + 我的波次改动</span></span></label>
+    <label class="item done"><input type="checkbox" id="t1-2" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ <code>production_run</code> 已收缩 <b>586 → 45 行</b></span>
+      <span class="meta">只留读面（<code>get_production_run</code> + 2 个路径函数, 2 处真 import 在用）；
+      删掉 create/list/execute/build_executor_factory/状态机/我给 M3 加的 <code>_iter_by_wave</code>（全 0 引用）</span></span></label>
     <label class="item"><input type="checkbox" id="t1-3"><span class="body">
       <span class="t"><span class="tag p1">P1</span>fleet 的 done/failed 统计未用真 <code>ExecutionRunner</code> 复测</span>
       <span class="meta">测试用 fake_run（不推进 status）⇒ 计数为 0；需用 echo/runtime adapter 真跑一次复测</span></span></label>
@@ -201,6 +202,11 @@
   <!-- ═══════ 7 ═══════ -->
   <h2><span class="n">7</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
+    <label class="item done"><input type="checkbox" id="t7-14" checked><span class="body">
+      <span class="t">砍 <code>production_run</code> 死面（586 → 45 行 · 只留 2 处在用的读面）</span>
+      <span class="meta">★ 关键判定: 逐符号核实后, 该文件"执行面"从未有消费者 —— 真正在跑的是
+      <code>scheduler_wiring</code> + <code>scheduler_pump</code> + <code>core/scheduler</code>；
+      我此前为 M3 加的波次代码也一并删掉（改在了死面上）</span></span></label>
     <label class="item done"><input type="checkbox" id="t7-13" checked><span class="body">
       <span class="t">删 5 个真死码（841 行 · 多重判据确认 0 引用）</span>
       <span class="meta">employee_executor(263) · monitor_detail(200) · agent_executor(170) · tree_bridge(113) · exec_checkpoint(95)<br>

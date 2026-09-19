@@ -208,8 +208,76 @@ SOLO: CompanyTemplate = CompanyTemplate(
     ),
 )
 
+# ------------------------------------------------------------------ content_company 模板（第二行业）
+# ★ 2026-09-19 加（M6 · 补第二行业）—— 此前的模板只有 software_company / solo,
+#   两个都是【软件行业】⇒ 无法证明"同一底座能承载别的行业"。本模板补上第一个非软件行业。
+#   ★ 关键设计: 它**复用平台角色**（governor）与**通用工种**（writer / ui-designer）,
+#     证明"平台角色 + 能力注册"确实能跨行业复用（而不是给每个行业另造一套）。
+
+CONTENT_COMPANY: CompanyTemplate = CompanyTemplate(
+    template_id="content_company",
+    name="Content Studio (自媒体内容工厂)",
+    description=(
+        "自媒体内容工厂: Human CEO(终审) + 主编/作者/配图/运营 AI 员工; "
+        "★ 复用平台角色 Governor 做合规与成本; Default Deny (发布权仅 CEO)"
+    ),
+    departments=("选题", "创作", "运营", "数据"),
+    roles=(
+        RoleSpec(
+            name="CEO",
+            department="选题",
+            human=True,
+            responsibility="内容方向与最终发布权 (Human, 唯一最终权)",
+            authority_policy={
+                "company.manage": "allow",
+                "employee.hire": "allow",
+                "content.publish": "allow",     # ★ 发布权仅 CEO（Default Deny 的落点）
+            },
+        ),
+        RoleSpec(
+            name="Editor-in-Chief",
+            department="选题",
+            responsibility="选题决策与稿件终审 (编 ≠ 写: 不亲自写稿)",
+            role_ref="product-manager",         # 需求/计划/调度 —— 跨行业复用同一能力声明
+            authority_policy={
+                "topic.decide": "allow",
+                "content.review": "allow",
+            },
+        ),
+        RoleSpec(
+            name="Writer",
+            department="创作",
+            responsibility="写稿 (★ 无发布权、无终审权 —— 职责分离靠 authority_policy 落地)",
+            role_ref="writer",
+            authority_policy={"content.draft": "allow"},
+        ),
+        RoleSpec(
+            name="Visual Designer",
+            department="创作",
+            responsibility="配图与视觉 (复用通用视觉能力)",
+            role_ref="ui-designer",
+            authority_policy={"asset.create": "allow"},
+        ),
+        RoleSpec(
+            name="Growth Operator",
+            department="运营",
+            responsibility="发布排期与渠道运营 (需 CEO 批准才能发)",
+            role_ref="devops",                  # 运维语义跨行业复用
+            authority_policy={"content.schedule": "allow"},
+        ),
+        RoleSpec(
+            name="Governor",
+            department="数据",
+            responsibility="合规审查与成本控制 (★ 平台角色跨行业复用)",
+            role_ref="governor",
+            authority_policy={"audit.read": "allow", "gate.review": "allow"},
+        ),
+    ),
+)
+
+
 TEMPLATES: dict[str, CompanyTemplate] = {
-    t.template_id: t for t in (SOFTWARE_COMPANY, SOLO)
+    t.template_id: t for t in (SOFTWARE_COMPANY, SOLO, CONTENT_COMPANY)
 }
 
 
@@ -244,9 +312,9 @@ def list_templates() -> list[dict[str, Any]]:
 def _load_exec_roles() -> Any:
     """惰性加载 exec/roles.py 注册表; 未安装 → None (Removal Isolation)。"""
     try:
-        import ai_factory_os.plugins.agents.roles  # type: ignore[import-not-found]
+        import importlib
 
-        return exec.roles
+        return importlib.import_module("ai_factory_os.plugins.agents.roles")
     except ImportError:
         return None
 

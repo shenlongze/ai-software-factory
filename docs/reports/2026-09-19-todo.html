@@ -90,8 +90,8 @@
     <label class="item"><input type="checkbox" id="t1-5"><span class="body">
       <span class="t"><span class="tag p3">P3</span>发现一处老路径 import（删死码时顺带看到的）</span>
       <span class="meta"><code>apps/cli/commands.py:66</code> → <code>from recovery.service import …</code>（老路径, 非 <code>ai_factory_os.…</code>）⇒ CLI 仍能跑, 说明该函数是死码或路径碰巧可用 ⇒ 需查清</span></span></label>
-    <label class="item"><input type="checkbox" id="t1-4"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>LLM 端点<strong>未做鉴权</strong></span>
+    <label class="item done"><input type="checkbox" id="t1-4" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ LLM 端点已加鉴权（Bearer token）</span>
       <span class="meta"><code>infrastructure/llm/serve.py</code> 是本地/内网形态；对外售卖前必须补（已写进 docstring）</span></span></label>
   </div>
 
@@ -202,6 +202,10 @@
   <!-- ═══════ 7 ═══════ -->
   <h2><span class="n">7</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
+    <label class="item done"><input type="checkbox" id="t7-15" checked><span class="body">
+      <span class="t">LLM 端点加鉴权（Bearer token · 常量时间比较 · 默认本地模式）</span>
+      <span class="meta">设 <code>AIFACTORY_GATEWAY_TOKEN</code> 即启用；未设 ⇒ 放行但启动时大声警告。
+      实测 7 个用例: 本地全 200 · 启用后 无/错/格式错 → 401, 对的 → 200</span></span></label>
     <label class="item done"><input type="checkbox" id="t7-14" checked><span class="body">
       <span class="t">砍 <code>production_run</code> 死面（586 → 45 行 · 只留 2 处在用的读面）</span>
       <span class="meta">★ 关键判定: 逐符号核实后, 该文件"执行面"从未有消费者 —— 真正在跑的是

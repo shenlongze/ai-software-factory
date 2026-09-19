@@ -35,6 +35,40 @@ from typing import Any
 
 MAX_BODY = 1 << 20          # 1 MiB —— 请求体上限（防误用/滥用）
 
+#: 鉴权 token 的环境变量名。★ 未设置 ⇒ 本地模式（不鉴权, 但启动时大声警告）
+TOKEN_ENV = "AIFACTORY_GATEWAY_TOKEN"
+
+
+def _expected_token() -> str:
+    """读期望的 token（未配置 ⇒ 空串 = 本地模式）。"""
+    import os
+
+    return str(os.environ.get(TOKEN_ENV) or "").strip()
+
+
+def _check_auth(header: str | None) -> tuple[bool, str]:
+    """校验 Authorization 头。
+
+    返回 (是否放行, 拒绝原因)。
+    ★ 语义（与 OpenAI 客户端兼容）:
+      · 未配置 token（本地/内网形态）⇒ **一律放行**, 由启动提示明确告知"未鉴权"
+      · 已配置 token ⇒ 必须 `Authorization: Bearer <token>` 且**完全一致**（常量时间比较）
+      · 配置了但请求没带/带错 ⇒ 401（不透露期望值, 不给"接近了"的暗示）
+    """
+    want = _expected_token()
+    if not want:
+        return True, ""                     # 本地模式
+    got = str(header or "").strip()
+    if not got:
+        return False, "缺少 Authorization 头"
+    if not got.lower().startswith("bearer "):
+        return False, "Authorization 头格式应为 'Bearer <token>'"
+    import hmac
+
+    if not hmac.compare_digest(got[7:].strip(), want):
+        return False, "token 无效"
+    return True, ""
+
 
 def _pick_route(body: dict[str, Any]) -> tuple[str, str, str]:
     """决定用哪个 provider/model —— 返回 (provider_id, model, base_url)。
@@ -126,6 +160,10 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:  # noqa: N802 — BaseHTTPRequestHandler 的约定名
+        ok, why = _check_auth(self.headers.get("Authorization"))
+        if not ok:
+            self._send(401, {"error": {"message": why, "type": "invalid_request_error"}})
+            return
         if self.path.rstrip("/") in ("/health", "/healthz"):
             self._send(200, {"status": "ok", "service": "ai-factory-llm-gateway"})
             return
@@ -146,6 +184,10 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": {"message": f"未知路径: {self.path}", "type": "not_found"}})
 
     def do_POST(self) -> None:  # noqa: N802
+        ok, why = _check_auth(self.headers.get("Authorization"))
+        if not ok:
+            self._send(401, {"error": {"message": why, "type": "invalid_request_error"}})
+            return
         if self.path.rstrip("/") != "/v1/chat/completions":
             self._send(404, {"error": {"message": f"未知路径: {self.path}", "type": "not_found"}})
             return
@@ -178,7 +220,10 @@ def serve(host: str = "127.0.0.1", port: int = 8787) -> None:
     print(f"AI Factory LLM Gateway (OpenAI 兼容) 已启动: http://{host}:{port}")
     print("  POST /v1/chat/completions   ·  GET /health  ·  GET /v1/models")
     print(f"  接入示例: base_url=http://{host}:{port}/v1")
-    print("  ⚠ 未做鉴权（本地/内网形态）—— 对外售卖前必须补")
+    if _expected_token():
+        print(f"  🔒 鉴权: 已启用（读 ${TOKEN_ENV}）—— 请求需带 Authorization: Bearer <token>")
+    else:
+        print(f"  ⚠ 鉴权: **未启用**（本地/内网形态）。对外提供请先设 ${TOKEN_ENV}=<token>")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

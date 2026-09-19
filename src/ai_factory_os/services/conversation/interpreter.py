@@ -106,9 +106,12 @@ def _has_understanding(snapshot: dict[str, Any]) -> bool:
 _DISPLAY_RE = re.compile(r"^(请)?(你)?(现在|目前)?(理解|觉得|认为|怎么看|总结|复述)[^。！？]{0,12}[?？]?$")
 #: 纯确认（"对"/"就是这样"/"没错"）—— 必须整句匹配, 避免误伤"对, 但还要加导出"
 _CONFIRM_ONLY_RE = re.compile(r"^(对|对的|是|是的|没错|可以|行|好的|好|就这样|就按这个|ok|okay|ok了)[。.!！~～\s]*$")
-#: 纯寒暄/闲聊 —— 不含任何产品语义
+#: 纯寒暄 —— 必须【整句】匹配（"你好"✓ / "今天要做个天气应用"✗ 不能被误伤）
 _GREETING_ONLY_RE = re.compile(r"^(你好|hi|hello|嗨|在吗|早上好|下午好|晚上好)[。.!！~～\s]*$", re.I)
-_CHITCHAT_ONLY_RE = re.compile(r"^(今天|天气|吃饭|你叫什么|你是谁|谢谢|多谢|再见|拜拜)")
+_CHITCHAT_ONLY_RE = re.compile(
+    r"^(你叫什么名字?|你是谁|你(能|会)做什么|谢谢(你)?|多谢|再见|拜拜|今天天气[^。！？]{0,8})[。.!！~～\s]*$",
+    re.I,
+)
 
 
 def _is_pure_display_request(text: str) -> bool:

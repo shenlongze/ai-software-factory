@@ -134,6 +134,7 @@ class PumpReport:
     scheduled: list[str] = field(default_factory=list)     # 本驱动创建的执行 id
     outcomes: list[dict[str, Any]] = field(default_factory=list)  # 每个执行的终态摘要
     deferred: list[str] = field(default_factory=list)      # 被容量/预算推迟的叶
+    paused: list[str] = field(default_factory=list)        # ★ 被 steering 指令暂停的叶（吸收项 7）
     stopped_because: str = ""                              # 停止原因（可解释）
 
 
@@ -156,8 +157,22 @@ def drive(
     每一条都可解释: 为什么停、跑了哪些、推迟了哪些。
     """
     rep = PumpReport()
+    root = Path(getattr(ports.work, "_root", "."))
 
     for _ in range(max_ticks):
+        # ★ 吸收项 7（Steering）: 每轮 tick 前检查改向指令 —— 这是"运行中改向"的注入点。
+        #   只影响**未派发的**（已完成的叶不动 —— 改向不该回滚已完成的工作）。
+        try:
+            from ai_factory_os.services.work import steering as _steer
+
+            eff = _steer.effective(root)
+            if eff.get("stop"):
+                rep.stopped_because = "被 steering 指令停止（stop）"
+                break
+            if eff.get("paused"):
+                rep.paused = sorted(eff["paused"])
+        except Exception:  # noqa: BLE001 — 无 steering 能力 ⇒ 老行为
+            eff = {}
         try:
             result = tick(ports)
         except NotImplementedError:

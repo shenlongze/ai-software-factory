@@ -721,7 +721,90 @@
       <b>注意</b>: 这条与 hm-4（对话级压缩）不同 —— 那不需要, 这个需要（任务间是独立 LLM 调用）。</span></span></label>
   </div>
 
-  <h2><span class="n">14</span>已完成（本轮 · 留档不删）</h2>
+  <h2><span class="n">14</span>三方对比结论：AIF 能不能"全都有"（Founder 追问）</h2>
+  <div class="hint">
+    Founder: "那么我们的 AI Factory OS 可以全部都有么"。<br>
+    <b>实测结论</b>: 技术上大部分能（多是接线）, 但★ <b>不该全部照搬</b> —— 有 3 处真冲突。
+  </div>
+  <div class="card" data-group="three">
+    <label class="item done"><input type="checkbox" id="cc-0" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 实证: 三处真冲突（都有依据, 不是推测）</span>
+      <span class="meta">① <b>MoA(多模型聚合) ↔ 预算约束</b>: AIF 自己写着
+      "成本: 盯着预算, <b>超限该阻断就阻断</b>（不是提醒而已）" + <code>allocate.py</code>
+      "受容量与预算约束, 超出的推迟到下一 tick" ⇒ MoA = N 倍 token, 必然撞墙。<br>
+      ② <b>子代理"隔离" ↔ 任务间"上下文传递"（方向相反）</b>: Hermes 的 delegate 明写
+      "Spawns child AIAgent instances with <b>isolated context</b>"; 而 AIF 的 ct-6 要求
+      任务间传上游产出 ⇒ 两者不能"都要同一套"。<br>
+      ③ <b>"全都有" ↔ 三家定位不同</b>: AIF=平台(多行业/多公司) ·
+      Hermes=单用户助手 · Codex=单 workspace 协作 agent（"You and the user share one workspace"）
+      ⇒ 全盘照搬 = 复杂度总和 + 定位不合。</span></span></label>
+
+    <label class="item done"><input type="checkbox" id="cc-1" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 关键判断: 不是"抄进来", 而是"做成插件"</span>
+      <span class="meta"><b>依据（AIF 自己的定位原话, docs/ssot/product.md）</b>:<br>
+      &nbsp;"OS 提供平台、调用、调度、治理、记忆、扩展；★ <b>具体能力由插件提供</b>。"<br>
+      &nbsp;"OS 本体 — 平台：会话入口、编排、治理、记忆学习、扩展生态"<br>
+      ⇒ 所以正解不是"把 Codex 的 19 个审查员抄进来"（硬编码 + 只适用单仓编码场景）,
+      而是"把【审查员】做成<b>插件类别</b>"—— 用户按行业/场景启用
+      （制造/医疗/电商各不同）。<br>
+      ⇒ ★ 这比 Codex 更强: Codex 只能改内置, AIF 能装。
+      ⇒ 而"平台能容纳三家的做法" vs "三家之和" —— <b>前者才是平台</b>。</span></span></label>
+
+    <label class="item"><input type="checkbox" id="cc-2"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>★ 审查员插件类别（借 Codex · 做成可插拔）</span>
+      <span class="meta"><b>Codex 做法（实测）</b>: 19 个专业审查员 <code>.toml</code>
+      （架构/安全/性能/UX/测试可靠性/DB 权限/商业可行性/用户抱怨模拟…）, 每个带具体 checklist
+      （如"文件&gt;400 行警告, &gt;800 行 P1"）· 另有 self 的 evidence-verifier / repo-cartographer。<br>
+      <b>AIF 现状</b>: 角色只有 8 个（含评审 <code>_REVIEW_PROMPT</code> + 安全
+      <code>_SECURITY_PROMPT</code> 2 个审查）⇒ 明显单薄。<br>
+      <b>要做的</b>: ① 定义 <b>审查员插件类别</b>（插件目录 + 接口: checklist + 输入 + 结论格式）
+      ② 内置少量通用审查员（性能/测试可靠性/安全）作为示例
+      ③ ★ 按角色绑定 + 复用现有 <b>SoD 铁律</b>（<code>FORBIDDEN_ROLE_COMBINATIONS</code>:
+      developer 不能兼 reviewer ⇒ 审查员必须独立）<br>
+      <b>验收</b>: 能给一个行业装一组审查员, 且审查结论进入"验收判据"。</span></span></label>
+    <label class="item"><input type="checkbox" id="cc-3"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>子代理隔离 + 并发委派（借 Hermes · 接进调度器）</span>
+      <span class="meta"><b>Hermes 做法（实测）</b>: <code>delegate_tool.py</code> ——
+      "Spawns child AIAgent instances with <b>isolated context, restricted toolsets</b>";
+      并发上限 3（<code>_DEFAULT_MAX_CONCURRENT_CHILDREN</code>, 可用
+      <code>DELEGATION_MAX_CONCURRENT_CHILDREN</code> 配）· 深度上限 · <b>每个子代理独立终端</b>。<br>
+      <b>AIF 现状（实测）</b>: <code>Sandbox</code> 已在（隔离有基础）·
+      调度器能并行（我曾实测 8 写者/并行跑通）但★ <b>无 CLI 入口</b>（= ct-1/ct-2）。<br>
+      <b>要做的</b>: 随 ct-1（<code>run --plan</code>）暴露, 并补 Hermes 那三件:
+      <b>隔离上下文</b> · <b>受限工具集</b>（按角色给工具边界 —— AIF 的 Skill.tools 已有）·
+      <b>并发/深度上限</b>（防失控）。<br>
+      <b>注意</b>: 与 ct-6（任务间传递）并存 —— 见 cc-4 的场景划分。</span></span></label>
+    <label class="item"><input type="checkbox" id="cc-4"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>★ 隔离 vs 传递: 按场景并存（不是二选一）</span>
+      <span class="meta"><b>冲突（实测）</b>: Hermes 的隔离（各子代理独立上下文, 不互相污染）
+      与 AIF 的 ct-6（任务间要传上游产出）方向相反。<br>
+      <b>处置（按场景划分）</b>:<br>
+      &nbsp;· <b>隔离</b> 用于【审查 / 并行探索 / 独立验证】—— 这些要"独立视角",
+      共享上下文反而会趋同（审查就失效了）。<br>
+      &nbsp;· <b>传递</b> 用于【串行任务链 / 同一模块的迭代】—— 下游需要知道上游产出。<br>
+      ⇒ ★ 两者不是矛盾, 是<b>两种协作模式</b>; 由任务树的关系决定用哪种
+      （<code>depends_on</code> 存在 ⇒ 传递; 平级的审查/验证 ⇒ 隔离）。</span></span></label>
+    <label class="item"><input type="checkbox" id="cc-5"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>MoA 做成"受预算约束的可选策略"（借 Hermes）</span>
+      <span class="meta"><b>Hermes 做法（实测）</b>: <code>agent/moa_loop.py</code> ——
+      "Mixture-of-Agents: marks one user turn as MoA-enabled; the normal agent loop still owns
+      tool calling … this module gathers <b>reference-model context</b> before each model iteration"。<br>
+      <b>冲突（实测）</b>: AIF 的预算是硬约束（"超限该阻断就阻断"）⇒ MoA = N 倍 token。<br>
+      <b>要做的</b>: 做成【可选策略 + 预算门】—— 只在<b>关键决策点</b>（架构选型/方案取舍）
+      启用, 且<b>先查预算</b>再决定用几个参考模型（不是全局默认开启）。<br>
+      <b>另注意</b>: Hermes 的 MoA 是"给参考上下文"而非"并行出方案再投票" ⇒ 成本更可控, 值得照此设计。</span></span></label>
+    <label class="item"><input type="checkbox" id="cc-6"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>后台技能维护（借 Hermes 的 curator）</span>
+      <span class="meta"><b>Hermes 做法（实测）</b>: <code>agent/curator.py</code> ——
+      "Curator — background <b>skill maintenance orchestrator</b>"
+      （后台整理/合并/淘汰技能, 不打扰主流程）。<br>
+      <b>AIF 现状</b>: hm-2 已给 Skill 加 <code>update</code>（可修订）, 但<b>要人/agent 主动调</b>。<br>
+      <b>要做的</b>: 后台任务定期体检技能（长期未用 ⇒ 归档; 重复 ⇒ 建议合并; 失败多 ⇒ 提示修订）
+      —— 与 hm-1（记忆质量门）同思路, 只是对象是技能。<br>
+      <b>触发条件</b>: 技能数上量后（现在很少）。</span></span></label>
+  </div>
+
+  <h2><span class="n">15</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">
       <span class="t">★ 修会话上下文丢失（P0）—— 关键词预筛静默丢弃 ⇒ 8 轮 3 条变 9 条全在</span>

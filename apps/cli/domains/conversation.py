@@ -195,6 +195,32 @@ def _understand(root: Path, args: Any) -> dict[str, Any]:
 
     llm = _llm_fn()
     snap = U.understanding_snapshot(root, cid)
+
+    # ★ 2026-09-19（有效果的最后一环）: 让"理解"读【分层记忆】, 而不只读本会话。
+    #   实测背景: 会话1 的 4 条决策已落到 knowledge/global/facts.json, 但会话2 问
+    #   "我们之前的存储设计是什么" ⇒ 答"暂时查不到" —— 因为理解只喂了本会话的 facts。
+    #   做法: 用 scoped_facts.effective_facts(该会话作用域) 取【继承 + 同公司横向 + 权限过滤】
+    #   后的跨会话事实, 并入 snapshot 交给 interpreter; 每条标 provenance, 供引用与审计。
+    #   失败安全: 分层读不到 ⇒ 退回本会话（行为与之前一致, 不阻塞理解）。
+    try:
+        from ai_factory_os.services.conversation import scoped_facts as _SF
+
+        _doc = U.get_conversation(root, cid) or {}
+        _scope = _SF.scope_from_conversation(_doc)
+        _eff = _SF.effective_facts(root, _scope)
+        _mine = {str(f.get("id") or "") for f in (snap.get("facts") or [])}
+        _extra = [f for f in (_eff.get("facts") or []) if str(f.get("id") or "") not in _mine]
+        if _extra:
+            snap = dict(snap)
+            snap["facts"] = list(snap.get("facts") or []) + _extra
+            snap["memory_from"] = {
+                "layers": _eff.get("by_level") or {},
+                "count": len(_extra),
+                "note": "跨会话记忆（来自分层）—— 与本次会话事实并列, 每条带 provenance",
+            }
+    except Exception:  # noqa: BLE001 — 分层不可用 ⇒ 只读本会话（不阻塞理解）
+        pass
+
     prop = _INTERP.llm_semantic_interpreter(str(root), cid, text, snap, llm_fn=llm)
     ops = list(prop.get("operations") or [])
     applied = _PROP.apply_operations(root, cid, ops, source_message_id=mid,

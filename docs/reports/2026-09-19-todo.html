@@ -274,6 +274,16 @@
   <!-- ═══════ 7.5 影响面与项目图谱 ═══════ -->
   <h2><span class="n">8</span>影响面分析 / 项目图谱（改全 · 记什么 · 派生什么）</h2>
   <div class="card" data-group="impact">
+    <label class="item done"><input type="checkbox" id="imp-0c" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ ★ 接通"最后一环": 跨会话记忆【真的有效果】了（修复前=查不到, 修复后=完整复述）</span>
+      <span class="meta"><b>Founder 问 "如何更好, 更有效果"</b> ⇒ 实测发现: 我做的跨会话记忆是<b>"写了没人读"</b> ——
+      会话1 的 3 条决策已落分层, 但会话2 问同一问题答<b>"暂时查不到"</b>（"理解"只喂本会话 facts）。<br>
+      <b>修法（很小）</b>: <code>_understand</code> 里用 <code>scoped_facts.effective_facts(会话作用域)</code>
+      取【继承 + 同公司横向 + 权限过滤】后的跨会话事实并入 snapshot; 每条带 provenance; 失败安全（读不到退本会话）。<br>
+      <b>★ 效果对比（同一实验）</b>: 修复前 → "暂时查不到"; 修复后 → 会话2 完整复述三条决策
+      （事件是唯一真相 / 配置留文件+git / 收敛到 3 个 store）。<br>
+      <b>★ 结论</b>: "更有效果"不是把设计做得更好, 而是<b>把链路接通</b>（写→读闭环）。
+      此前 24 store / 5 套记忆机制里, <b>真正产生效果的是这条闭环</b>。</span></span></label>
     <label class="item"><input type="checkbox" id="imp-0b"><span class="body">
       <span class="t"><span class="tag p0">P0</span>★ 存储【收敛】—— 现状: 24 个 store 类 / 8 处落地 / 2 个同名 KnowledgeStore</span>
       <span class="meta"><b>Founder 五问"有没有更好的设计"后的实测答案</b>: 病灶不是"设计不够好", 而是

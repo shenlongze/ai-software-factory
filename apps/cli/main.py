@@ -71,6 +71,7 @@ from .commands import (
     cmd_project_list,
     cmd_project_adopt,
     cmd_knowledge_status,
+    cmd_change_plan,
     cmd_knowledge_reindex,
     cmd_project_show,
     cmd_provider_list,
@@ -841,6 +842,15 @@ def build_parser() -> Any:
     json_opt(p_ch_commits)
     p_ch_commits.add_argument("--repo", default=None, help="仓库路径 (默认工厂根目录)")
     p_ch_commits.add_argument("--limit", type=int, default=20, help="条数上限 (默认 20)")
+    # ★ 2026-09-19 mem-7: 影响面分析（只分析不改）—— 接进【已有的】change 组
+    #   ⚠ 教训（R25 禁重复造轮子）: 我起初另起 `sub.add_parser("change")` ⇒ argparse
+    #     conflicting subparser 冲突, **整个 CLI 起不来**。加命令前必须先查是否已有该组。
+    p_ch_plan = csub.add_parser(
+        "plan", help="影响面: 谁调用它/受影响文件/测试覆盖/★风险 (只分析不改)"
+    )
+    json_opt(p_ch_plan)
+    p_ch_plan.add_argument("symbol", help="符号名 (可带前缀, 如 conversation.upsert_fact)")
+    p_ch_plan.add_argument("--repo", default="", help="仓库目录 (缺省用已采纳项目)")
     p_ch_analyze = csub.add_parser(
         "analyze", help="任务变更路径分析: Files/Insertions/Deletions/Modules (发 change.analyzed)"
     )
@@ -2822,6 +2832,8 @@ def _dispatch_git(ctx: FactoryContext, args: Any) -> dict:
 
 
 def _dispatch_change(ctx: FactoryContext, args: Any) -> dict:
+    if args.change_command == "plan":                       # ★ mem-7: 影响面（只分析不改）
+        return cmd_change_plan(ctx, args)
     if args.change_command == "commits":
         return cmd_change_commits(ctx, args)
     if args.change_command == "analyze":
@@ -3622,8 +3634,35 @@ def _print_git(sub: str, r: dict) -> None:
 
 
 def _print_change(sub: str, r: dict) -> None:
-    """factory change 输出: commits 提交表; analyze 路径分析; validate L4 判定;
+    """factory change 输出: commits 提交表; plan 影响面; analyze 路径分析; validate L4 判定;
     triggers 注册/列表; evaluate 规则判定; workflows workflow 链。"""
+    if sub == "plan":
+        # ★ 2026-09-19 mem-7: 影响面清单（"改全"的判据 —— 不是搜索命中数, 而是清单+验证+显式风险）
+        print(f"\n  ▲ 影响面: {r.get('symbol')}   (仓库 {r.get('repo')})")
+        defs = r.get("definitions") or []
+        if not defs:
+            print("    定义: ✗ 未找到（确认符号名, 或用全名如 mod.sub.sym）")
+        for d in defs:
+            print(f"    定义: {d['file']}:{d['line']}")
+        print(f"\n  [静态] 调用方 {r.get('callers_count', 0)} 处 · 受影响文件 {r.get('affected_count', 0)} 个")
+        for c in (r.get("callers") or [])[:12]:
+            print(f"        ← {c['symbol']}  ({c['file']}:{c['line']})")
+        more = int(r.get("callers_count", 0)) - 12
+        if more > 0:
+            print(f"        … 另有 {more} 处")
+        print(f"\n  [测试] 覆盖 {r.get('tests_count', 0)} 个文件")
+        for x in (r.get("tests") or [])[:6]:
+            print(f"        {x}")
+        chain = r.get("impact_chain") or []
+        if chain:
+            print(f"\n  [连锁] 依赖这些文件的还有 {len(chain)} 个（改接口时注意）")
+        risks = r.get("risks") or []
+        if risks:
+            print("\n  [★ 风险]")
+            for x in risks:
+                print(f"        {x}")
+        print("\n  [建议] 改完验证: bash scripts/verify.sh; 再核对上面每一处调用方")
+        return
     if sub == "commits":
         rows = [[c["hash"][:12], c["message"], c["branch"] or "-",
                  c["task_id"] or "-", c["created_at"]] for c in r["commits"]]

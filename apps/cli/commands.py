@@ -3999,3 +3999,79 @@ def cmd_knowledge_reindex(ctx: FactoryContext, args: Any) -> dict:
             out.append({"project_id": pid, "error": f"{type(exc).__name__}: {str(exc)[:90]}"})
     return {"projects": out, "count": len(out)}
 
+# --------------------------------------------------------------------------- change plan (影响面)
+
+
+def cmd_change_plan(ctx: FactoryContext, args: Any) -> dict:
+    """factory change plan <符号> — 影响面分析（只分析, 不改动）。
+
+    ★ 2026-09-19 新增（mem-7 · 记忆主线第 4 环收尾）。
+
+    Founder 问「项目需要改一段代码, 如何才能改全?」的答案落地:
+      ① 定位: 符号全名（★ 有同名异物时全部列出 —— 裸名搜索分不清谁是谁）
+      ② 静态: 调用方（AST 精确, 同文件 + 跨文件）+ 受影响文件
+      ③ 测试: 覆盖情况（没测试的地方最危险）
+      ④ 风险: 显式列出"没测到" ⇒ 从隐形风险变成可见清单
+    ⇒ "改全"靠的不是搜索命中数, 而是【影响面清单 + 验证 + 显式风险】。
+    """
+    sym = str(getattr(args, "symbol", "") or "").strip()
+    if not sym:
+        raise CliError("需要符号名（如 conversation.upsert_fact 或 upsert_fact）", exit_code=2)
+    repo = str(getattr(args, "repo", "") or "")
+    if not repo:
+        for pid, rp in _adopted_repos(ctx):
+            repo = rp
+            break
+    if not repo or not Path(repo).is_dir():
+        raise CliError("找不到项目仓库（先 factory project adopt <path>, 或传 --repo）", exit_code=2)
+
+    from ai_factory_os.services.execution.kernel.repo_intelligence import RepositoryIntelligence
+
+    ri = RepositoryIntelligence(repo)
+    ri.analyze()
+    # ① 定位（全名优先: "mod.sub.sym" 只取最后一段做符号名, 前缀做过滤）
+    leaf = sym.split(".")[-1]
+    prefix = sym[: -len(leaf) - 1] if "." in sym else ""
+    defs = [(f, ln) for (f, ln) in (ri.symbol_definition(leaf) or [])
+            if not prefix or prefix.replace(".", "/") in f]
+    # ② 静态: 调用方（AST 精确）
+    edges = [e for e in ri.call_graph.edges if e.callee_symbol == leaf]
+    if prefix:
+        edges = [e for e in edges if prefix.replace(".", "/") in e.callee_file]
+    callers = sorted({(e.caller_file, e.caller_symbol, e.line) for e in edges})
+    affected = sorted({e.caller_file for e in edges})
+    # ③ 测试覆盖
+    tests: list[str] = []
+    for f, _ln in defs:
+        try:
+            tests.extend(ri.tests_for(f) or [])
+        except Exception:  # noqa: BLE001 — 无测试映射不算错
+            pass
+    tests = sorted(set(tests))
+    # ④ 受影响文件的连锁影响（L3）
+    chain: list[str] = []
+    for f in affected[:20]:
+        try:
+            chain.extend(ri.impact_of(f) or [])
+        except Exception:  # noqa: BLE001
+            pass
+
+    risk = []
+    if not tests:
+        risk.append("★ 该符号**无测试覆盖** ⇒ 改完无法自动证明没改坏, 需人工核对调用方")
+    if len(defs) > 1:
+        risk.append(f"★ 有 {len(defs)} 处同名定义 ⇒ 确认要改哪一个（调用方已按全名过滤）")
+    if not callers:
+        risk.append("未找到调用方 ⇒ 可能是入口/死码/动态调用（字符串/反射）—— 需人工确认")
+
+    return {
+        "symbol": sym, "leaf": leaf, "repo": repo,
+        "definitions": [{"file": f, "line": ln} for f, ln in defs],
+        "callers": [{"file": f, "symbol": s, "line": ln} for f, s, ln in callers],
+        "callers_count": len(callers),
+        "affected_files": affected, "affected_count": len(affected),
+        "tests": tests, "tests_count": len(tests),
+        "impact_chain": sorted(set(chain)),
+        "risks": risk,
+    }
+

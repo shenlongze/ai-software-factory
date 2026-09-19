@@ -494,11 +494,18 @@
       文档 mtime 是本地）—— is_stale 内部统一转 timestamp, 判断本身是对的。<br>
       <b>过程教训</b>: 加 import 时插到了 <code>from __future__</code> 之前 ⇒ SyntaxError
       （__future__ 必须首行）。</span></span></label>
-    <label class="item"><input type="checkbox" id="mem-7"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>④ 影响面记忆 —— 收尾: <code>factory change plan</code> + 落事件</span>
-      <span class="meta">精度已修准（mem-4）, 但<b>用户碰不到</b>（无 CLI）⇒ 按 R24 不算完成。<br>
-      <b>要做</b>: <code>factory change plan &lt;符号&gt;</code> —— 只分析不改, 输出影响面清单
-      （调用方/继承/测试覆盖/★未覆盖风险）; 并把结果<b>作为事件落库</b> ⇒ 可查"上次改这个影响了几处"。</span></span></label>
+    <label class="item done"><input type="checkbox" id="mem-7" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ ④ 影响面记忆收尾 —— <code>factory change plan</code>（用户可达）</span>
+      <span class="meta"><b>本刀</b>: 新命令 <code>factory change plan &lt;符号&gt;</code> —— 只分析不改, 输出:
+      定义（★ 自动列出同名异物）· 调用方（AST 精确, 带行号）· 受影响文件 · 测试覆盖 ·
+      连锁影响 · <b>★ 显式风险</b>（无测试覆盖 / 多处同名 / 无调用方三种）· 建议验证命令。<br>
+      <b>★ 实测</b>: <code>change plan upsert_fact</code> ⇒ 定义 2 处（scoped_facts.py:311 +
+      understanding.py:336, <b>自动识别同名异物</b>）· 调用方 6 处全对（proposal.py:242/254/268/282/299 +
+      understanding.py:419）· 测试覆盖 0 ⇒ 风险提示"改完无法自动证明没改坏"。<br>
+      <b>★ 重大教训（R25 同一刀违反两次）</b>: ① 我另起 <code>sub.add_parser("change")</code>
+      而 <code>change</code> 组<b>早就存在</b>（commits/analyze/validate）⇒ argparse
+      <code>conflicting subparser</code> ⇒ <b>整个 CLI 起不来</b>; ② <code>_print_change</code> 同理。
+      ⇒ <b>加命令/函数前必须先查是否已有</b>（正是我刚写进 SSoT 的 R25）。</span></span></label>
     <label class="item"><input type="checkbox" id="mem-8"><span class="body">
       <span class="t"><span class="tag p2">P2</span>检索相关性 —— 词频无 IDF（长文档"万能命中"）</span>
       <span class="meta">CHANGELOG / 长方案书因"文件长 ⇒ TF 高"挤占结果（已用分档加权 + 单文件限流缓解）。

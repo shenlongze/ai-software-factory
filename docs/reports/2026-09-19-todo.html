@@ -227,6 +227,20 @@
       <code>performance_score</code> —— 你评一次, 下次选得更准; 改动点在 selector 一处。<br>
       <b>③ LLM-as-judge（先别做）</b>: 用别的模型打分; 有偏, 需校准, 现在做是空中楼阁。<br>
       ⇒ <b>当前选择: 先不做（Founder: 写到 todolist 中, 先不做）</b>。要做时建议先 ①+②。</span></span></label>
+    <label class="item"><input type="checkbox" id="t5b-3"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>★ 缺【LLM 配置引导】—— 现在只能手写 <code>providers.json</code></span>
+      <span class="meta"><b>现状（实测 2026-09-19）</b>: 配置<b>能力</b>有
+      （<code>provider {list,show,test,usage,stats,compare,recommend}</code> 8 个子命令）,
+      配置<b>文件结构</b>也对（<code>{version,providers,fallback_chain}</code>, key 走
+      <code>api_key_ref:"env:XXX"</code> 不落盘明文）;<br>
+      但 ① <b>无 setup / onboard / wizard</b>（只有 <code>init</code>, 它只管目录骨架, 不碰 LLM）
+      &nbsp;② <b>无交互式输入</b>（grep <code>input(</code>/<code>prompt</code> 零命中）
+      &nbsp;③ 无诊断（doctor）&nbsp;④ <code>fallback_chain</code> 空（实际只 1 个 provider: deepseek）<br>
+      ⇒ 新人配 LLM 必须手写 JSON ⇒ <b>与"面向非技术型用户"不符</b>。<br>
+      <b>可参照 Hermes</b>: <code>setup [--non-interactive|--reset|--quick] {model,tts,terminal,gateway,tools,agent}</code>
+      + <code>model</code>（交互选 provider/默认模型）+ <code>doctor</code>（诊断）。<br>
+      <b>建议做法</b>: <code>factory provider add</code>（交互: 选类型→贴 key→试连→落库）+
+      <code>factory provider doctor</code>（体检: key 有效? 模型可达? 降级链配没配?）</span></span></label>
   </div>
 
   <!-- ═══════ 6 ═══════ -->

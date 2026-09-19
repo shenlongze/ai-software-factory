@@ -239,6 +239,23 @@ def build_llm_prompt(snapshot: dict[str, Any], user_message: str, *,
     for f in rejected:
         lines.append(f"- (已否决) {f['type']} {f['content']} (id={f['id']})")
     lines += _history_section(history_root, user_message)
+    # ★ 2026-09-19（记忆主线 · 知识记忆接通）: 附上【项目文档知识】检索结果。
+    #   来源 = RAG 索引（已按分档加权 + 单文件限流排序）; 每条带文件名与档位 ⇒ 可引用可审计。
+    #   ★ 明确标注"供引用, 非既有事实" —— 不让检索内容污染"产品理解"。
+    knowledge = snapshot.get("knowledge") or []
+    if knowledge:
+        lines += [
+            "",
+            "# 项目文档知识 (检索自项目文档 · 供引用 · **非**既有事实)",
+            "引用时须给出文件名; 与用户说法冲突时以用户为准, 并把冲突说出来。",
+        ]
+        for k in knowledge:
+            lines.append(f"- [{k.get('tier')}] {k.get('file')} (score={k.get('score')})")
+            lines.append(f"  {str(k.get('excerpt') or '')[:240]}")
+    mem = snapshot.get("memory_from") or {}
+    if mem.get("count"):
+        lines.append("")
+        lines.append(f"# 跨会话记忆 (来自分层 · {mem.get('count')} 条 · {mem.get('layers')})")
     lines += [
         "",
         "# 用户消息",

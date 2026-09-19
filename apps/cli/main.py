@@ -69,6 +69,7 @@ from .commands import (
     cmd_exec_run,
     cmd_exec_status,
     cmd_project_list,
+    cmd_project_adopt,
     cmd_project_show,
     cmd_provider_list,
     cmd_provider_show,
@@ -447,6 +448,12 @@ def build_parser() -> Any:
     p_pr_show = prsub.add_parser("show", help="项目详情: 技术栈/Agent/技能/工作流映射 (发 project.viewed)")
     json_opt(p_pr_show)
     p_pr_show.add_argument("name", help="项目名 (如 markpad)")
+    p_pr_adopt = prsub.add_parser("adopt", help="把一个已有仓库注册为项目 (记忆链上游: 产生 repo_path)")
+    json_opt(p_pr_adopt)
+    p_pr_adopt.add_argument("path", help="仓库目录 (必须存在)")
+    p_pr_adopt.add_argument("--name", default="", help="项目名 (缺省 = 目录名)")
+    p_pr_adopt.add_argument("--goal", default="", help="项目目标 (可选)")
+    p_pr_adopt.add_argument("--user-id", default="", help="发起人 (可选)")
 
     # factory provider <sub> (Phase 8A, ADR-0022)
     p_provider = sub.add_parser(
@@ -2582,6 +2589,8 @@ def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
         return cmd_project_list(ctx, args)
     if args.project_command == "show":
         return cmd_project_show(ctx, args)
+    if args.project_command == "adopt":
+        return cmd_project_adopt(ctx, args)
     raise CliError(f"unknown project command: {args.project_command}", exit_code=2)
 
 
@@ -3369,6 +3378,14 @@ def _print_metrics(r: dict) -> None:
 
 
 def _print_project(sub: str, r: dict) -> None:
+    if sub == "adopt":
+        # ★ 2026-09-19: adopt 的输出（记忆链上游 —— 项目有了 repo_path, 知识索引才知道扫哪）
+        print(f"\n  ✓ 已注册项目: {r.get('name')}  ({r.get('project_id')})")
+        print(f"    仓库      {r.get('repo_path')}")
+        print(f"    语言/框架  {r.get('language') or '-'} / {r.get('framework') or '-'}")
+        print(f"\n  下一步: factory conversation new --project {r.get('project_id')}")
+        print("          会话绑定项目后, 理解时会自动检索该项目的文档知识（知识记忆）")
+        return
     if sub == "list":
         rows = [[p["name"], p["status"], p["language"], p["repository"] or "-",
                  ", ".join(p["tech_stack"]) or "-"] for p in r["projects"]]

@@ -582,13 +582,32 @@ def move_conv_to_project(root: Path | str, conv_id: str,
         return False
     src = Path(root) / "conversations" / f"{conv_id}.json"
     dst = Path(root) / "projects" / project_id / "conversations" / f"{conv_id}.json"
-    if not src.is_file() or dst.exists():
+
+    # ★ 2026-09-19: 绑定项目时**必须同时写 project_id 字段** —— 否则"文件搬过去了但字段还空",
+    #   下游（scope_from_conversation / _project_dir / 知识检索）全都读不到项目 ⇒ 记忆隔离失效。
+    #   这是本轮实测发现的: move 只搬文件不设字段 ⇒ 会话看似绑了项目, 实际仍是全局。
+    def _set_pid(doc: dict[str, Any]) -> None:
+        doc["project_id"] = project_id
+        doc["updated_at"] = _now_iso()
+
+    if dst.is_file():                                 # 已在项目目录 ⇒ 幂等, 只补字段
+        try:
+            _mutate(root, conv_id, _set_pid)
+        except Exception:  # noqa: BLE001 — 字段回填失败不报错（与"幂等"语义一致）
+            pass
+        return False
+    if not src.is_file():
         return False
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(src, dst)
+        doc = json.loads(src.read_text(encoding="utf-8"))
+        doc["project_id"] = project_id
+        doc["updated_at"] = _now_iso()
+        tmp = dst.with_suffix(".tmp")
+        tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, dst)
         return True
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         import sys as _s
         print(f"[project] 会话迁移失败: {exc}", file=_s.stderr)
         return False

@@ -3864,3 +3864,64 @@ def cmd_provider_doctor(ctx: FactoryContext, args: Any) -> dict:
             "summary": f"{len(checks) - len(bad)}/{len(checks)} 项通过",
             "next": ("一切正常" if not bad else
                      "按上面的 detail 修；配新 provider: `factory provider add`")}
+
+# --------------------------------------------------------------------------- project adopt
+
+
+def cmd_project_adopt(ctx: FactoryContext, args: Any) -> dict:
+    """factory project adopt <path> — 把一个【已有仓库】注册为项目（记忆链的上游）。
+
+    ★ 2026-09-19 新增。为什么需要: `ProjectAdoption.register` 早就有（含 repo_path/语言/框架/
+    基线/快照 + 事件审计）, 但**没有 CLI 入口** ⇒ 项目永远没有 repo_path ⇒
+    知识索引不知道"项目文档在哪" ⇒ 知识记忆接不上。这是"记忆断链"的最上游一环。
+
+    repo_path 必须为存在的目录（否则响亮失败 —— 不静默, 与既有语义一致）。
+    """
+    from ai_factory_os.services.organization.project_adoption import ProjectAdoption
+    from ai_factory_os.services.organization.projects import ProjectStore
+
+    repo = Path(str(getattr(args, "path", "") or "")).expanduser()
+    if not repo.is_dir():
+        raise CliError(f"不是存在的目录: {repo}", exit_code=2)
+    store = ProjectStore(ctx.root / "org")
+    adoption = ProjectAdoption(store, logger=None)
+    try:
+        proj = adoption.register(
+            repo,
+            name=str(getattr(args, "name", "") or ""),
+            goal=str(getattr(args, "goal", "") or ""),
+            user_id=str(getattr(args, "user_id", "") or ""),
+        )
+    except ValueError as exc:                       # 响亮失败（不静默）
+        raise CliError(str(exc), exit_code=2) from exc
+    data = {
+        "project_id": getattr(proj, "id", ""),
+        "name": getattr(proj, "name", ""),
+        "repo_path": getattr(proj, "repo_path", ""),
+        "language": getattr(proj, "language", ""),
+        "framework": getattr(proj, "framework", ""),
+    }
+
+    # ★ 2026-09-19: adopt 时**顺手建知识索引**（记忆链一环, 否则"会话绑项目后能查项目文档"
+    #   只是空话 —— 实测: 不建索引时提问答"还没有记录"）。
+    #   扫描源 = 项目仓库; 索引存数据根（不污染仓库, 见 knowledge_store 的 index_root）。
+    #   失败安全: 索引失败不影响 adopt（项目已注册成功, 如实报 indexed=False）。
+    data["indexed"] = False
+    try:
+        from ai_factory_os.infrastructure.retrieval.knowledge_store import KnowledgeStore
+
+        repo = Path(str(data["repo_path"]))
+        if repo.is_dir():
+            ks = KnowledgeStore(repo, repo.name, index_root=ctx.root)
+            ks.ingest()
+            data["indexed"] = True
+            data["index_path"] = str(ks.index_path)
+    except Exception as exc:  # noqa: BLE001 — 索引失败不阻断注册
+        data["index_error"] = f"{type(exc).__name__}: {str(exc)[:80]}"
+    with ctx.logger_scope() as logger:
+        logger.record(
+            EventType.ORG_PROJECT_CREATED, source=SOURCE, action="adopt project", result="OK",
+            payload=data,
+        )
+    return data
+

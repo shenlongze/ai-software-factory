@@ -42,6 +42,7 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
     p_new = csub.add_parser("new", help="建会话（conv-*）")
     json_opt(p_new)
     p_new.add_argument("--title", default="新会话", help="会话标题")
+    p_new.add_argument("--project", default="", help="绑定项目 id（决定记忆归属层与知识检索源; 见 factory project adopt）")
 
     p_list = csub.add_parser("list", help="会话列表")
     json_opt(p_list)
@@ -99,8 +100,25 @@ def run(ctx: Any, args: Any) -> dict[str, Any]:
 
 
 def _new(root: Path, args: Any) -> dict[str, Any]:
+    """建会话；可选 --project 绑定项目。
+
+    ★ 2026-09-19 新增 --project: "会话绑项目"是**记忆隔离的核心**（决定 facts 落哪一层、
+    知识检索扫哪个仓库）。绑定走既有 `U.move_conv_to_project`（幂等 + 原子搬移, 符合
+    Founder 铁律「属于项目的文件必须在项目目录下」）。
+    """
     conv = U.create_conversation(root, title=str(getattr(args, "title", "") or "新会话"))
-    return {"created": conv["id"], "title": conv.get("title"), "status": conv.get("status")}
+    cid = conv["id"]
+    out: dict[str, Any] = {"created": cid, "title": conv.get("title"), "status": conv.get("status")}
+    pid = str(getattr(args, "project", "") or "")
+    if pid:
+        moved = False
+        try:
+            moved = bool(U.move_conv_to_project(root, cid, pid))
+        except Exception:  # noqa: BLE001 — 绑定失败不影响建会话（但如实报出）
+            moved = False
+        out["project_id"] = pid
+        out["moved"] = moved
+    return out
 
 
 def _list(root: Path) -> dict[str, Any]:
@@ -175,6 +193,56 @@ def _last_human_message(root: Path, cid: str) -> tuple[str, str]:
     return "", ""
 
 
+def _root_dir(root: Any) -> Path:
+    """数据根（RAG 索引的存放根 —— index_root, 不污染项目仓库）。"""
+    return Path(str(root))
+
+
+def _iter_projects(data: Any) -> list[dict[str, Any]]:
+    """从 org/projects.json 的不同嵌套形态里取出项目 dict 列表。"""
+    out: list[dict[str, Any]] = []
+    if isinstance(data, list):
+        out.extend(x for x in data if isinstance(x, dict))
+    elif isinstance(data, dict):
+        for key in ("items", "projects", "project"):
+            v = data.get(key)
+            if isinstance(v, list):
+                out.extend(x for x in v if isinstance(x, dict))
+            elif isinstance(v, dict):
+                out.extend(x for x in v.values() if isinstance(x, dict))
+    return out
+
+
+def _project_dir(root: Any, cid: str) -> Path | None:
+    """会话所属项目的**代码目录**（org 项目记录里的 repo_path）。
+
+    拿不到 ⇒ None ⇒ 跳过知识检索（全局会话没有"项目文档"可查, 这是正确语义）。
+    ★ 记忆链: `factory project adopt <repo>` 写入 repo_path ⇒ 这里读出 ⇒ 知识索引知道扫哪。
+    """
+    try:
+        import json
+
+        # ★ 用 _load_conv（原始文档）—— `get_conversation` 返回的是**投影**, 不含 project_id。
+        doc = U._load_conv(root, cid) or {}                    # noqa: SLF001 — 同包内部读取
+        pid = str(doc.get("project_id") or "").strip()          # 防御: 外部传入值可能带空白
+        if not pid:
+            return None
+        for f in (Path(str(root)) / "org").rglob("projects.json"):
+            for item in _iter_projects(json.loads(f.read_text(encoding="utf-8"))):
+                if str(item.get("id") or "").strip() == pid:
+                    rp = str(item.get("repo_path") or "")
+                    if rp and Path(rp).is_dir():
+                        return Path(rp)
+    except Exception:  # noqa: BLE001 — 取不到就跳过（不阻塞理解）
+        pass
+    return None
+
+
+def _slug_of(ws: Path, cid: str) -> str:
+    """RAG 索引的 slug（按项目目录名, 稳定且可读）。"""
+    return ws.name or cid
+
+
 def _understand(root: Path, args: Any) -> dict[str, Any]:
     """把用户的话理解成事实 —— 链路第 2 环。
 
@@ -219,6 +287,39 @@ def _understand(root: Path, args: Any) -> dict[str, Any]:
                 "note": "跨会话记忆（来自分层）—— 与本次会话事实并列, 每条带 provenance",
             }
     except Exception:  # noqa: BLE001 — 分层不可用 ⇒ 只读本会话（不阻塞理解）
+        pass
+
+    # ★ 2026-09-19（记忆主线 · 知识记忆接通）: 让"理解"除事实外, 还能检索【项目文档知识】。
+    #   背景: RAG 索引已修好并重建（505 文件 / 20000 片段, 含 docs/design 59 篇）,
+    #         但 `rag_query` 零消费者 ⇒ 建了没人读。
+    #   做法: 用本会话最新消息当查询词, 从知识库取 top-N（已按分档加权 + 单文件限流排序）,
+    #         并入 snapshot 的 knowledge 段; 每条带【来源文件 + 档位】供引用与审计。
+    #   失败安全: 索引不存在/检索异常 ⇒ 跳过（理解照常, 行为与之前一致）。
+    #   说明: workspace=项目目录（扫描源）, index_root=数据根（索引位置）—— 见 knowledge_store 的 index_root。
+    try:
+        from ai_factory_os.infrastructure.retrieval import rag_query as _rag
+
+        _ws = _project_dir(root, cid)
+        if _ws:
+            _hits, _kmeta = _rag(_root_dir(root), _slug_of(_ws, cid), text, top_k=3)
+            if _hits:
+                snap = dict(snap)
+                snap["knowledge"] = [
+                    {
+                        "file": h.file,
+                        "tier": h.tier,
+                        "score": round(float(h.score), 4),
+                        "excerpt": str(h.fragment)[:280],
+                        "reason": h.reason,
+                    }
+                    for h in _hits
+                ]
+                snap["knowledge_from"] = {
+                    "count": len(_hits),
+                    "tiers": sorted({h.tier for h in _hits}),
+                    "note": "项目文档知识（来自 RAG 索引）—— 供引用, 非既有事实; 引用时须给出文件名",
+                }
+    except Exception:  # noqa: BLE001 — 知识检索失败不阻塞理解
         pass
 
     prop = _INTERP.llm_semantic_interpreter(str(root), cid, text, snap, llm_fn=llm)

@@ -256,6 +256,12 @@ def build_llm_prompt(snapshot: dict[str, Any], user_message: str, *,
     if mem.get("count"):
         lines.append("")
         lines.append(f"# 跨会话记忆 (来自分层 · {mem.get('count')} 条 · {mem.get('layers')})")
+    # ★ 2026-09-19（mem-8）: 项目历史记忆（project_memory 的类型化记忆 —— 已有机制, 本轮只接线）。
+    #   它自带权威等级标注（user_intent > verified_state > repo_evidence > agent_claim > summary）,
+    #   低等级仅作参考 ⇒ 原样透传, 不改写它的语义。
+    pm_block = snapshot.get("project_memory_block") or ""
+    if pm_block:
+        lines += ["", pm_block]
     lines += [
         "",
         "# 用户消息",

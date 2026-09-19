@@ -289,6 +289,25 @@ def _understand(root: Path, args: Any) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 — 分层不可用 ⇒ 只读本会话（不阻塞理解）
         pass
 
+    # ★ 2026-09-19（mem-8 · 让"已有的记忆机制"生效）: 注入 project_memory 的项目历史记忆。
+    #   背景: `project_memory`（2026-08-27, 比本轮的分层早）已经有真数据 + 类型化
+    #   （decision/learning/error/pattern/observation）+ 权威等级 + 时间衰减,
+    #   但 `inject_block`（注入）**零调用** ⇒ 记了却没用上（实测: P-b0adfaa6 有 3 条无人看见）。
+    #   本刀只做**接线**（不改它的能力）: 有项目 ⇒ 取 top-N 注入 prompt 的「项目历史记忆」段。
+    #   失败安全: 无项目/无记忆/异常 ⇒ 跳过（行为与之前一致）。
+    try:
+        from ai_factory_os.services.conversation.project_memory import MemoryStore
+
+        _pm_pid = str((U._load_conv(root, cid) or {}).get("project_id") or "").strip()  # noqa: SLF001
+        if _pm_pid:
+            _pm = MemoryStore.load(str(root), _pm_pid)
+            _blk = _pm.inject_block(n=4, query=text)
+            if _blk:
+                snap = dict(snap)
+                snap["project_memory_block"] = _blk
+    except Exception:  # noqa: BLE001 — 项目记忆不可用 ⇒ 跳过（不阻塞理解）
+        pass
+
     # ★ 2026-09-19（记忆主线 · 知识记忆接通）: 让"理解"除事实外, 还能检索【项目文档知识】。
     #   背景: RAG 索引已修好并重建（505 文件 / 20000 片段, 含 docs/design 59 篇）,
     #         但 `rag_query` 零消费者 ⇒ 建了没人读。

@@ -79,7 +79,7 @@ _TASK_KEYS: tuple[str, ...] = ("module", "task", "api_contract", "ui_guidance")
 #:   消费方: services/work/decomposition.parallel_groups（按名匹配 → 拓扑分层）。
 #:   为什么让架构给: 依赖是架构设计的产物 —— 架构 agent 本就按模块划分,
 #:   由它给是"源头给"; 靠后从关键词/路径猜都不如源头准。
-_TASK_OPTIONAL_KEYS: tuple[str, ...] = ("depends_on",)
+_TASK_OPTIONAL_KEYS: tuple[str, ...] = ("depends_on", "required_capabilities")
 
 #: product 契约中 Architect 消费的 3 节 (功能/MVP/故事 → 模块划分与任务拆分)
 _PRODUCT_ARCH_SECTIONS: tuple[str, ...] = (
@@ -262,6 +262,15 @@ def _validate_tasks(tasks: Any) -> list[str]:
                 errors.append(
                     f"task_breakdown[{i}].depends_on: expected list[str] (模块名)"
                 )
+        # ★ 可选键 required_capabilities: 给了就必须是 str 列表（角色名; 不给 = 不声明）
+        if "required_capabilities" in task:
+            caps = task.get("required_capabilities")
+            if not isinstance(caps, list) or any(
+                not isinstance(x, str) or not x.strip() for x in caps
+            ):
+                errors.append(
+                    f"task_breakdown[{i}].required_capabilities: expected list[str] (角色名)"
+                )
     return errors
 
 
@@ -285,8 +294,11 @@ _ARCH_AGENT_PROMPT = (
     "产物给出 UI 实现指导)\n"
     "- backend_architecture: 后端架构 (字符串, 服务/模块)\n"
     "- task_breakdown: 任务拆分 (数组, 每项 task = {{module, task, "
-    "api_contract, ui_guidance, depends_on}} — 模块/技术任务/API 约定/UI 实现指导, "
+    "api_contract, ui_guidance, depends_on, required_capabilities}} — 模块/技术任务/"
+    "API 约定/UI 实现指导/先决模块/必需能力, "
     "供 Developer 直接消费)\n"
+    "  ★ required_capabilities = 该任务**需要什么能力**（角色名数组, 从下面清单里选; "
+    "可多选）。清单: {roles}。不确定 → 空数组 []（不猜）。\n"
     "  ★ depends_on = 该模块依赖的**模块名数组**（无依赖 → 空数组 []）。"
     "请按真实先决关系给: 脚手架/初始化/配置类模块→被其它模块依赖; "
     "底层(领域模型/存储)→被上层(命令/接口)依赖; 端到端测试→依赖被测的模块。"
@@ -505,9 +517,13 @@ class ArchitectAgent:
                 "design generation requires a provider (仅 DeepSeek v4-pro; "
                 "测试注入 mock)"
             )
+        # ★ roles 传真实角色清单（单一事实源: plugins/agents/roles.py 的 ROLE_IDS）
+        from ai_factory_os.plugins.agents.roles import ROLE_IDS as _ROLE_IDS
+
         prompt = _ARCH_AGENT_PROMPT.format(
             product=_input_summary("product", product_payload),
             ux_ui=_input_summary("ux_ui", ux_ui_payload),
+            roles=", ".join(_ROLE_IDS),
         )
         last_error: ArchitectError | None = None
         for attempt in range(self._max_retries + 1):

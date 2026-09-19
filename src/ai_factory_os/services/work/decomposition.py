@@ -202,6 +202,10 @@ def decompose_from_design(
             "depends_on": list(kw.get("depends_on") or []),
             "scope": str(kw.get("scope") or "")[:500],
             "required_role": kw.get("required_role") or _DEFAULT_ROLE,
+            # ★ 2026-09-19 加（M3 调度前置）: 该叶【需要什么能力】——
+            #   由架构阶段给（与 depends_on 同理: 依赖/能力都是架构设计的产物）。
+            #   消费方: bootstrap/scheduler_wiring.OrgResource（按能力命中选人）→ core/scheduler.evaluate
+            "required_capabilities": [str(c) for c in (kw.get("required_capabilities") or []) if str(c).strip()],
             "role_hint": str(kw.get("role_hint") or ""),      # ★ 提示（非事实）
             "acceptance": str(kw.get("acceptance") or "")[:300],
         }
@@ -247,6 +251,10 @@ def decompose_from_design(
             scope=contract[:300],
             required_role=_DEFAULT_ROLE,
             role_hint=_role_hint(module, desc),
+            # 架构种子给的必需能力（角色名）—— 不给就空（调度器会诚实报 UNRESOLVED, 不瞎派）
+            required_capabilities=[
+                str(c).strip() for c in (seed.get("required_capabilities") or []) if str(c).strip()
+            ],
             acceptance=contract or f"{module} 实现完成且可验证",
         )
         nodes.append(leaf)

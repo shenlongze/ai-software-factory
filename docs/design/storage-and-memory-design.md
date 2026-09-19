@@ -5,7 +5,47 @@
 
 ---
 
-## 0. 总纲: 一个概念, 一条纪律, 一个例外
+## 0. 先收敛, 再设计（本设计的第一原则）
+
+```
+★ 本设计不是"再设计一套存储", 而是"让存储只有一个地方定义"。
+
+【实测的病（2026-09-19）】
+  · Store/Index/Memory 类: ★ 24 个（散落 infrastructure/services/plugins）
+  · 数据落地:               ★ 8 处
+      projects/*/conversations(110) · knowledge(0, 空) · .factory_rag(11M) ·
+      search.db(26M) · factory.db(4.1M) · org(676K) · memory(652K) · ops(10M)
+  · 同名异物: KnowledgeStore ★ 两个不同实现
+      (infrastructure/retrieval/knowledge_store.py:378 与 services/organization/store.py:260)
+      + KnowledgeItem 是第三个概念
+  · "记忆/知识/事实"机制: 五套彼此不通
+      (会话 facts · scoped_facts · .factory_rag · search.db FTS5 · org 知识条目)
+
+【结论】病灶是"做好几套"。所以本设计的第一动作是**收敛**, 不是新增。
+
+【三件 + 一张表 + 一条纪律】
+  ① 事件源 = 唯一真相（append-only · WAL · 已有 factory.db）
+  ② 投影层 = 所有视图（状态/索引/记忆/影响面）—— ★ 一个机制, 不是 24 个 store
+  ③ 配置   = 唯一例外（设定 ≠ 事实 · 文件 + git）
+
+  ★ 一张表: 什么数据在哪 / 谁权威 / 怎么改 —— **全系统只有这一张**, 不是每处各设计一次
+
+  ★ 一条纪律: 新增任何存储前, 先问「能不能用【事件 + 投影】表达?」
+       能 ⇒ **不许新增 store**; 不能 ⇒ 才允许, 并写进那张表
+
+【收敛的验收标准（可量化）】
+  Store/Index/Memory 类:  24 → ≤ 3
+  数据落地处:              8 → 3
+  同名 KnowledgeStore:     2 → 1（合并或明确分工）
+  "记忆/知识"机制:         5 套不通 → 1 套
+
+【收敛方式】不做"大迁移"（那会造出新的一套）:
+  新增走新机制 + 旧的自然淘汰; 每淘汰一个, 上面四个数字减一。
+```
+
+---
+
+## 0.1 总纲: 一个概念, 一条纪律, 一个例外
 
 ```
 【一个概念】事件（append-only）

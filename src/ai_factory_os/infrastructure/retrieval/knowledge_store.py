@@ -382,10 +382,20 @@ class KnowledgeStore:
     slug: 项目标识; 索引独立目录 workspace/.factory_rag/<slug>/index.json。
     """
 
-    def __init__(self, workspace: Path | str, slug: str) -> None:
+    def __init__(self, workspace: Path | str, slug: str,
+                 *, index_root: Path | str | None = None) -> None:
+        """workspace = 【扫描源】(项目目录); index_root = 【索引存放根】(默认同 workspace)。
+
+        ★ 2026-09-19 新增 index_root（分离两件事）:
+          原实现把"扫描源"和"索引位置"绑在一起 ⇒ 用数据根当 workspace 时只能扫到
+          数据根里的文档, **扫不到项目文档**（实测: 索引一个月没更新且不含仓库文档）。
+          分离后: `KnowledgeStore(项目目录, slug, index_root=数据根)` ⇒ 扫项目、索引存数据根,
+          既不污染仓库, 又能索引真实项目文档。
+        """
         self.workspace = Path(workspace)
-        self.slug = Path(str(slug or "")).name
-        self.index_path = self.workspace / ".factory_rag" / self.slug / "index.json"
+        self.slug = slug
+        root = Path(index_root) if index_root else self.workspace
+        self.index_path = root / ".factory_rag" / self.slug / "index.json"
 
     # ------------------------------------------------------------ 索引 IO (失败安全)
 
@@ -415,35 +425,37 @@ class KnowledgeStore:
     # ------------------------------------------------------------ 扫描 (复用 board)
 
     def _scan_docs(self) -> list[dict[str, Any]]:
-        """复用 board.list_project_docs (read_docs_config 多目录+扩展名扫描)。
+        """扫描项目文档（★ 2026-09-19 改为**自足扫描**）。
 
-        只取 exists=True 的真实文件; 返回 {file, path, mtime, size}。
-        失败安全: board 扫描异常 → [] (不中断)。
+        为什么改: 原实现 `from ..session import board`（老区模块, 已随老区删除）
+        ⇒ 抛 ModuleNotFoundError ⇒ **索引一个月没更新**（updated_at 2026-08-26）,
+        且重建会失败/清空。这是"知识记忆断链"的根因之一（不只是没消费者, 连索引都没法更新）。
+
+        规则（设计文档 §2.2 R1–R3）:
+          R1 白名单: 只索引文档类（.md/.txt/.rst/.markdown + 具名知识文件）
+          R2 排除:   锁文件 / manifest / schema / 依赖目录 / 构建产物
+          R3 新鲜度: 只取真实存在的文件（已删的自然进不来）
+        失败安全: 单文件 stat 失败跳过, 不中断。
         """
-        from ..session import board  # 延迟导入 (避免循环依赖)
-
         docs: list[dict[str, Any]] = []
-        try:
-            entries = board.list_project_docs(self.workspace, self.slug)
-        except Exception:  # noqa: BLE001 — 失败安全
-            return []
-        for d in entries:
-            if not d.get("exists"):
+        for p in sorted(self.workspace.rglob("*")):
+            if not p.is_file():
                 continue
-            rel = str(d.get("name") or "")
-            src = str(d.get("source_dir") or "")
-            path = Path(src) / rel if src else Path(rel)
+            if p.suffix.lower() not in _TEXT_EXTS:
+                continue
+            rel = str(p.relative_to(self.workspace))
+            if _excluded(rel) or _NOISE_RE.search(rel):
+                continue
             try:
-                st = path.stat()
+                st = p.stat()
             except OSError:  # noqa: BLE001 — 失败安全
                 continue
             docs.append({
                 "file": rel,
-                "path": path,
+                "path": p,
                 "mtime": st.st_mtime,
                 "size": st.st_size,
             })
-        docs.sort(key=lambda d: d["file"])  # 确定性顺序
         return docs
 
     def _tally_tiers(self, chunks: list[dict[str, Any]]) -> dict[str, int]:
@@ -461,7 +473,8 @@ class KnowledgeStore:
         """
         result = IngestResult(slug=self.slug, incremental=False,
                               index_path=str(self.index_path))
-        files = self._scan_docs()
+        # ★ 按【文档重要性】排序后再索引 —— 撞到 20000 块上限时, 核心文档必进（R4 延伸）
+        files = sorted(self._scan_docs(), key=lambda d: _doc_rank(str(d.get("file") or "")))
         chunks: list[dict[str, Any]] = []
         files_map: dict[str, dict[str, Any]] = {}
         for f in files:
@@ -508,7 +521,8 @@ class KnowledgeStore:
             full = self.ingest()
             full.incremental = True
             return full
-        files = self._scan_docs()
+        # ★ 同上: 增量重建也按文档重要性排序（撞上限时核心文档必进）
+        files = sorted(self._scan_docs(), key=lambda d: _doc_rank(str(d.get("file") or "")))
         old_files = old.get("files") or {}
         old_chunks = [c for c in (old.get("chunks") or []) if isinstance(c, dict)]
         # 变更集: 新增 + mtime/size 变化
@@ -621,6 +635,73 @@ class KnowledgeStore:
 # ================================================= E-5 检索回路 (RAG_QUERY + trace_id)
 
 
+#: ★ 检索质量参数（设计文档 §2.2 R1–R4 · 2026-09-19）
+#: R4 分档加权: 档位 = 信息密度。knowledge(跨文档结论) > summary(章节/目录) > raw(正文片段)。
+_TIER_WEIGHT: dict[str, float] = {
+    TIER_KNOWLEDGE: 1.0,
+    TIER_SUMMARY: 0.85,
+    TIER_RAW: 0.70,
+    TIER_EXTERNAL: 0.60,
+}
+#: R4 单文件限流: 同一文件最多贡献几条 —— 防长文档(如方案书 2,720 片段)挤满结果。
+PER_FILE_CAP = 2
+#: R2 噪音过滤: 锁文件 / manifest / 生成 schema / 依赖目录 / 压缩产物 不参与排名。
+_NOISE_RE = re.compile(
+    r"(-lock\.json|package-lock|\.manifest\.|manifest\.json|\.schema\.|schema\.json|"
+    r"/node_modules/|/dist/|/build/|\.min\.(js|css)$)",
+    re.I,
+)
+#: R2 排除目录（扫描阶段就跳过, 不进索引 —— 依赖/缓存/环境/版本控制）。
+#: 实测: 用仓库当 workspace 时 `.venv` 会带进 146 个 md ⇒ 必须排除。
+_EXCLUDE_DIRS = frozenset({
+    ".git", ".venv", "venv", "env", "__pycache__", "node_modules",
+    ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", "dist", "build",
+    ".idea", ".vscode", "site-packages", "egg-info",
+})
+
+
+def _excluded(rel: str) -> bool:
+    """相对路径里是否含被排除的目录（按路径分段判断, 避免误伤同名文件）。"""
+    parts = rel.split("/")
+    for seg in parts[:-1]:                                # 最后一段是文件名, 不判
+        if seg in _EXCLUDE_DIRS or seg.endswith(".egg-info"):
+            return True
+    return False
+
+
+#: ★ 文档重要性权重（设计文档 §2.2 R4 的延伸: 索引有上限时, **谁先进索引**决定检索质量）。
+#: 实测病: 原实现按文件名顺序索引, 撞到 20000 块上限后**后面的全被跳过** —— 首轮丢了 598 个文档,
+#:         含 docs/design/ 全部（我们自己的设计文档进不来）⇒ 检索答不出"存储设计怎么做"。
+#: 规则: 设计/架构/放置/产品/经验 优先; 审计/报告/sprint/归档/演示 靠后。
+#: ⚠ 顺序敏感: **具体前缀必须排在泛指前缀之前**（否则 `docs/` 会盖住 `docs/audits/`）。
+_DOC_PRIORITY: tuple[tuple[str, int], ...] = (
+    ("docs/design/", 0),
+    ("docs/ssot/", 0),
+    ("docs/architecture/", 1),
+    ("docs/product", 1),
+    ("docs/adr/", 1),
+    ("docs/audits/", 8),
+    ("docs/audit/", 8),
+    ("docs/reports/", 8),
+    ("docs/archive/", 9),
+    ("docs/sprint", 7),
+    ("docs/case-study/", 7),
+    ("docs/cli/", 2),
+    ("docs/getting-started/", 2),
+    ("docs/", 3),                                     # 泛指: 必须排在上面所有 docs/xxx 之后
+    ("AGENTS.md", 0), ("CLAUDE.md", 0), ("README", 0), ("CHANGELOG", 2),
+    ("examples/", 6), ("demo", 6),
+)
+
+
+def _doc_rank(rel: str) -> tuple[int, str]:
+    """文档排序键（越小越先索引）。未命中任何前缀 ⇒ 中间权重 5。"""
+    for prefix, w in _DOC_PRIORITY:
+        if rel.startswith(prefix):
+            return (w, rel)
+    return (5, rel)
+
+
 def rag_query(
     workspace: Path | str,
     slug: str,
@@ -670,10 +751,31 @@ def rag_query(
                 reason=f"外部源 {name} 命中 (score={round(ext_score, 4)})",
                 source=f"external:{name}",
             ))
-    merged = sorted(
-        local_hits + external_hits,
-        key=lambda h: (-h.score, h.file, h.chunk_id),
-    )[: max(0, int(top_k))]
+    # ★ 2026-09-19 检索质量修复（设计文档 §2.2 R1–R4）—— 接通知识记忆的前置:
+    #   实测病: 三个查询全命中 CHANGELOG.md（文件长 ⇒ TF 高 = 词频型"万能命中"）;
+    #           结果全是 raw 档; 且混入老区/生成物。
+    #   修法（**检索后处理, 不动索引**: 零风险, 立即可见）:
+    #     R2 噪音过滤 —— 锁文件 / manifest / schema / 依赖目录 不参与排名
+    #     R4 分档加权 —— knowledge > summary > raw（档位是"信息密度"的排序）
+    #     R4 单文件限流 —— 同一文件最多 PER_FILE_CAP 条（防长文档挤满结果）
+    def _rank(hits: list[KnowledgeHit], cap: int = PER_FILE_CAP) -> list[KnowledgeHit]:
+        ranked = sorted(
+            hits,
+            key=lambda h: (-(h.score * _TIER_WEIGHT.get(h.tier, 0.5)), h.file, h.chunk_id),
+        )
+        out: list[KnowledgeHit] = []
+        seen: dict[str, int] = {}
+        for h in ranked:
+            f = str(h.file or "")
+            if _NOISE_RE.search(f):
+                continue
+            if seen.get(f, 0) >= cap:
+                continue
+            seen[f] = seen.get(f, 0) + 1
+            out.append(h)
+        return out
+
+    merged = _rank(local_hits + external_hits)[: max(0, int(top_k))]
     stats = {
         "local_hits": len(local_hits),
         "external_hits": len(external_hits),

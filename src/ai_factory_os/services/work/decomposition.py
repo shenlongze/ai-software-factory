@@ -255,19 +255,74 @@ def decompose_from_design(
     #     · "落地型→其余"启发式 ⇒ 并行度 11（全并行）
     #   现在: 种子给什么就是什么; **没给就不连边**（不猜 —— 不猜是纪律, 不是懒惰）。
     #   跨域先决的落点: 叶依赖【自己的 domain 节点】= 层级归属; 域间由种子 depends_on 表达。
+    #
+    # ★★ 2026-09-19 增（Founder 指出"任务→子任务→子子任务"的递归分解丢失了）:
+    #   本函数现在支持**种子嵌套** —— 种子的 `children` 会被递归物化:
+    #     有 children ⇒ kind=domain（容器）; 无 children ⇒ kind=task（叶子, 可执行）。
+    #   ⇒ 树深由【需求复杂度】决定, 不再固定 3 层。
+    #   依据: 老区曾实现过（ee84bc18 "递归分解（不限层数）", Founder 要求"层数不限,
+    #     只在确有必要时继续往下拆 —— 不要把每层都硬拆平"），绞杀老区时随 104,618 行一起丢失。
+    #   ★ 向后兼容: 种子无 children 时行为与旧版**完全一致**（每 seed = 1 domain + 1 leaf）。
     seed_order: dict[str, str] = {}          # 模块名 → domain 节点 id
     for idx, seed in enumerate(seeds, 1):
         if isinstance(seed, dict):
             mod = str(seed.get("module") or f"module-{idx}").strip()
             seed_order[mod] = ""                 # 先占位, 下面填 id
+
+    def _seed_node(seed: dict[str, Any], parent_id: str, idx: int,
+                   *, depth: int = 0) -> None:
+        """物化一个种子（含其 children 递归）。有 children ⇒ domain; 无 ⇒ task。"""
+        module = str(seed.get("module") or seed.get("task") or f"module-{idx}").strip()
+        desc = str(seed.get("task") or "").strip()
+        contract = str(seed.get("api_contract") or "").strip()
+        children = seed.get("children")
+        has_kids = isinstance(children, list) and bool(children)
+
+        if has_kids:
+            # 容器层（模块/阶段）—— 不再产叶, 叶在 children 里
+            dom = _node("domain", f"模块 {idx}: {module}", parent=parent_id,
+                        scope=(desc or contract)[:300])
+            seed_deps = [str(d).strip() for d in (seed.get("depends_on") or []) if str(d).strip()]
+            dom["depends_on"] = [i for i in (seed_order.get(d, "") for d in seed_deps) if i]
+            nodes.append(dom)
+            seed_order[module] = dom["id"]
+            for j, kid in enumerate(children or [], 1):
+                if isinstance(kid, dict) and depth + 1 <= DECOMPOSE_LIMITS["max_depth"]:
+                    _seed_node(kid, dom["id"], j, depth=depth + 1)
+            return
+
+        # 叶子任务（可执行）—— 与旧版行为一致
+        deps = [parent_id]
+        seed_deps = [str(d).strip() for d in (seed.get("depends_on") or []) if str(d).strip()]
+        deps += [i for i in (seed_order.get(d, "") for d in seed_deps) if i]
+        leaf = _node(
+            "task", desc or module, parent=parent_id,
+            change_type=str(seed.get("change_type") or "NEW_FILE"),
+            expected_files=_files_for(module, f"{desc} {contract}", stack),
+            depends_on=deps,
+            scope=contract[:300],
+            required_role=_DEFAULT_ROLE,
+            role_hint=_role_hint(module, desc),
+            required_capabilities=[
+                str(c).strip() for c in (seed.get("required_capabilities") or []) if str(c).strip()
+            ],
+            acceptance=str(seed.get("acceptance") or contract or f"{module} 实现完成且可验证"),
+        )
+        nodes.append(leaf)
+
     for idx, seed in enumerate(seeds, 1):
         if not isinstance(seed, dict):
             continue
         module = str(seed.get("module") or f"module-{idx}").strip()
         desc = str(seed.get("task") or "").strip()
         contract = str(seed.get("api_contract") or "").strip()
-        # ★ 架构给的模块级依赖（模块名 → domain 节点 id; 未给的模块名忽略）
         seed_deps = [str(d).strip() for d in (seed.get("depends_on") or []) if str(d).strip()]
+        children = seed.get("children")
+        has_kids = isinstance(children, list) and bool(children)
+
+        if has_kids:
+            _seed_node(seed, root_node["id"], idx)
+            continue
 
         dom = _node("domain", f"模块 {idx}: {module}", parent=root_node["id"], scope=desc[:300])
         # 域间依赖: 映射到那些被依赖模块的 domain 节点（此时已生成的在 seed_order 里）

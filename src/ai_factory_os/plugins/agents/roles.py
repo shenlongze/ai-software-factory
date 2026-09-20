@@ -114,7 +114,10 @@ _ARCH_PROMPT = (
     "(api_design, 含 endpoints) / 前端架构 (frontend_architecture) / "
     "后端架构 (backend_architecture) / 任务拆分 (task_breakdown, 每项含 "
     "module/task/api_contract/ui_guidance — 模块/API 约定/UI 实现指导, 供 "
-    "Developer 消费)。\n"
+    "Developer 消费; ★ 复杂模块可在该项内加 children 继续细分: children 是同结构的 "
+    "子任务数组, 可再嵌套 ⇒ 任务→子任务→子子任务; ★ 只在【确有必要】时下拆"
+    "（一个任务大到无法一次做完、或无法独立验收才拆）, 不要把每层都硬拆平; "
+    "不需要下拆的项不给 children 即可)。\n"
     "输出格式: 严格 JSON 对象, 7 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 

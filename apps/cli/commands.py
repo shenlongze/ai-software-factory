@@ -1368,7 +1368,8 @@ def cmd_run_plan(ctx: FactoryContext, args: Any) -> dict:
             pass
     max_parallel = int(getattr(args, "parallel", 3) or 3)
 
-    ports = wire_scheduler(ctx.root, plan_id=plan_id, project_id=project_id)
+    ports = wire_scheduler(ctx.root, plan_id=plan_id, project_id=project_id,
+                           budget=float(getattr(args, "budget", 1.0e9) or 1.0e9))   # ★ 预算门接真数据
     with ctx.logger_scope() as logger:
         service = _open_execution_service(ctx, logger=logger)
         store = _open_runtime_store(ctx)          # 失败回写用（与 service 同一个装配点）

@@ -1197,6 +1197,109 @@ def test_org_scope_reaches_execution() -> None:
     assert _check_org_scope_reaches_execution() == []
 
 
+def _check_file_conflict_demotion() -> list[str]:
+    """★ 文件冲突降级串行（cr-5）—— 并行安全前提: 同层写同一文件的执行不能同时跑。
+
+    实测病（2026-09-21）: 原实现遍历 `<root>/task_trees/*.json` —— 该目录**不存在**
+    （真树在 `projects/<P>/tasks/*.json`）⇒ 恒返回空 ⇒ 这段是**死代码**, 且没人发现。
+    """
+    import tempfile
+
+    from ai_factory_os.bootstrap import scheduler_pump as SP
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        proj, plan = "P-cf", "PLAN-cf"
+        d = root / "projects" / proj / "tasks"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{plan}.json").write_text(json.dumps({
+            "plan_id": plan, "project_id": proj, "status": "confirmed",
+            "nodes": [
+                {"id": "dom", "kind": "domain", "title": "D"},
+                {"id": "t1", "kind": "task", "parent_id": "dom", "title": "改 A",
+                 "status": "pending", "expected_files": ["src/a.py", "src/b.py"]},
+                {"id": "t2", "kind": "task", "parent_id": "dom", "title": "也改 A",
+                 "status": "pending", "expected_files": ["src/a.py"]},
+                {"id": "t3", "kind": "task", "parent_id": "dom", "title": "各自改",
+                 "status": "pending", "expected_files": ["src/c.py"]},
+            ],
+        }, ensure_ascii=False), encoding="utf-8")
+
+        serial = SP._conflicting_nodes(root)
+        if serial != {"t2"}:
+            bad.append(f"同层写同一文件时该把后来的降级串行（期望 {{'t2'}}, 实得 {serial}）"
+                       "（若为空 ⇒ 又退回'死代码'那个 bug）")
+        par, ser = SP._split_by_conflict(root, ["EXR1", "EXR2", "EXR3"],
+                                        {"EXR1": "t1", "EXR2": "t2", "EXR3": "t3"})
+        if sorted(ser) != ["EXR2"] or sorted(par) != ["EXR1", "EXR3"]:
+            bad.append(f"分批不对: 可并行 {par} · 串行 {ser}")
+    return bad
+
+
+def test_file_conflict_demotion() -> None:
+    """文件冲突 ⇒ 降级串行（且真的读到了树 —— 不是死代码）。"""
+    assert _check_file_conflict_demotion() == []
+
+
+def _check_load_gate_real_data() -> list[str]:
+    """★ 容量门 / 预算门接真数据（第 4 件·执行安全三件; Codex cr-6 "预算门是假数据"）。
+
+    实测病: `SimpleLoad.active_count` 恒 0、`remaining_budget` 恒 1e9
+      ⇒ 调度器 evaluate._pick 的两个条件（成员满 / 预算不够）**永不触发**。
+    判据:
+      ① active_count 数的是 RuntimeStore 里该成员【在跑】的执行（终态不算）
+      ② remaining_budget = 预算 − 真实花费（usage.estimated_cost 累计）
+      ③ 没数据 ⇒ 退回旧行为（0 / 预算全额）—— 默认不变
+      ④ 预算花超（remaining<0）⇒ evaluate._pick 的预算条件成立（该成员不被选）
+    """
+    import tempfile
+
+    from ai_factory_os.bootstrap.scheduler_wiring import SimpleLoad
+    from ai_factory_os.infrastructure.llm.providers.usage import ProviderUsage, UsageStore
+    from ai_factory_os.services.execution.runtime.store import open_runtime_store
+    from ai_factory_os.services.execution.runtime.types import (
+        ExecutionRequest, ExecutionStatus,
+    )
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        store = open_runtime_store(root)
+        for i, (mid, st) in enumerate((("m1", ExecutionStatus.PENDING),
+                                       ("m1", ExecutionStatus.PENDING),
+                                       ("m2", ExecutionStatus.RUNNING),
+                                       ("m1", ExecutionStatus.SUCCESS))):
+            store.save_execution(ExecutionRequest(
+                id=f"EXR-l{i}", task_id="PLAN-l", status=st,
+                input={"node_id": f"t{i}", "member_id": mid, "resolution_id": "r",
+                       "identity_id": mid}))
+        load = SimpleLoad(root)
+        if load.active_count("m1") != 2:
+            bad.append(f"m1 在跑数应 2（两条 PENDING; SUCCESS 不算）, 实得 {load.active_count('m1')}")
+        if load.active_count("m2") != 1 or load.active_count("m9") != 0:
+            bad.append(f"m2=1/m9=0 期望, 实得 {load.active_count('m2')}/{load.active_count('m9')}")
+        # ③ 没用量 ⇒ 花费 0 / 预算全额
+        if load.spent_total() != 0.0 or load.remaining_budget("m1") != 1.0e9:
+            bad.append(f"没有用量时该退回旧行为: spent={load.spent_total()} remaining={load.remaining_budget('m1')}")
+        # ② 真花费 ⇒ 剩余 = 预算 − 花费
+        UsageStore(root / "providers").record(ProviderUsage(
+            id="u1", provider_id="deepseek", model="m", prompt_tokens=1, completion_tokens=1,
+            estimated_cost=5.0, latency_ms=1, success=True))
+        load2 = SimpleLoad(root, budget=3.0)
+        if load2.spent_total() != 5.0 or abs(load2.remaining_budget("m1") + 2.0) > 1e-9:
+            bad.append(f"预算-花费没算对: spent={load2.spent_total()} remaining={load2.remaining_budget('m1')}")
+        # ④ 花超 ⇒ 预算门条件成立（evaluate._pick 里 `remaining < estimate`）
+        if not (load2.remaining_budget("m1") < 0):
+            bad.append("花超时剩余应为负 ⇒ 该成员过不了预算门")
+    return bad
+
+
+def test_load_gate_real_data() -> None:
+    """容量门/预算门接真数据: 在跑数来自执行、剩余=预算−真花费、没数据退回旧行为。"""
+    assert _check_load_gate_real_data() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -1227,6 +1330,8 @@ def main() -> int:
     results.append(("会话唯一入口（chain 覆盖到拆解·自动生成三件制品）", not _check_chain_covers_rings(), "；".join(_check_chain_covers_rings())))
     results.append(("流程接进主链（按步骤推进·走完才算完成·可编排）", not _check_workflow_drives_chain(), "；".join(_check_workflow_drives_chain())))
     results.append(("多公司/多部门落到执行（按归属筛人·不串公司）", not _check_org_scope_reaches_execution(), "；".join(_check_org_scope_reaches_execution())))
+    results.append(("文件冲突降级串行（并行安全前提·不是死代码）", not _check_file_conflict_demotion(), "；".join(_check_file_conflict_demotion())))
+    results.append(("容量门/预算门接真数据（不再是 0/1e9 假数据）", not _check_load_gate_real_data(), "；".join(_check_load_gate_real_data())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

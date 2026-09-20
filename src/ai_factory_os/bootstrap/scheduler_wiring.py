@@ -269,21 +269,66 @@ class OrgResource:
 # ------------------------------------------------------------------ ④ Load
 
 class SimpleLoad:
-    """LoadPort —— 容量与预算（刀1: 容量恒为 0 占用, 预算视为充足）。
+    """LoadPort —— 容量与预算。
 
-    ★ 诚实标注: 刀1 不接真实执行数/预算 ⇒ active_count 恒 0（不会因容量不足 defer）、
-      remaining_budget 返回一个足够大的值。刀2 接 execution + kernel/budget。
+    ★ 2026-09-21（第 4 件·执行安全三件）: 原来是**假数据**（active_count 恒 0,
+      remaining_budget 恒 1e9）⇒ 调度器的容量门与预算门**双重失效**（Codex cr-6:
+      "超限该阻断就阻断"没有数据支撑）。现在接真数据:
+        · active_count(member): RuntimeStore 里该成员【在跑】的执行数（PENDING/RUNNING）
+        · remaining_budget(scope): 预算 − 真实花费（ProviderUsage.estimated_cost 累计）
+      没有数据（无执行/无用量记录）⇒ 退回旧行为（0 / 预算全额）—— 默认不变。
+      注: 单价仍来自 `OrgResource.capability().cost.money`（现无价格模型 ⇒ 0）——
+         所以预算门的语义是「**花超了就不再派活**」（remaining<0 时任何 estimate 都过不了）。
     """
 
     def __init__(self, root: Path | str, budget: float = 1.0e9) -> None:
         self._root = Path(root)
         self._budget = budget
+        self._active: dict[str, int] | None = None
+        self._spent: float | None = None
+
+    def _executions(self) -> list[Any]:
+        try:
+            from ai_factory_os.services.execution.runtime.store import open_runtime_store
+
+            return list(open_runtime_store(self._root).list_executions())
+        except Exception:  # noqa: BLE001 — 读不到 ⇒ 不编（按 0 处理）
+            return []
 
     def active_count(self, member_id: str) -> int:
-        return 0
+        """该成员当前【在跑】的执行数（PENDING/RUNNING —— 终态不算）。"""
+        if self._active is None:
+            counts: dict[str, int] = {}
+            for req in self._executions():
+                status = str(getattr(getattr(req, "status", ""), "value", getattr(req, "status", ""))).upper()
+                if status not in ("PENDING", "RUNNING", "CLAIMED"):
+                    continue
+                mid = str((getattr(req, "input", None) or {}).get("member_id") or "")
+                if mid:
+                    counts[mid] = counts.get(mid, 0) + 1
+            self._active = counts
+        return self._active.get(str(member_id), 0)
+
+    def spent_total(self) -> float:
+        """真实累计花费（ProviderUsage.estimated_cost 求和）。"""
+        if self._spent is None:
+            total = 0.0
+            try:
+                from ai_factory_os.infrastructure.llm.providers.usage import UsageStore
+
+                for rec in UsageStore(self._root / "providers").list():
+                    try:
+                        total += float(getattr(rec, "estimated_cost", 0.0) or 0.0)
+                    except (TypeError, ValueError):
+                        continue
+            except Exception:  # noqa: BLE001 — 没用量库 ⇒ 0（不编）
+                total = 0.0
+            self._spent = total
+        return self._spent
 
     def remaining_budget(self, scope_ref: str) -> float:
-        return self._budget
+        """剩余预算 = 预算 − 真实累计花费（花超 ⇒ 负数 ⇒ 任何匹配都过不了预算门）。"""
+        return float(self._budget) - self.spent_total()
 
 
 # ------------------------------------------------------------------ ⑤ Gate

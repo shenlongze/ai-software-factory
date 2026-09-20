@@ -21,7 +21,6 @@
   · 不做跨进程锁（单 CLI 进程形态, 与 services/work/store.py 的约定一致）。
 """
 from __future__ import annotations
-import json
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -457,11 +456,10 @@ def _conflicting_nodes(root: Path) -> set[str]:
 
     serial: set[str] = set()
     try:
-        for f in sorted((Path(root) / "task_trees").glob("*.json")):
-            try:
-                tree = json.loads(f.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
+        # ★ 2026-09-21 修（真 bug）: 原来遍历 `(root)/task_trees/*.json` —— 该目录**根本不存在**
+        #   （真树在 `projects/<P>/tasks/*.json`）⇒ 恒返回空 ⇒ 冲突降级在生产上是**死代码**。
+        #   ⇒ 改用唯一读法 `D.list_trees(root)`（跨项目把树都取出来）。
+        for tree in D.list_trees(root) or []:
             for c in D.file_conflicts(tree) or []:
                 ids = [str(x) for x in (c.get("ids") or [])]
                 serial.update(ids[1:])          # 冲突组只留第一个可并行, 其余串行

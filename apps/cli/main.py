@@ -418,6 +418,8 @@ def build_parser() -> Any:
     p_run.add_argument("--parallel", type=int, default=3, help="批内并发上限（默认 3）")
     p_run.add_argument("--limit", type=int, default=0,
                        help="★ 本次最多跑几个执行（0=不限; 小步试跑用 —— 199 叶的树不限量会一路跑完）")
+    p_run.add_argument("--budget", type=float, default=1.0e9,
+                       help="★ 预算上限（真实花费累计超过它 ⇒ 不再派活; 默认 1e9 = 现状）")
 
     p_run_status = sub.add_parser(
         "run-status", help="执行结果查询 → exec CLI (薄代理: --id 结果 ID)"

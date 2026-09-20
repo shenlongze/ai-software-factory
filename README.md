@@ -26,6 +26,10 @@
 
 ## 还没闭环（如实列出，避免误导）
 
+- **插件（放下即用）**：把插件清单丢进 `~/.factory/ops/plugins/manifests/*.json` 即被自动注册
+  （`factory plugin list` 就能看到、`enable` 后其能力可被 `resolve` 到）；坏清单会响亮报错。
+  可声明式放下的类型见内核 `PLUGIN_TYPES`（provider / executor / agent / skill / tool / mcp / model…）；
+  代码级扩展点（connectors / controllers / healers 等 12 类插槽）仍需实现代码，不是清单能变的。
 - **流程可编排（已接，可选挂载）**：流程引擎与 4 个内置流程（`feature-delivery` / `desktop-feature` /
   `bug-fix` / `release`）已接进主链 —— `factory tasktree workflow <plan> --id feature-delivery` 挂上后，
   叶按流程**步骤顺序**推进（走完全部步骤才算完成，每步完成会交回待下一步）；不挂 = 现状（一叶一次派活）。

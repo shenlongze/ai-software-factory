@@ -54,6 +54,9 @@ def leaf_rows(root: Path | str, *, plan_id: str = "") -> list[dict[str, Any]]:
                 continue
             raw = str(n.get("status") or "").strip().lower()
             caps = [str(c) for c in (n.get("required_capabilities") or [])]
+            # ★ 粒度判据（判据在本模块外: services/work/granularity.py 一份）
+            from ai_factory_os.services.work import granularity as _gr
+            _why = _gr.reasons_for(n)
             rows.append({
                 "id": str(n.get("id") or ""),
                 "title": str(n.get("display_name") or n.get("title") or ""),
@@ -68,6 +71,9 @@ def leaf_rows(root: Path | str, *, plan_id: str = "") -> list[dict[str, Any]]:
                 "evidence": str(n.get("evidence") or ""),
                 "retry_count": int(n.get("retry_count") or 0),
                 "status_note": str(n.get("status_note") or ""),
+                # ★ 可能没拆到位（判据: 能不能一句话写出验收 —— 见 granularity.py）
+                "needs_split": bool(_why),
+                "split_reasons": _why,
                 "source": "tasktree",
             })
     return rows
@@ -93,6 +99,8 @@ def summary(root: Path | str, *, project_id: str = "", plan_id: str = "") -> dic
         "done": done,
         # ★ 完成的成色: 无产出证据 / 判不出的完成 ⇒ 要人看一眼（不混进"真做完了"）
         "verify_needed": sum(1 for r in rows if r.get("verify_needed")),
+        # ★ 粒度: 可能没拆到位的叶（人该用 `tasktree expand --node … --deep` 再拆一层）
+        "needs_split": sum(1 for r in rows if r.get("needs_split")),
         "retrying": sum(1 for r in rows if int(r.get("retry_count") or 0) > 0
                         and r["raw_status"] not in ("completed", "cancelled")),
         "percent": (done * 100 // len(rows)) if rows else 0,

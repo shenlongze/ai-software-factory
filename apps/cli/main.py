@@ -3318,6 +3318,21 @@ def _print_tasktree(args: Any, r: dict) -> None:
         if t.get("status") == "candidate":
             print("  ⚠ 候选态 —— 需 `factory tasktree confirm "
                   f"{t.get('plan_id')}` 才进执行")
+        # ★ 粒度（判据: 每个叶能不能【用一句话写出验收】—— Founder 定的, 见 skill ⑥）
+        try:
+            from ai_factory_os.services.work import granularity as _gr
+            g = _gr.summary(t.get("nodes") or [])
+        except Exception:  # noqa: BLE001 — 判不了不影响看树
+            g = {}
+        if g:
+            if g.get("oversized"):
+                print(f"  ⚠ 粒度: {g['oversized']}/{g['leaves']} 个叶可能没拆到位"
+                      f"（判据: {g['basis']}）")
+                for s_ in g.get("samples") or []:
+                    print(f"      · {s_['title'][:40]}  ← {s_['reasons'][0]}")
+                print(f"      人可改: {g['how_to_fix']}")
+            else:
+                print(f"  ✓ 粒度: {g.get('leaves', 0)} 个叶都拆到位了（判据: {g.get('basis')}）")
         print("  ── 树:")
         for dom in [n for n in t.get("nodes", []) if n.get("kind") == "domain"]:
             print(f"    [{dom['kind']}] {dom['title']}")
@@ -3361,6 +3376,15 @@ def _print_tasktree(args: Any, r: dict) -> None:
         elif kp.get("reason"):
             print(f"  ⚠ 关键路径算不出: {kp['reason']}（★ 不硬给一条假的）")
         print("  （★ = 在关键路径上; 其余是可并行的旁支）")
+        # ★ 粒度提示（Founder 判据: 每个叶能不能【用一句话写出验收】不能 ⇒ 还没拆到位）
+        try:
+            from ai_factory_os.services.work import granularity as _gr
+            g = _gr.summary(nodes)
+        except Exception:  # noqa: BLE001
+            g = {}
+        if g.get("oversized"):
+            print(f"  ⚠ 粒度: {g['oversized']}/{g.get('leaves')} 个叶可能没拆到位"
+                  f"（{g.get('basis')}）⇒ 人可改: {g.get('how_to_fix')}")
         print()
         by_parent: dict[str, list] = {}
         for n in nodes:
@@ -4343,6 +4367,17 @@ def _print_status(r: dict) -> None:
         print(f"  开发任务  {dt.get('done', 0)}/{dt.get('leaves', 0)} 叶（{dt.get('percent', 0)}%）"
               f" · {dt.get('plans', 0)} 个计划 · by_status {dt.get('by_status') or '{}'}")
         print(f"            ↑ 来源: {dt.get('source')}")
+        # ★ 粒度 + 完成成色（都要人看一眼的两类；见 granularity.py / 卡点 3）
+        _extra = []
+        if dt.get("needs_split"):
+            _extra.append(f"⚠ {dt['needs_split']} 个叶可能没拆到位"
+                          "（判据: 一句话写不出验收）⇒ tasktree expand --deep")
+        if dt.get("verify_needed"):
+            _extra.append(f"⚠ {dt['verify_needed']} 个'完成'没有产出证据 ⇒ 待核")
+        if dt.get("retrying"):
+            _extra.append(f"{dt['retrying']} 条失败重试中")
+        for x in _extra:
+            print(f"            {x}")
     if r.get("fleet_count"):
         print(f"  舰队      {r['fleet_count']} 人（agents.json; 与 dashboard 同一份）")
 

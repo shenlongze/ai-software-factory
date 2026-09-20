@@ -269,6 +269,46 @@ def test_small_fixes(tmp_path: Path) -> None:
     assert _check_small_fixes(tmp_path) == []
 
 
+def _check_granularity() -> list[str]:
+    """★ 粒度判据（Founder: "每个叶能不能用一句话写出验收？不能 ⇒ 还没拆到位"）。
+
+    判据要有区分度 —— 所以三条都要有【反例】: 单件的叶不许被判成"没拆到位"。
+    """
+    from ai_factory_os.services.work import granularity as G
+
+    bad: list[str] = []
+    single = {"kind": "task", "title": "导出 Excel/CSV 给会计",
+              "acceptance": "按月份生成可下载的 csv 文件"}
+    multi_seg = {"kind": "task", "title": "项目创建与维护",
+                 "acceptance": "POST /api/projects -> project；GET /api/projects/{id} 返回聚合；PUT 更新"}
+    multi_enum = {"kind": "task", "title": "按项目生成发票：税率、折扣、合计计算、编号规则",
+                  "acceptance": "发票金额与税率一致"}
+    no_acc = {"kind": "task", "title": "发票状态机", "acceptance": ""}
+    domain = {"kind": "domain", "title": "甲、乙、丙、丁", "acceptance": ""}
+
+    if G.reasons_for(single):
+        bad.append(f"单件的叶被误判: {G.reasons_for(single)}")
+    if not G.reasons_for(multi_seg):
+        bad.append("验收分段（两个独立交付）没被判出来")
+    if not G.reasons_for(multi_enum):
+        bad.append("标题枚举 >=3 件事没被判出来")
+    if not G.reasons_for(no_acc):
+        bad.append("没验收没被判出来")
+    if G.reasons_for(domain):
+        bad.append("域节点不该参与粒度判定（只判 kind=task）")
+    sm = G.summary([single, multi_seg, multi_enum, no_acc, domain])
+    if (sm["leaves"], sm["oversized"]) != (4, 3):
+        bad.append(f"汇总数不对: leaves={sm['leaves']} oversized={sm['oversized']}")
+    if not sm.get("how_to_fix") or not sm.get("basis"):
+        bad.append("汇总必须给出'怎么改'与判据（否则人不知道拿它怎么办）")
+    return bad
+
+
+def test_granularity_judgement() -> None:
+    """粒度: 一句话写不出验收的叶要被判出来, 且单件的叶不许误判。"""
+    assert _check_granularity() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -286,6 +326,7 @@ def main() -> int:
     results.append(("监控看得见执行（树 → status/metrics/看板）", not bad2, "；".join(bad2)))
     results.append(("执行状态语义（可重试 / 完成留证据）", not bad3, "；".join(bad3)))
     results.append(("小卡点（限量 / 引用语义 / create 不静默）", not bad4, "；".join(bad4)))
+    results.append(("拆解粒度（一句话写不出验收 ⇒ 没拆到位）", not _check_granularity(), "；".join(_check_granularity())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

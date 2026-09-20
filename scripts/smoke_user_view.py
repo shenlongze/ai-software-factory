@@ -291,10 +291,14 @@ def _check_declare(root: Path) -> list[str]:
     if parse_entity_spec(["Order:write", "User"], {"Order", "User"}) != [
             {"name": "Order", "access": "write"}, {"name": "User", "access": "both"}]:
         bad.append("手动声明解析不对（Order:write / User ⇒ both）")
-    for spec, why in ([["编的:read"], "清单外的实体名"], [["Order:删"], "非法 access"],
-                      [[]], "空输入"):
+    # ★ 探针必须【能区分】: 一个非法名 + 一个合法名 ——
+    #   有校验 ⇒ 抛错; 若校验被删 ⇒ 静默只返回合法那个（图省事写成只喂非法名会"永远通过", 守不住）
+    bad_specs = [(["编的:read", "Order"], "清单外的实体名（必须抛错, 不许静默丢弃）"),
+                 (["Order:删"], "非法 access"),
+                 ([], "空输入")]
+    for spec, why in bad_specs:
         try:
-            parse_entity_spec(spec if isinstance(spec, list) else [], {"Order", "User"})
+            parse_entity_spec(spec, {"Order", "User"})
             bad.append(f"手动声明该报错却通过了: {why}")
         except ValueError:
             pass

@@ -995,6 +995,36 @@ def test_repo_closing_contract() -> None:
     assert _check_repo_closing_contract() == []
 
 
+def _check_chain_covers_rings() -> list[str]:
+    """★ `factory chain` = 会话唯一入口（核心第1条）: 覆盖 需求→拆解 每一步, 且 ⑤ **自动生成**三件制品。
+
+    为什么守这条（2026-09-21 我自己误读过）: 该模块 docstring 写"缺产物时只在结果里提示", 而**代码**
+    里 s5 是**自动生成** 产品定义/交互设计/架构设计（缺哪个补哪个）⇒ 只看自述会得出"链到拆解就断"的
+    错误结论。守据: 三件制品的生成调用必须在源码里, 且 ①–⑦ 的步骤标签齐。
+    """
+    import inspect
+
+    from apps.cli.domains import chain as CH
+
+    bad: list[str] = []
+    src = inspect.getsource(CH)
+    for kw in ("cmd_product_develop", "cmd_product_ux", "_dispatch_arch"):
+        if kw not in src:
+            bad.append(f"⑤ 不再自动生成制品（缺 {kw}）⇒ 从零场景会断在拆解（arch 是 decompose 的必需输入）")
+    for label in ("① 定位", "② 建会话", "③ 理解", "④ PRD", "⑤ 分析产物", "⑥ 拆解", "⑦ 细拆"):
+        if label not in src:
+            bad.append(f"步骤标签缺 {label}（人看不到这一段跑了没有）")
+    # 失败要停在那步并记录（不许静默跳过）
+    if '"fail"' not in src:
+        bad.append("没有 fail 记录 ⇒ 断链会被静默跳过")
+    return bad
+
+
+def test_chain_covers_rings() -> None:
+    """chain 覆盖 需求→拆解 全步 + 自动生成三件制品 + 失败可见。"""
+    assert _check_chain_covers_rings() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -1022,6 +1052,7 @@ def main() -> int:
     results.append(("LLM key 归属（factory 自己的 .env·写读同源）", not _check_llm_key_resolution(), "；".join(_check_llm_key_resolution())))
     results.append(("需求定位读会话（不给文本/归属自动带出）", not _check_locate_reads_conversation(), "；".join(_check_locate_reads_conversation())))
     results.append(("执行收尾契约（提交/未提交分开·指令写清）", not _check_repo_closing_contract(), "；".join(_check_repo_closing_contract())))
+    results.append(("会话唯一入口（chain 覆盖到拆解·自动生成三件制品）", not _check_chain_covers_rings(), "；".join(_check_chain_covers_rings())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

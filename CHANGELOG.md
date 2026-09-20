@@ -1,5 +1,23 @@
 # Changelog
 
+## [v1.3.1] — 2026-09-21
+
+**打包修复（patch）** —— v1.3.0 的 wheel 是**空壳**: `pip install git+…` 装得上, 但 `factory` 起不来
+（`ModuleNotFoundError: No module named 'ai_factory_os.plugins'`）。**本地 editable 安装看不出这个病**——
+只有"在干净环境里真装一次"才暴露。
+
+### Fixed
+- **wheel 缺子包**: `pyproject.toml` 里原来是**手工枚举** `packages = [4 条]`（注释自己写着
+  "新增子包须同步本列表"）—— `ai_factory_os` 只列了顶层, 其下 `bootstrap/contracts/core/
+  infrastructure/plugins/services` **全没进 wheel**。现改为**自动发现**
+  （`[tool.setuptools.packages.find] where=["src","."] include=["ai_factory_os*","apps*"]`）
+  ⇒ 以后新增子包不必同步任何列表。
+- 真验证（not "它说成功"）: 构出的 wheel 里 `plugins 43` · `bootstrap 6` · `core 10` · `apps/cli 24` 个文件;
+  在**干净 venv** 里装该 wheel ⇒ `factory --help` 起 · 空根 `factory --root /tmp/x status` 出真数据。
+
+### Notes
+- 修复前请不要用 `v1.3.0` 的对外安装路径; 代码层面 v1.3.0 → v1.3.1 无行为差异（只修打包）。
+
 ## [v1.3.0] — 2026-09-21
 
 **产品核心 5 条定义全部落地 + 执行安全三件 + 监控接真数据 + 拆解递归到最小单位 + 对外发布**

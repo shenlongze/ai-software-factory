@@ -4861,6 +4861,11 @@ def _print_run_plan(r: dict) -> None:
     """run --plan 的输出（说人话: 跑了几个 / 为什么停 / 有没有冲突降级）。"""
     print(f"\n  ▲ 跑任务树: {r.get('plan_id')}")
     print(f"    轮次 {r.get('ticks')} · 创建执行 {len(r.get('scheduled') or [])} 个")
+    # ★ 交回的陈旧认领（进程中断遗留的 claimed）—— 必须让人看见（否则"怎么又动了"说不清）
+    if r.get("released"):
+        print(f"    ↺ 交回陈旧认领 {len(r['released'])} 条（进程中断遗留, 无活跃执行）:")
+        for x in r["released"][:3]:
+            print(f"      · {str(x.get('title'))[:40]}  [{str(x.get('node_id'))[-8:]}]")
     for o in (r.get("outcomes") or [])[:12]:
         print(f"      · {str(o.get('execution_id'))[:26]:<28} {str(o.get('state'))[:44]}")
     if r.get("deferred"):

@@ -91,6 +91,56 @@ def _looks_failed(out: Any) -> bool:
     return _run_status(out) in ("FAILED", "ERROR", "ERRORED", "CANCELLED")
 
 
+def sweep_stale_claims(root: Path, ports: Ports) -> list[dict[str, str]]:
+    """★ 把【陈旧认领】交回 pending —— `claimed` 但**没有任何活跃执行**指着它的叶。
+
+    为什么必须有它: 进程中断（Ctrl-C / 被 kill / 崩）后叶停在 `claimed`, 而那个"活跃执行"已经没了
+    ⇒ 调度器判该叶"已有活跃执行"⇒ 永远 BLOCKED ⇒ **整棵树从此不动**（实测: 一次中断留下 1 个 claimed,
+    之后再跑就是"就绪叶为空"）。
+
+    ★★ 安全边界（这条最要紧）: **只动没有活跃执行的叶** —— 有 PENDING/RUNNING 执行的一律不碰,
+    绝不抢正在跑的活。读不到执行存储 ⇒ 整轮不扫（不能瞎动）。
+    ★ 交回 **不计** retry_count（它不是失败, 别吃重试额度）。
+    """
+    from ai_factory_os.services.work import decomposition as D
+
+    plan_id = str(getattr(ports.work, "_plan_id", "") or "")
+    project_id = str(getattr(ports.work, "_project_id", "") or "")
+    active: set[str] = set()
+    try:
+        for req in open_runtime_store(root).list_executions():
+            st = str(getattr(req.status, "value", req.status) or "").upper()
+            node = str((req.input or {}).get("node_id") or "")
+            if node and st in ("PENDING", "RUNNING"):
+                active.add(node)
+    except Exception:  # noqa: BLE001 — 读不到执行存储 ⇒ 不扫（不能瞎动数据）
+        return []
+
+    out: list[dict[str, str]] = []
+    try:
+        metas = D.list_trees(root)
+    except Exception:  # noqa: BLE001
+        return []
+    for meta in metas:
+        pid = str(meta.get("plan_id") or "")
+        if plan_id and pid != plan_id:
+            continue
+        tree = D.load_tree(root, pid)
+        if not tree:
+            continue
+        pj = str(tree.get("project_id") or project_id or "")
+        for n in tree.get("nodes") or []:
+            nid = str(n.get("id") or "")
+            if str(n.get("status") or "") != "claimed" or not nid or nid in active:
+                continue
+            if D.release_leaf(root, pid, nid, status="pending", project_id=pj,
+                              note="陈旧认领（无活跃执行, 进程中断遗留）⇒ 交回, 不计重试",
+                              count_retry=False):
+                out.append({"plan_id": pid, "node_id": nid,
+                            "title": str(n.get("title") or "")[:50]})
+    return out
+
+
 def _repo_changed(repo: str, *, window_sec: int = 1800) -> bool | None:
     """项目仓库有没有【产出迹象】⇒ True/False; 判不出来 ⇒ None（调用方标"待核"）。
 
@@ -377,6 +427,7 @@ class PumpReport:
     scheduled: list[str] = field(default_factory=list)     # 本驱动创建的执行 id
     outcomes: list[dict[str, Any]] = field(default_factory=list)  # 每个执行的终态摘要
     deferred: list[str] = field(default_factory=list)      # 被容量/预算推迟的叶
+    released: list[dict[str, str]] = field(default_factory=list)  # ★ 交回的陈旧认领（进程中断遗留）
     paused: list[str] = field(default_factory=list)        # ★ 被 steering 指令暂停的叶（吸收项 7）
     stopped_because: str = ""                              # 停止原因（可解释）
 
@@ -443,6 +494,8 @@ def drive(
     """
     rep = PumpReport()
     root = Path(getattr(ports.work, "_root", "."))
+    # ★ 起手先交回【陈旧认领】（进程中断遗留的 claimed）—— 否则它们永远 BLOCKED, 整棵树不动
+    rep.released = sweep_stale_claims(root, ports)
 
     for _ in range(max_ticks):
         # ★ 限量: 已经跑够就停（停在【执行之间】, 不打断正在跑的那批）

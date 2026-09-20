@@ -446,6 +446,90 @@ def test_evidence_judgement() -> None:
     assert _check_evidence_judgement() == []
 
 
+def _check_stale_claim_sweep() -> list[str]:
+    """★ 陈旧认领要能交回, 但**绝不抢正在跑的活**（安全边界比功能更要紧）。
+
+    场景: 进程中断后叶停在 claimed, 而执行没了 ⇒ 永远 BLOCKED（实测: 之后再跑就是"就绪叶为空"）。
+    """
+    import json as _json
+    import tempfile
+    from types import SimpleNamespace
+
+    from ai_factory_os.bootstrap import scheduler_pump as SP
+    from ai_factory_os.services.work import decomposition as D
+
+    bad: list[str] = []
+
+    class _Req:
+        def __init__(self, node, status):
+            self.input = {"node_id": node}
+            self.status = SimpleNamespace(value=status)
+            self.task_id = "PLAN-s"
+
+    class _Store:
+        def __init__(self, reqs):
+            self._reqs = reqs
+
+        def list_executions(self):
+            return self._reqs
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        d = root / "projects" / "P-s" / "tasks"
+        d.mkdir(parents=True)
+        tree = {"plan_id": "PLAN-s", "project_id": "P-s", "status": "confirmed", "nodes": [
+            {"id": "p", "kind": "project", "parent_id": "", "title": "项目"},
+            {"id": "M", "kind": "domain", "parent_id": "p", "title": "模块"},
+            {"id": "L-stale", "kind": "task", "parent_id": "M", "title": "中断遗留的叶",
+             "status": "claimed", "claimed_by": "agent-x"},
+            {"id": "L-live", "kind": "task", "parent_id": "M", "title": "正在跑的叶",
+             "status": "claimed", "claimed_by": "agent-y"},
+        ]}
+        (d / "PLAN-s.json").write_text(_json.dumps(tree, ensure_ascii=False), encoding="utf-8")
+        ports = SimpleNamespace(work=SimpleNamespace(_root=str(root), _plan_id="PLAN-s",
+                                                     _project_id="P-s"))
+        orig = SP.open_runtime_store
+        try:
+            # ① L-live 有活跃(PENDING)执行 ⇒ 不许动; L-stale 没有 ⇒ 应交回
+            SP.open_runtime_store = lambda _r: _Store([_Req("L-live", "PENDING")])  # type: ignore[assignment]
+            out = SP.sweep_stale_claims(root, ports)  # type: ignore[arg-type]
+        finally:
+            SP.open_runtime_store = orig  # type: ignore[assignment]
+        ids = {x["node_id"] for x in out}
+        if ids != {"L-stale"}:
+            bad.append(f"交回集合不对: {ids}（只该交回 L-stale, 绝不碰有活跃执行的 L-live）")
+        t2 = D.load_tree(root, "PLAN-s", "P-s") or {}
+        st = {n["id"]: n for n in t2.get("nodes") or []}
+        if st["L-stale"].get("status") != "pending":
+            bad.append("陈旧认领没被交回 pending")
+        if st["L-stale"].get("retry_count"):
+            bad.append(f"陈旧认领不该计重试: retry_count={st['L-stale'].get('retry_count')}")
+        if not st["L-stale"].get("status_note"):
+            bad.append("交回没写原因（人看不到为什么动了它）")
+        if st["L-live"].get("status") != "claimed" or not st["L-live"].get("claimed_by"):
+            bad.append("★ 抢了正在跑的活（安全边界被破坏）")
+        # ② 读不到执行存储 ⇒ 整轮不扫（不能瞎动）
+        tree2 = dict(tree, nodes=[dict(n) for n in tree["nodes"]])
+        (d / "PLAN-s.json").write_text(_json.dumps(tree2, ensure_ascii=False), encoding="utf-8")
+
+        def _boom(_r):
+            raise RuntimeError("store down")
+
+        try:
+            SP.open_runtime_store = _boom  # type: ignore[assignment]
+            out2 = SP.sweep_stale_claims(root, ports)  # type: ignore[arg-type]
+        finally:
+            SP.open_runtime_store = orig  # type: ignore[assignment]
+        if out2:
+            bad.append("执行存储读不到时不该动任何叶")
+    return bad
+
+
+def test_stale_claim_sweep() -> None:
+    """陈旧认领交回, 但绝不抢有活跃执行的叶。"""
+    assert _check_stale_claim_sweep() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -467,6 +551,7 @@ def main() -> int:
     results.append(("UX/UI 截断自愈（逐节生成）", not _check_ux_truncation_fallback(), "；".join(_check_ux_truncation_fallback())))
     results.append(("写树位置唯一（漏传 project_id 也不造副本）", not _check_tree_write_path(), "；".join(_check_tree_write_path())))
     results.append(("产出证据判定（不猜）", not _check_evidence_judgement(), "；".join(_check_evidence_judgement())))
+    results.append(("陈旧认领交回（不抢活跃执行）", not _check_stale_claim_sweep(), "；".join(_check_stale_claim_sweep())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

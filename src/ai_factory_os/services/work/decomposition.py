@@ -547,6 +547,7 @@ def release_leaf(
     project_id: str = "",
     status: str = "pending",
     note: str = "",
+    count_retry: bool = True,
 ) -> bool:
     """归还/推进一个已被认领的叶（执行完 → completed；失败 → 交回 pending 供重认）。
 
@@ -555,6 +556,8 @@ def release_leaf(
         也不能"环境性失败一次就永久取消"—— 两种病都踩过）
       · status="completed"/"cancelled" ⇒ 终态 ⇒ 清掉 retry_count
       · `note` ⇒ 记进 `status_note`（人能看到"为什么回到 pending / 为什么被终止"）
+      · `count_retry=False` ⇒ 交回但**不算失败重试**（用于"陈旧认领"这种非失败场景,
+        否则重试计数会被冤枉地吃掉重试额度）
     """
     with _CLAIM_LOCK:
         tree = _read(root, plan_id, project_id)
@@ -565,7 +568,7 @@ def release_leaf(
                 n["status"] = status
                 n.pop("claimed_by", None)
                 n.pop("claimed_at", None)
-                if status == "pending":
+                if status == "pending" and count_retry:
                     n["retry_count"] = int(n.get("retry_count") or 0) + 1
                 elif status in ("completed", "cancelled"):
                     n.pop("retry_count", None)

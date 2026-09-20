@@ -566,6 +566,16 @@ def build_parser() -> Any:
     json_opt(p_tt_flow)
     p_tt_flow.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
     p_tt_flow.add_argument("--project", default=None, help="项目 id")
+    p_tt_e = ttsub.add_parser(
+        "edit", help="★ 逐节点编辑（改标题/验收/人话名/依赖, 或删节点）—— 改完回到候选态")
+    json_opt(p_tt_e)
+    p_tt_e.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
+    p_tt_e.add_argument("--node", required=True, help="节点 id（可用短 id, 见 show/todo 输出）")
+    p_tt_e.add_argument("--title", default=None, help="改标题（专业名）")
+    p_tt_e.add_argument("--acceptance", default=None, help="改验收标准")
+    p_tt_e.add_argument("--display-name", dest="display_name", default=None, help="改人话名")
+    p_tt_e.add_argument("--drop", action="store_true", help="删除该节点及其子树")
+    p_tt_e.add_argument("--project", default=None, help="项目 id")
     p_tt_d = ttsub.add_parser("decompose", help="从 Design Artifact 生成任务树（候选态）")
     json_opt(p_tt_d)
     p_tt_d.add_argument("--project", required=True, help="项目 id")
@@ -2378,7 +2388,6 @@ def _tasktree_flow(ctx: FactoryContext, args: Any) -> dict:
     if not tree:
         raise CliError(f"任务树不存在: {plan_id}（factory tasktree list 看有哪些）", exit_code=1)
     nodes = tree.get("nodes") or []
-    by_id = {str(n.get("id") or ""): n for n in nodes}
     doms = [n for n in nodes if n.get("kind") == "domain"]
     # 被依赖次数（主次: 被依赖多 ⇒ 更靠前的基础件）
     dep_count: dict[str, int] = {}
@@ -2414,6 +2423,31 @@ def _tasktree_flow(ctx: FactoryContext, args: Any) -> dict:
         },
     }
 
+
+def _tasktree_edit(ctx: FactoryContext, args: Any) -> dict:
+    """`factory tasktree edit <plan> --node <id> [--title/--acceptance/--display-name] [--drop]`
+    —— ★ 逐节点编辑（Founder: "每一个子节点, 用户都有可能做修改"）。
+
+    ★ 为什么改完回到候选态: 用户改完 ⇒ 与"刚才确认过的树"不再是同一棵 ⇒
+      必须重新确认才进执行（否则确认门形同虚设）。
+    """
+    from ai_factory_os.services.work import decomposition as _D
+
+    plan_id = str(getattr(args, "plan_id", "") or "")
+    project = str(getattr(args, "project", "") or "")
+    r = _D.edit_node(
+        ctx.root, plan_id,
+        node_id=str(getattr(args, "node", "") or ""),
+        project_id=project,
+        title=getattr(args, "title", None),
+        acceptance=getattr(args, "acceptance", None),
+        display_name=getattr(args, "display_name", None),
+        drop=bool(getattr(args, "drop", False)),
+    )
+    return {"ok": True, "action": "tasktree-edit", **r,
+            "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(r["tree"])),
+                        "done": 0, "percent": "0"}}
+
 def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
     """factory tasktree list|show|decompose|confirm —— 产品环 ⑤「任务拆解」。
 
@@ -2435,6 +2469,8 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
         return _tasktree_todo(ctx, args)
     if cmd == "flow":
         return _tasktree_flow(ctx, args)
+    if cmd == "edit":
+        return _tasktree_edit(ctx, args)
 
     if cmd == "list":
         trees = D.list_trees(ctx.root, project_id)
@@ -2566,7 +2602,8 @@ def _print_tasktree(args: Any, r: dict) -> None:
             print(f"    [{dom['kind']}] {dom['title']}")
             for lf in [n for n in t.get("nodes", []) if n.get("parent_id") == dom["id"]]:
                 hint = f" hint={lf['role_hint']}" if lf.get("role_hint") else ""
-                print(f"       └ [{lf['kind']}] {lf['title'][:56]}")
+                print(f"       └ [{lf['kind']}] {lf['title'][:56]}"
+                      f"   [{str(lf.get('id'))[-8:]}]")
                 print(f"          role={lf['required_role']}{hint}  change={lf['change_type'] or '-'}"
                       f"  files={lf['expected_files'] or '[]'}")
                 print(f"          验收: {lf['acceptance'][:88]}")
@@ -2603,7 +2640,7 @@ def _print_tasktree(args: Any, r: dict) -> None:
                     who = f"待派（需要: {_cap_word(caps[0])}）" if caps else "待派"
                 indent = "  " * (depth + 2)
                 name = _todo_display_name(n.get("title"))
-                line = f"{indent}{mark} {name}"
+                line = f"{indent}{mark} {name}   [{str(n.get('id'))[-8:]}]"
                 if depth > 0 and who:
                     line += f"    {who}"
                 print(line)
@@ -2639,6 +2676,14 @@ def _print_tasktree(args: Any, r: dict) -> None:
             print(f"    {_todo_display_name(names[nid]):<20} ← {src}")
         print()
         print("  （同层可并行 · 层间有前后依赖）")
+    elif cmd == "edit":
+        n = r.get("node") or {}
+        print(f"✔ {r.get('action')}: {_todo_display_name(n.get('title'))}")
+        print(f"  节点: {str(n.get('id'))[-8:]}")
+        if n.get("acceptance"):
+            print(f"  验收: {n['acceptance'][:80]}")
+        print(f"  ★ 树已回到【候选态】（{r.get('status')}）—— 需重新确认:")
+        print(f"     factory tasktree confirm {r['tree'].get('plan_id')}")
     elif cmd == "decompose":
         t = r["tree"]
         s = r["summary"]

@@ -1049,12 +1049,22 @@
       <b>★ 顺序完全符合工程实际</b>（脚手架→数据库→认证/商品→购物车/用户→订单→支付→对账/看板→测试）<br>
       <b>实现</b>: 按【domain 子图】Kahn 分层（不是用 parallel_groups —— 那个按叶分层,
       而用户要看的是"模块级"先后）; 被依赖次数显示主次; 有环时整批放一层（不阻塞·不静默丢弃）</span></span></label>
-    <label class="item"><input type="checkbox" id="rf-8"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>⬜ 余项: 逐节点可改 · 定位 · 需求拆解 · 3 字段</span>
-      <span class="meta">① 逐节点可看/可改/可确认（现只有整树 confirm）② 定位（类型+承接, 现在完全没有）<br>
-      ③ 分析层补"需求拆解"（业务模块拆分）④ 3 个新字段落地（display_name/assignee/progress）
-      + display_name 改由 LLM 翻译<br>
-      <b>★ 范围</b>: 不含执行。★ 用户视图两个投影（todo + flow）已完成 ✓</span></span></label>
+    <label class="item done"><input type="checkbox" id="rf-8" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 逐节点可改: <code>tasktree edit</code></span>
+      <span class="meta"><b>Founder</b>: "每一个子节点, 用户都有可能做修改"<br>
+      <b>命令</b>: <code>factory tasktree edit &lt;plan&gt; --node &lt;id&gt; [--title/--acceptance/--display-name] [--drop]</code><br>
+      <b>设计决策</b>: 改完【回到候选态】 ⇒ 必须重新确认才进执行 ——<br>
+      &nbsp;★ 理由: 用户改完 ⇒ 与"刚才确认过的树"不再是同一棵 ⇒ 否则确认门形同虚设。<br>
+      <b>drop 的边界</b>: 删节点时【连整棵子树】删, 且清掉其他节点里指向它的依赖
+      （否则留悬空依赖 ⇒ 调度器判"前驱未验收"永不执行）<br>
+      <b>短 id</b>: show/todo 现在都显示节点短 id（8 位）⇒ 用户知道改哪个<br>
+      <b>★ 实测</b>: 改验收 ✓ 落盘 ✓ · 回到 candidate ✓ · drop 后节点 27→26 ✓</span></span></label>
+    <label class="item"><input type="checkbox" id="rf-9"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>⬜ 余项: 定位 · 需求拆解 · 3 字段 · LLM 翻译人话名</span>
+      <span class="meta">① 定位（类型+承接, 现在完全没有）② 分析层补"需求拆解"（业务模块拆分）<br>
+      ③ 3 个新字段落地（display_name/assignee/progress）+ display_name 改由 LLM 翻译<br>
+      ④ 拆分/合并子任务（本轮只做了改字段 + 删节点）<br>
+      <b>★ 范围</b>: 不含执行。★ 用户视图两投影 + 逐节点改 已完成 ✓</span></span></label>
   <h2><span class="n">16</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">

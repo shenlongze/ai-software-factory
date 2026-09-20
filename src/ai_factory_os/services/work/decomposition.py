@@ -616,6 +616,80 @@ def confirm_tree(root: Path | str, plan_id: str, project_id: str = "") -> dict[s
     return tree
 
 
+def edit_node(
+    root: Path | str,
+    plan_id: str,
+    *,
+    node_id: str,
+    project_id: str = "",
+    title: str | None = None,
+    acceptance: str | None = None,
+    display_name: str | None = None,
+    depends_on: list[str] | None = None,
+    drop: bool = False,
+) -> dict[str, Any]:
+    """★ 逐节点编辑 —— Founder: "每一个子节点, 用户都有可能做修改"。
+
+    与 `confirm_tree` 的分工（都作用于同一份树文件 —— 一数据一权威源）:
+      · confirm_tree: 整树确认（候选 → 已确认）
+      · edit_node:    改某个节点（改完回到候选态, ★ 需重新确认才进执行）
+
+    ★ 为什么要回到候选态: 用户改完 ⇒ 与"刚才确认过的那棵树"不再是同一棵 ⇒
+      必须重新走过确认门（否则"确认"这个门就形同虚设）。
+
+    支持: 改 title / acceptance / display_name / 依赖 · 删除节点（drop, 连其子树）
+    边界: 找不到节点 ⇒ 响亮报错（不静默）; display_name 为空 ⇒ 置空（回落派生）。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        raise FileNotFoundError(f"任务树不存在: {plan_id}")
+    nodes: list[dict[str, Any]] = tree.get("nodes") or []
+    target = None
+    for n in nodes:
+        nid = str(n.get("id") or "")
+        # 支持【完整 id】或【短 id】（用户视图里显示的是短 id, 便于输入）
+        if nid == node_id or nid.endswith(node_id):
+            target = n
+            break
+    if target is None:
+        raise ValueError(f"找不到节点: {node_id}（用 `tasktree show/todo` 看可用的 id）")
+
+    if drop:
+        # 删节点 + 其整棵子树（不留孤儿节点）
+        doomed = {str(target.get("id") or "")}
+        changed = True
+        while changed:
+            changed = False
+            for n in nodes:
+                p = str(n.get("parent_id") or "")
+                if p in doomed and str(n.get("id") or "") not in doomed:
+                    doomed.add(str(n.get("id") or ""))
+                    changed = True
+        kept = [n for n in nodes if str(n.get("id") or "") not in doomed]
+        # 依赖里指向被删节点的引用也要清掉（否则留下悬空依赖 ⇒ 调度器判"前驱未验收"永不执行）
+        for n in kept:
+            deps = [str(x) for x in (n.get("depends_on") or []) if str(x) not in doomed]
+            n["depends_on"] = deps
+        tree["nodes"] = kept
+        action = f"删除节点及其子树（{len(doomed)} 个）"
+    else:
+        if title is not None:
+            target["title"] = str(title)[:500]
+        if acceptance is not None:
+            target["acceptance"] = str(acceptance)[:300]
+        if display_name is not None:
+            target["display_name"] = str(display_name)[:60]
+        if depends_on is not None:
+            target["depends_on"] = [str(x) for x in depends_on]
+        action = "更新节点"
+
+    tree["status"] = "candidate"                 # ★ 改完回到候选态, 需重新确认
+    tree["edited_at"] = _now_iso()
+    tree.pop("_saved_to", None)
+    tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
+    return {"tree": tree, "node": target, "action": action, "status": tree["status"]}
+
+
 def tree_leaves(tree: dict[str, Any]) -> list[dict[str, Any]]:
     return [n for n in (tree.get("nodes") or []) if n.get("kind") == "task"]
 

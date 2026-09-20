@@ -49,7 +49,9 @@ debt() {  # debt <标签> <命令...>  —— 存量债务，默认不阻塞
 }
 
 echo "═══ ① 工具健康（必须全绿）═══"
-run "ruff scripts/" ruff check scripts
+# ★ 2026-09-20: 原来只扫 scripts/（src 的 47 个存量债放在 ③ 当"债务"）。
+#   债清完后提升为**阻塞门禁**并覆盖 apps+src+scripts —— 防反弹（否则清一次、长一次）。
+run "ruff apps+src+scripts" ruff check apps src scripts
 # shell 语法门 —— ruff 只吃 .py; scripts/*.sh 此前无任何门(2026-09-15 补)
 run "shell 语法"    bash -c 'for f in scripts/*.sh; do bash -n "$f" || exit 1; done'
 run "导入全量"      "$PY" scripts/check_imports.py -q
@@ -78,7 +80,7 @@ echo
 echo "═══ ③ 守卫扫仓库（= 当前债务清单，非工具故障）═══"
 debt "架构 R1–R17"   "$PY" scripts/check_architecture.py -q
 debt "分类 R18–R22"  "$PY" scripts/check_classification.py -q
-debt "ruff src/ 存量" ruff check src
+# （`ruff src/ 存量` 已于 2026-09-20 清空并提升为 ① 的阻塞门禁 ⇒ 不再单列）
 
 echo
 if [ $fail -eq 0 ]; then

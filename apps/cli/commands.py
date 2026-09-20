@@ -197,15 +197,39 @@ def cmd_task_create(ctx: FactoryContext, args: Any) -> dict:
 
 
 def cmd_task_list(ctx: FactoryContext, args: Any) -> dict:
-    """factory task list — 任务列表 (可过滤), 发 task.viewed。"""
+    """factory task list — 任务列表 (可过滤), 发 task.viewed。
+
+    ★ 2026-09-20（两套任务账本的**读侧归一**）: 原来只列【域账本】(tasks/<T-id>.json)
+      ⇒ 实测同一句"任务": `kanban` 显示 14 条、这里显示 **0 条** —— 同一概念两个答案 ✗。
+    现在两套都列、且**标签写清**（存储不合并 —— 两者语义不同）:
+      · 台账任务（域, T-*）: 人工定义 / 带 workflow 的工厂任务
+      · 开发任务（任务树的叶, PLAN-*-t-*）: 拆解产出、被调度执行的真实账本
+    判据仍只一份（progress.leaf_rows ⇒ 与 kanban/status 同源）。
+    """
     status = _parse_status(args.status)
     tasks = ctx.open_task_store().list(status=status, project=args.project)
+    dev: list[dict[str, Any]] = []
+    try:
+        from ai_factory_os.services.work import progress as _prog
+
+        dev = _prog.leaf_rows(ctx.root)
+        if args.project:
+            dev = [d for d in dev if str(args.project) in str(d.get("project") or "")]
+        if status:
+            want = str(getattr(status, "value", status)).lower()
+            dev = [d for d in dev if str(d.get("status") or "").lower() == want]
+    except Exception as exc:  # noqa: BLE001 — 失败安全, 但**必须可见**（禁静默: 曾把坏掉显示成"0 条"）
+        import sys as _sys
+        print(f"⚠ 任务树读取失败（列表会少掉'开发任务'那一部分）: {type(exc).__name__}",
+              file=_sys.stderr)
     with ctx.logger_scope() as logger:
         ev = logger.record(
             EventType.TASK_VIEWED, source=SOURCE, project_id=args.project, action="list tasks",
-            result="OK", payload={"count": len(tasks), "status": args.status, "project": args.project},
+            result="OK", payload={"count": len(tasks) + len(dev), "ledger": len(tasks),
+                                  "dev": len(dev), "status": args.status, "project": args.project},
         )
-    return {"ok": True, "count": len(tasks), "tasks": [t.to_dict() for t in tasks], "event_seq": ev.seq}
+    return {"ok": True, "count": len(tasks) + len(dev), "tasks": [t.to_dict() for t in tasks],
+            "dev_tasks": dev, "event_seq": ev.seq}
 
 
 def cmd_task_status(ctx: FactoryContext, args: Any) -> dict:

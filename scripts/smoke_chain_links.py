@@ -129,6 +129,18 @@ def _check_views_see_tree(root: Path) -> list[str]:
     st_map = {str(r.get("id")): str(r.get("status")) for r in _task_rows(root)}
     if st_map.get("L1") != "done" or st_map.get("L2") != "todo":
         bad.append(f"叶状态没映射到看板词: L1={st_map.get('L1')} L2={st_map.get('L2')}")
+    # ⑤ ★★ `factory task list` 也必须看得见开发任务 —— 原来它只读【域账本】⇒
+    #    实测同一句"任务": 看板 12 条、task list **0 条**（同一概念两个答案）
+    from types import SimpleNamespace as _NS
+
+    from apps.cli.commands import cmd_task_list
+
+    tl = cmd_task_list(ctx, _NS(status=None, project=None, json=False))
+    dev_ids = {str(d.get("id")) for d in (tl.get("dev_tasks") or [])}
+    if not {"L1", "L2"} <= dev_ids:
+        bad.append(f"task list 看不到开发任务（两套账本两个答案）: {sorted(dev_ids)[:5]}")
+    if tl.get("count") != 2:
+        bad.append(f"task list 的 count 应为 台账+开发 = 2, 实得 {tl.get('count')}")
     return bad
 
 

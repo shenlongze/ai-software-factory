@@ -4401,10 +4401,22 @@ def _print_task(sub: str, r: dict) -> None:
         print(f"  owner     {t['owner'] or '-'}")
         print(f"  workflow  {t['workflow'] or '-'}")
     elif sub == "list":
-        rows = [[t["id"], t["status"], t["type"], t["project"], t["title"], t["owner"] or "-"]
-                for t in r["tasks"]]
-        print(_render_table(["Task", "Status", "Type", "Project", "Title", "Owner"], rows))
-        print(f"{r['count']} tasks")
+        # ★ 两套账本**都列 + 标签写清**（读侧归一; 存储各自保留 —— 语义不同, 见 cmd_task_list）
+        ledger = r.get("tasks") or []
+        dev = r.get("dev_tasks") or []
+        if ledger:
+            rows = [[t["id"], t["status"], t["type"], t["project"], t["title"], t["owner"] or "-"]
+                    for t in ledger]
+            print("  ── 台账任务（人工定义 / 带 workflow）──")
+            print(_render_table(["Task", "Status", "Type", "Project", "Title", "Owner"], rows))
+        if dev:
+            rows = [[d.get("id", ""), d.get("status", ""), (d.get("role") or "-"),
+                     d.get("project", ""), str(d.get("title") or "")[:40]] for d in dev]
+            print("  ── 开发任务（任务树的叶 = 执行的真实账本）──")
+            print(_render_table(["Node", "Status", "Role", "Project", "Title"], rows))
+        if not ledger and not dev:
+            print("  （两套账本都是空的 —— 台账可用 `factory task create` 建; 开发任务来自拆解）")
+        print(f"{r.get('count', 0)} tasks（台账 {len(ledger)} + 开发 {len(dev)}）")
     elif sub == "status":
         t = r["task"]
         print(f"{t['id']}  {t['title']}  [{t['type']}]  状态: {t['status']}")

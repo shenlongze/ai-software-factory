@@ -178,6 +178,18 @@ def _fixtures() -> list[tuple[str, dict]]:
     return [("嵌套树", nest), ("有环树", cyc), ("单模块树", single), ("空树", empty)]
 
 
+def _write_schema(root: Path) -> Path:
+    """造一个真实数据模型文件（带外键）—— 数据流判据用它当"真实来源"。"""
+    proj = root / "projects" / "P1"
+    (proj / "server").mkdir(parents=True, exist_ok=True)
+    (proj / "server" / "schema.prisma").write_text(
+        "model User { id Int @id }\n"
+        "model Order { id Int @id\n  user User @relation(fields: [userId], references: [id])\n  userId Int }\n"
+        "model Payment { id Int @id\n  order Order @relation(fields: [orderId], references: [id])\n  orderId Int }\n",
+        encoding="utf-8")
+    return proj
+
+
 def _check_dataflow(root: Path) -> list[str]:
     """★ 数据流程图（投影 C）的判据 —— 返回违规描述（空 = 全过）。
 
@@ -187,13 +199,7 @@ def _check_dataflow(root: Path) -> list[str]:
     from ai_factory_os.services.work import data_flow as DF
 
     bad: list[str] = []
-    proj = root / "projects" / "P1"
-    (proj / "server").mkdir(parents=True, exist_ok=True)
-    (proj / "server" / "schema.prisma").write_text(
-        "model User { id Int @id }\n"
-        "model Order { id Int @id\n  user User @relation(fields: [userId], references: [id])\n  userId Int }\n"
-        "model Payment { id Int @id\n  order Order @relation(fields: [orderId], references: [id])\n  orderId Int }\n",
-        encoding="utf-8")
+    proj = _write_schema(root)
     tree = _tree("PLAN-df", [
         _node("p", "project", "", "数据流"),
         _node("m1", "domain", "p", "模块一"),                       # 有声明
@@ -251,6 +257,7 @@ def _check_declare(root: Path) -> list[str]:
     from ai_factory_os.services.work import decomposition as D
 
     bad: list[str] = []
+    _write_schema(root)                     # 独立可跑（pytest 里各自一份 tmp）
     tree = _tree("PLAN-dec", [_node("p", "project", "", "声明"),
                               _node("m1", "domain", "p", "模块一"),
                               _node("m2", "domain", "p", "模块二")])
@@ -300,6 +307,48 @@ def _check_mermaid(flow: dict, dataflow: dict) -> list[str]:
         if not defined:
             bad.append(f"{label} 一个节点都没定义")
     return bad
+
+
+def _pytest_root(tmp: Path) -> Path:
+    """pytest 用: 把 fixture 树 + 数据模型落进 tmp_path（与冒烟共用同一批 fixture）。"""
+    for _, tree in _fixtures():
+        _write(tmp, tree)
+    _write_schema(tmp)
+    return tmp
+
+
+# ── pytest 兼容层 ────────────────────────────────────────────────────
+# 本仓 pytest 只收集 examples/demo 的 add/sub（见 verify.sh 自述）⇒ 视图层此前【pytest 覆盖不到】。
+# 下面四个用例复用冒烟里的同一批检查（不另写一套判据）：`pytest scripts/smoke_user_view.py -q`
+# 也能验证功能链路图 / 数据流程图 / 产线声明 / mermaid —— 两个入口（verify.sh 与 pytest）同源。
+def test_flow_projection_invariants(tmp_path: Path) -> None:
+    """功能链路图: 顶层范围 · 不丢信息 · 关系可见 · 边不自洽 · 批次覆盖 · 环 · 退化。"""
+    from ai_factory_os.services.work import user_view as UV
+
+    root = _pytest_root(tmp_path)
+    for label, tree in _fixtures():
+        got = _must_load(root, tree["plan_id"], tree["project_id"])
+        assert _flow_invariants(UV.build_flow(got), got) == [], f"{label} 不变式被破坏"
+
+
+def test_dataflow_sources_are_real(tmp_path: Path) -> None:
+    """数据流程图: 实体/关系来自 DDL · 声明优先 · 线索不当事实 · 不许编 · 缺口如实。"""
+    assert _check_dataflow(_pytest_root(tmp_path)) == []
+
+
+def test_declare_reaches_view(tmp_path: Path) -> None:
+    """产线声明: 落盘 ⇒ 视图变 declared · 空声明清字段 · 清单外名字丢弃。"""
+    assert _check_declare(_pytest_root(tmp_path)) == []
+
+
+def test_mermaid_is_wellformed(tmp_path: Path) -> None:
+    """CLI mermaid: 首行 flowchart · subgraph/end 平衡 · 无悬空引用 · 非空。"""
+    from ai_factory_os.services.work import data_flow as DF
+    from ai_factory_os.services.work import user_view as UV
+
+    root = _pytest_root(tmp_path)
+    nest = _must_load(root, "PLAN-nest", "P1")
+    assert _check_mermaid(UV.build_flow(nest), DF.build_data_flow(nest, root / "projects" / "P1")) == []
 
 
 def main() -> int:

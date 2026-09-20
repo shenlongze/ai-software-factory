@@ -132,15 +132,50 @@ def run_chain(
         except Exception as exc:  # noqa: BLE001 — 链要如实报告断在哪
             _log("④ PRD", "fail", str(exc)[:120])
 
-    # ── s5 分析产物（只检查, 不阻塞）─────────────────────────────────────
+    # ── s5 分析产物（★ 缺则**自动跑** —— 否则用户还得手动搬数据, 就不叫闭环）──
     if pid:
         store = ProjectStore(root / "org")
-        types = {str(getattr(a, "type", "")) for a in store.list_artifacts()
-                 if getattr(a, "project_id", "") == pid}
-        need = {"product": "产品定义", "ux_ui": "交互设计", "design": "架构设计"}
-        miss = [zh for k, zh in need.items() if k not in types]
-        _log("⑤ 分析产物", "ok" if not miss else "warn",
-             "齐了" if not miss else f"缺: {' / '.join(miss)}（拆解会因此失败, 需先跑对应的生成命令）")
+
+        def _have() -> set[str]:
+            return {str(getattr(a, "type", "")) for a in store.list_artifacts()
+                    if getattr(a, "project_id", "") == pid}
+
+        types = _have()
+        need = [("product", "产品定义"), ("ux_ui", "交互设计"), ("design", "架构设计")]
+        missing = [(k, zh) for k, zh in need if k not in types]
+        if not missing:
+            _log("⑤ 分析产物", "skip", "齐了（产品定义 / 交互设计 / 架构设计）")
+        else:
+            # ★ 顺序有依赖: 产品定义 → 交互设计 → 架构设计（架构吃前两者）
+            #   （各环的生成器自己会报"缺输入", 所以顺序不能乱）
+            from apps.cli.main import (
+                FactoryContext, _dispatch_arch, cmd_product_develop, cmd_product_ux,
+            )
+
+            actx = FactoryContext(root=root)
+            done: list[str] = []
+            fail = ""
+            for key, zh in need:
+                if key in _have():
+                    continue
+                try:
+                    if key == "product":
+                        # ★ 把链里的需求原文作为"想法"传进去 ——
+                        #   否则 product develop 会报"无想法文本"（实测踩到）
+                        cmd_product_develop(actx, _ns(project=pid, idea=text))
+                    elif key == "ux_ui":
+                        cmd_product_ux(actx, _ns(project=pid, product=None))
+                    else:
+                        _dispatch_arch(actx, _ns(arch_command="design", project=pid,
+                                                 product=None, ux_ui=None, artifact_id=None))
+                    done.append(zh)
+                except Exception as exc:  # noqa: BLE001 — 链要如实报告断在哪
+                    fail = f"{zh}: {str(exc)[:90]}"
+                    break
+            if fail:
+                _log("⑤ 分析产物", "fail", f"自动生成失败 → {fail}")
+            else:
+                _log("⑤ 分析产物", "ok", f"已自动生成: {' / '.join(done)}")
     else:
         _log("⑤ 分析产物", "skip", "无项目 ⇒ 跳过")
 

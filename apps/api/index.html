@@ -111,7 +111,7 @@
 </defs></svg>
 <header>
   <div class="wrap bar">
-    <div class="brand">Factory<small>用户视图 · 同一份数据的两种看法</small></div>
+    <div class="brand">Factory<small>用户视图 · 同一份数据的三种看法</small></div>
     <select id="pick"></select>
   </div>
 </header>
@@ -404,7 +404,7 @@ function renderDataFlow(d){
       <span><b>绿线</b> = 真实外键（DDL 的 @relation）</span>
       <span><b>灰掉</b> = 没有任何模块碰它</span>
     </div>
-    ${(d.coverage.missing || []).length ? `<div class="gap">未覆盖的模块（${d.coverage.missing.length} 个）: ${esc(d.coverage.missing.join("、"))} —— 它们的文案里没出现任何实体名 ⇒ 图上没有它们的线（不编）</div>` : ""}
+    ${(d.coverage.missing || []).length ? `<div class="gap">未覆盖的模块（${d.coverage.missing.length} 个）: ${esc(d.coverage.missing.join("、"))} —— ${d.declared_count ? "产线声明为空（拿不准就不瞎标）" : "它们的文案里没出现任何实体名（还没声明过）"} ⇒ 图上没有它们的线（不编）</div>` : ""}
     ${d.hint ? `<div class="gap">${esc(d.hint)}</div>` : ""}`;
 }
 

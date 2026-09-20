@@ -681,27 +681,27 @@
       <b>任务树质量高</b>（字段含 depends_on/required_role/expected_files/acceptance;
       拆出 project-scaffold/database/auth/user 等模块, 依赖链完整）· 每步提示"下一步"。</span></span></label>
 
-    <label class="item"><input type="checkbox" id="ct-1"><span class="body">
+    <label class="item done"><input type="checkbox" checked id="ct-1"><span class="body">
       <span class="t"><span class="tag p0">P0</span>★ 一条命令跑整棵树 —— <code>run --plan</code>（最该先做）</span>
       <span class="meta"><b>缺口（实测）</b>: 任务树确认后, 执行只能 <code>run --task &lt;单个&gt;</code>
       ⇒ 13 个任务 = <b>13 次人工调用</b>; 没有"按拓扑序跑完整棵树"。<br>
       <b>要做的</b>: <code>factory run --plan PLAN-xxx</code> —— 按 <code>depends_on</code> 拓扑序
       依次/并行跑叶任务, 每步落 <code>EXS-*</code>, 失败即停并可续。<br>
       <b>为什么优先</b>: 一条命令同时解决「执行不跑整棵树」+「并行调度无入口」
-      （内部可接已实测能跑的 <code>bootstrap/scheduler_pump</code>）。</span></span></label>
-    <label class="item"><input type="checkbox" id="ct-2"><span class="body">
+      （内部可接已实测能跑的 <code>bootstrap/scheduler_pump</code>）。</span></span><br><b style="color:#0a8">【2026-09-21 已完成】</b>2026-09-21 已做: `factory run --plan <树>` 走 scheduler 平面（wire_scheduler + drive）; 真跑: EXR-002/003/005 真派工真提交</label>
+    <label class="item done"><input type="checkbox" checked id="ct-2"><span class="body">
       <span class="t"><span class="tag p1">P1</span>并行调度接 CLI 入口（<code>scheduler_pump</code> 孤立）</span>
       <span class="meta"><b>缺口（实测）</b>: <code>bootstrap/scheduler_pump.py</code> + <code>scheduler_wiring.py</code>
       是并行调度器（我曾实测跑通: 真执行 + 事件回流 + CAS 认领 + 真实成员名）,
       但★ <b>无 CLI 入口</b> ⇒ 用户用不上（R24: 有代码没入口 = 不算完成）。<br>
-      <b>要做的</b>: 随 ct-1 一起暴露（<code>run --plan --parallel</code> 或 <code>factory drive</code>）。</span></span></label>
-    <label class="item"><input type="checkbox" id="ct-3"><span class="body">
+      <b>要做的</b>: 随 ct-1 一起暴露（<code>run --plan --parallel</code> 或 <code>factory drive</code>）。</span></span><br><b style="color:#0a8">【2026-09-21 已完成】</b>2026-09-21 已接: run 经 scheduler_pump 驱动（不再孤立）; 真跑: 限量/多叶/失败重试都实跑过</label>
+    <label class="item done"><input type="checkbox" checked id="ct-3"><span class="body">
       <span class="t"><span class="tag p1">P1</span>一键编排（把 7 步串成一条链）</span>
       <span class="meta"><b>缺口（实测）</b>: 需求→PRD→产品→UX→架构→任务树→确认→执行,
       <b>7 步全人工</b>, 没有"给个需求自己跑到底"（人得记住顺序）。<br>
       <b>要做的</b>: 编排入口（如 <code>factory pipeline &lt;需求&gt;</code>）——
       按顺序调 7 步, 在<b>确认门</b>处停下等人（保留人工把关, 不是全自动）。<br>
-      <b>注意</b>: 不要做成"全自动黑箱" —— 现有的人工确认门是有意设计的（candidate→confirmed）。</span></span></label>
+      <b>注意</b>: 不要做成"全自动黑箱" —— 现有的人工确认门是有意设计的（candidate→confirmed）。</span></span><br><b style="color:#0a8">【2026-09-21 已完成】</b>2026-09-21 已做: `factory chain \"<一句话需求>\" --project <P>` 一条命令跑 定位→理解→PRD→产品/UX/架构→拆解→细拆; 真跑: 宠物寄养 18 域 85 叶</label>
     <label class="item"><input type="checkbox" id="ct-4"><span class="body">
       <span class="t"><span class="tag p2">P2</span>舰队视图接入口（<code>console_view.fleet</code>）</span>
       <span class="meta"><b>缺口（实测）</b>: <code>console_view.fleet()</code>（"谁在做什么·谁空闲·谁干完了"）

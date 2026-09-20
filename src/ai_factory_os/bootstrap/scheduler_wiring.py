@@ -388,12 +388,24 @@ class StoreExecution:
         self._store = open_runtime_store(root)
 
     def active_for(self, node_id: str) -> Any:
-        """该叶是否已有**活跃**执行（PENDING/RUNNING）—— 防同一叶被重复创建。
+        """该叶是否已有**活跃**执行（PENDING/RUNNING 且**未陈旧**）—— 防同一叶被重复创建。
 
         ★ 返回**执行请求对象**（不是 id 字符串）—— `evaluate.py:37` 会读 `active.id`
         （实测: 返回 str 会 `AttributeError: 'str' object has no attribute 'id'`）。
         无活跃 ⇒ None。
+
+        ★ 2026-09-21（第 5 件实测暴露）: 原来只看状态 ⇒ 被 kill 留下的 PENDING 执行
+          **永远算活跃** ⇒ 该叶永久 BLOCKED、整棵树不动（这正是 sweep/recover 要治的病,
+          而闸门这**第三处**判据没跟它们对齐）。⇒ 现与 `scheduler_pump.live_node_ids()`
+          共用同一处判据（含【陈旧窗口】）。
         """
+        try:
+            from ai_factory_os.bootstrap.scheduler_pump import live_node_ids
+
+            if node_id not in live_node_ids(self._root):
+                return None                              # 无活跃（含"陈旧"⇒ 视为没有进程）
+        except Exception:  # noqa: BLE001 — 判据不可用 ⇒ 退回保守（按状态判, 见下）
+            pass
         try:
             for r in self._store.list_executions():
                 if str((r.input or {}).get("node_id") or "") != node_id:

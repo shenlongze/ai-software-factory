@@ -38,7 +38,10 @@
   项目可归属公司/部门（`factory project org <P> --company <C> [--department <D>]`）——
   派活只在**项目所属公司/部门**的成员里选（跨公司不串人），归属同时写进执行请求与派活简报。
   尚未做：一家成员同时服务多家公司（多对多）、部门级预算/审批。
-- **学习自治**：经验库仍为空，尚未回喂决策（项目级记忆已接线）。
+- **学习自治（已接，agent 域）**：每次终态执行自动落一条经验（谁 / 任务类型 / 能力 / 成败 / 耗时 /
+  证据 —— **失败也记**，防"只记成功"的自我偏差），`factory intelligence experience list` 可查、
+  `... experience evaluate --task <类型>` 给出基于历史经验的 agent 推荐（置信度随数据增长）。
+  尚未做：provider 域的推荐（`intelligence recommend` 的 Experience 权重仍无数据）。
 - **前端**：`apps/web` 为空（API 可起，无界面）；`apps/desktop`、`apps/mobile` 为壳。
 - **云端 / 多租户**：无 —— 本地单机运行。
 

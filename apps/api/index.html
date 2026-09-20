@@ -47,17 +47,26 @@
   .row.d1{padding-left:26px}
   .row.d2{padding-left:52px}
   .row.d3{padding-left:78px}
-  /* 链路图 */
-  .layer{margin-bottom:16px}
-  .layer .lv{font-size:12px;color:var(--ink2);margin-bottom:8px}
-  .chips{display:flex;flex-wrap:wrap;gap:8px}
-  .chip{background:#f5f5f7;border:1px solid var(--line);border-radius:999px;
-        padding:6px 14px;font-size:13.5px;display:inline-flex;align-items:center;gap:7px}
-  .chip .n{color:var(--ink2);font-size:11.5px;font-variant-numeric:tabular-nums}
-  .chip.core{background:#eaf3ff;border-color:#cfe4ff;color:#0058b0}
-  .deps{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
-  .dep{display:flex;gap:10px;font-size:13.5px;padding:5px 0;color:var(--ink2)}
-  .dep b{color:var(--ink);font-weight:500;min-width:120px}
+  /* 功能链路图（★ 流动视图: 一批一行; 模块点开看子模块） */
+  .layer{margin-bottom:14px}
+  .layer .lv{font-size:12px;color:var(--ink2);margin-bottom:6px}
+  .mods{display:flex;flex-direction:column;gap:2px}
+  .mod.flat{padding:5px 0 5px 12px;border-left:2px solid var(--line);
+            display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  details.mod{border-left:2px solid var(--line)}
+  details.mod[open]{border-left-color:#0071e3}
+  details.mod>summary{list-style:none;cursor:pointer;padding:5px 0 5px 12px;
+    display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  details.mod>summary::-webkit-details-marker{display:none}
+  details.mod>summary:hover{background:#f5f5f7;border-radius:8px}
+  details.mod>summary::before{content:"▸";color:var(--ink2);font-size:11px;flex:none}
+  details.mod[open]>summary::before{content:"▾"}
+  .mod .mark{width:16px;text-align:center;flex:none;font-size:14px}
+  .mod .nm{font-size:13.5px}
+  .mod .nm.sub{font-size:12.5px;color:var(--ink2)}
+  .mod .meta{color:var(--ink2);font-size:11.5px}
+  .mod.core .nm{color:#0058b0;font-weight:600}
+  .kids{padding-left:20px}
   .empty{color:var(--ink2);font-size:14px;padding:40px 0;text-align:center}
   .foot{color:var(--ink2);font-size:12.5px;margin-top:26px;text-align:center}
   .err{background:#fff2f0;border:1px solid #ffd6d0;color:#b3261e;border-radius:12px;
@@ -122,22 +131,31 @@ function renderTodo(d){
   }).join("");
 }
 
+// ★ 一个模块一行; 有子模块的用 <details> 原生折叠（不写 JS 状态机 —— 少一处能坏的地方）
+function renderMod(m, depth){
+  const bits = [];
+  if((m.deps||[]).length) bits.push(`前置: ${m.deps.join(" / ")}`);
+  if(m.core) bits.push(`★ 核心（被 ${m.depended_by} 个依赖）`);
+  else if(m.depended_by) bits.push(`被 ${m.depended_by} 个依赖`);
+  if(m.kids) bits.push(`${m.kids} 个子模块`);
+  const head = `<span class="mark">${MARK[m.status]||"☐"}</span>`
+             + `<span class="nm${depth?" sub":""}">${esc(m.name)}</span>`
+             + (bits.length ? `<span class="meta">${esc(bits.join(" · "))}</span>` : "");
+  if(!(m.children||[]).length) return `<div class="mod flat${m.core?" core":""}">${head}</div>`;
+  return `<details class="mod${m.core?" core":""}"><summary>${head}</summary>`
+       + `<div class="kids">${m.children.map(c => renderMod(c, depth+1)).join("")}</div></details>`;
+}
+
 function renderFlow(d){
-  if(!d.layers || !d.layers.length) return `<div class="empty">暂无模块</div>`;
-  const max = Math.max(...d.layers.flatMap(L => L.nodes.map(n => n.depended_by)), 0);
-  const body = d.layers.map(L => {
-    const chips = L.nodes.map(n => {
-      const core = (max && n.depended_by === max) ? " core" : "";
-      const cnt = n.depended_by ? `<span class="n">被 ${n.depended_by} 个依赖</span>` : "";
-      return `<span class="chip${core}">${MARK[n.status]||""} ${esc(n.name)} ${cnt}</span>`;
-    }).join("");
-    return `<div class="layer"><div class="lv">第 ${L.level} 层${L.level===1?"（可先做）":"（等上一层）"}</div>
-            <div class="chips">${chips}</div></div>`;
-  }).join("");
-  const deps = (d.deps||[]).length
-    ? `<div class="deps">${d.deps.map(x=>`<div class="dep"><b>${esc(x.name)}</b><span>← ${esc(x.on.join(" / "))}</span></div>`).join("")}</div>`
-    : "";
-  return body + deps;
+  if(!d.batches || !d.batches.length) return `<div class="empty">暂无模块</div>`;
+  const core = (d.root||[]).filter(m => m.core).map(m => m.name);
+  const subs = d.domains > d.modules ? `（另有 ${d.domains - d.modules} 个细拆子模块，点开模块看）` : "";
+  const head = `${d.modules} 个模块 · 按 ${d.batches.length} 批做（同一批可并行）${subs}`
+             + (core.length ? ` · 核心: ${esc(core.join("、"))}` : "");
+  const rows = d.batches.map(b =>
+      `<div class="layer"><div class="lv">第 ${b.level} 批 · ${b.level === 1 ? "可先做" : "等前面做完"}</div>`
+    + `<div class="mods">${b.nodes.map(m => renderMod(m, 0)).join("")}</div></div>`).join("");
+  return `<p class="sub" style="margin:0 0 14px">${head}</p>` + rows;
 }
 
 async function load(planId){
@@ -148,7 +166,7 @@ async function load(planId){
   $("bar").style.width = (t.percent||0) + "%";
   $("todo").innerHTML = renderTodo(t);
   $("flow").innerHTML = renderFlow(both.flow || {});
-  $("msg").innerHTML = `<p class="sub" style="margin:0 0 18px">进度 ${t.done}/${t.total}（${t.percent}%）· 共 ${(both.flow||{}).domains||0} 个模块</p>`;
+  $("msg").innerHTML = `<p class="sub" style="margin:0 0 18px">进度 ${t.done}/${t.total}（${t.percent}%）· 共 ${(both.flow||{}).modules||0} 个模块</p>`;
 }
 
 async function boot(){

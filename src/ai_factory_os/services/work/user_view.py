@@ -155,48 +155,93 @@ def build_todo(tree: dict[str, Any]) -> dict[str, Any]:
 def build_flow(tree: dict[str, Any]) -> dict[str, Any]:
     """★ 投影 B: 功能链路图（看关系）—— 数据形态。
 
-    分层用【domain 子图】做 Kahn 拓扑（★ 不用 `parallel_groups`: 那个按叶分层,
-    而用户要看的是"模块级"先后）。有环 ⇒ 整批放一层（不阻塞 · 不静默丢弃）。
-    返回 {plan_id, domains, layers:[{level, nodes:[{id,name,deps_on_count}]}], deps:[...]}。
+    ★ 生成规则出自设计原文（docs/design/requirement-flow-and-user-view.md §6）:
+       · 节点 = kind=domain 的节点 → 显示 display_name
+       · 边   = depends_on（读成"前置关系"）
+       · 分层 = parent_id（可折叠）—— 模块 → 子模块
+       · 主次 = 被依赖次数（被依赖多 ⇒ 核心）
+
+    ★ 为什么必须按 parent_id 分层（Founder 实测: "功能链路图有问题, 一直在堆砌, 看不懂"）:
+       递归拆解产出的是 domain → domain → task 的嵌套（实测 13 个业务模块
+       ⇒ 细拆成 73 个 domain）。若把这 73 个 domain 全拍平再按 depends_on 分层,
+       会一次性倒出 73 个节点 + 72 条边 —— 用户看到的就是"堆砌"。
+       ⇒ 默认只出【顶层模块】（父节点不是 domain 的那些）, 子模块放在 children 里,
+         由使用方按需展开（这就是设计里"可折叠"的落地）。
+
+    返回 {
+      plan_id, modules(顶层模块数), domains(全部 domain 数),
+      root:    [模块节点（含 children 递归）]
+      batches: [{level, nodes:[模块节点]}]  ← ★ 先后: 只对顶层模块分层
+    }
+    模块节点 = {id, name, status, depended_by, core, deps:[前置名], kids, children:[...]}。
     """
     nodes = tree.get("nodes") or []
     doms = [n for n in nodes if n.get("kind") == "domain"]
-    names = {str(n.get("id") or ""): n for n in doms}
-    dset = set(names)
-    ddeps = {str(n.get("id") or ""): [str(x) for x in (n.get("depends_on") or []) if str(x) in dset]
-             for n in doms}
-    # 被依赖次数（主次: 被依赖多 ⇒ 更基础）
+    by_id = {str(n.get("id") or ""): n for n in nodes}
+    dom_ids = {str(n.get("id") or "") for n in doms}
+
+    # ★ 设计 §6 的"分层": parent_id → 子模块（同一份数据, 换一种看法, 不是第二份数据）
+    kids_dom: dict[str, list[dict[str, Any]]] = {}
+    for n in doms:
+        kids_dom.setdefault(str(n.get("parent_id") or ""), []).append(n)
+
+    # 顶层模块 = 父节点不是 domain 的（挂在 project 下 / 无父）
+    top = [n for n in doms if str(n.get("parent_id") or "") not in dom_ids]
+    if not top:                      # 兜底: 全嵌套(无顶层) ⇒ 取无父的那些, 仍无则全给(不退化成空视图)
+        top = [n for n in doms if not str(n.get("parent_id") or "")] or list(doms)
+
+    # 边 = depends_on（只认 domain → domain 的边; 自依赖丢弃）
+    deps_of: dict[str, list[str]] = {}
     dep_count: dict[str, int] = {}
-    for nid, ds in ddeps.items():
+    for n in doms:
+        nid = str(n.get("id") or "")
+        ds = [str(x) for x in (n.get("depends_on") or [])
+              if str(x) in dom_ids and str(x) != nid]
+        deps_of[nid] = ds
         for d in ds:
             dep_count[d] = dep_count.get(d, 0) + 1
+    core_max = max(dep_count.values(), default=0)
 
-    layers: list[list[str]] = []
-    done: set[str] = set()
-    remaining = list(names)
+    def _mk(n: dict[str, Any], seen: tuple[str, ...] = ()) -> dict[str, Any]:
+        nid = str(n.get("id") or "")
+        # 兜底: parent_id 成环 ⇒ 不再下钻（不递归爆栈; 不静默丢节点, 照样输出本节点）
+        kids = [] if nid in seen else [_mk(k, seen + (nid,)) for k in kids_dom.get(nid, [])]
+        return {
+            "id": nid,
+            "name": node_name(n),
+            "status": todo_mark(n.get("status")),
+            "depended_by": dep_count.get(nid, 0),
+            "core": bool(core_max and dep_count.get(nid, 0) == core_max),
+            "deps": [node_name(by_id[d]) for d in deps_of.get(nid, []) if d in by_id],
+            "kids": len(kids),
+            "children": kids,
+        }
+
+    roots = [_mk(n) for n in top]
+    by_top = {m["id"]: m for m in roots}
+
+    # ★ 先后只对【顶层模块】分层 —— 把 60 个子模块也算进去会把层数从 6 拉到 12, 那也是"堆砌"。
+    top_set = set(by_top)
+    tdep = {t: [d for d in deps_of.get(t, []) if d in top_set] for t in top_set}
+    batches: list[list[str]] = []
+    done_set: set[str] = set()
+    remaining = list(top_set)
     while remaining:
-        ready = sorted(x for x in remaining if all(d in done for d in ddeps.get(x, [])))
-        if not ready:
-            layers.append(sorted(remaining))
+        ready = sorted(x for x in remaining if all(d in done_set for d in tdep.get(x, [])))
+        if not ready:                      # 有环 ⇒ 整批放一层（不阻塞 · 不静默丢弃）
+            batches.append(sorted(remaining))
             break
-        layers.append(ready)
-        done.update(ready)
-        remaining = [x for x in remaining if x not in done]
+        batches.append(ready)
+        done_set.update(ready)
+        remaining = [x for x in remaining if x not in done_set]
 
     return {
         "plan_id": str(tree.get("plan_id") or ""),
+        "modules": len(roots),
         "domains": len(doms),
-        "layers": [
-            {"level": i, "nodes": [
-                {"id": nid, "name": node_name(names[nid]),
-                 "depended_by": dep_count.get(nid, 0),
-                 "status": todo_mark(names[nid].get("status"))}
-                for nid in layer]}
-            for i, layer in enumerate(layers, 1)
-        ],
-        "deps": [
-            {"name": node_name(names[nid]),
-             "on": [node_name(names[d]) for d in ds if d in names]}
-            for nid, ds in ddeps.items() if ds
+        "root": roots,
+        "batches": [
+            {"level": i, "nodes": [by_top[x] for x in layer if x in by_top]}
+            for i, layer in enumerate(batches, 1)
         ],
     }

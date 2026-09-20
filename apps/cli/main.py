@@ -2453,53 +2453,20 @@ def _tasktree_flow(ctx: FactoryContext, args: Any) -> dict:
     与 `todo` 的分工（Founder: "两种呈现, 说的是同一件事"）:
       · todo: 看【要做啥、到哪了】—— 层级待办清单
       · flow: 看【有什么功能、怎么串起来】—— 功能链路图
-    ★ 同源: 同一个树文件、同一份数据; flow 只是按 depends_on 画关系。
+    ★ 同源: 同一个树文件、同一份数据 —— flow 只是按 depends_on/parent_id 换一种看法。
 
-    分层复用 `decomposition.parallel_groups`（Kahn 拓扑分层）——
-    它自述: "同层可并行, 层间必须串行" ⇒ 正好就是用户想看的"先做啥后做啥"。
+    ★ 视图数据的构造归服务层（`user_view.build_flow`）—— CLI 只负责排版。
+      （此前 CLI 自己又写了一份 Kahn 分层, 与 API 各一套 ⇒ R25 重复造轮子; 已收口。）
     """
     from ai_factory_os.services.work import decomposition as _D
+    from ai_factory_os.services.work import user_view as _UV
 
     plan_id = str(getattr(args, "plan_id", "") or "")
     project = str(getattr(args, "project", "") or "")
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
         raise CliError(f"任务树不存在: {plan_id}（factory tasktree list 看有哪些）", exit_code=1)
-    nodes = tree.get("nodes") or []
-    doms = [n for n in nodes if n.get("kind") == "domain"]
-    # 被依赖次数（主次: 被依赖多 ⇒ 更靠前的基础件）
-    dep_count: dict[str, int] = {}
-    for n in doms:
-        for d in (n.get("depends_on") or []):
-            dep_count[str(d)] = dep_count.get(str(d), 0) + 1
-    # ★ 按【domain 子图】做 Kahn 分层 —— parallel_groups 是按叶分层,
-    #   而用户视图要看的是"模块级"先后（domain 自带 depends_on 链, 更直接）。
-    dids = [str(n.get("id") or "") for n in doms]
-    dset = set(dids)
-    ddeps = {str(n.get("id") or ""): [str(x) for x in (n.get("depends_on") or []) if str(x) in dset]
-             for n in doms}
-    layers: list[list[str]] = []
-    done: set[str] = set()
-    remaining = list(dids)
-    while remaining:
-        ready = [x for x in remaining if all(d in done for d in ddeps.get(x, []))]
-        if not ready:                      # 有环 ⇒ 整批放一层（不阻塞 · 不静默丢弃）
-            layers.append(sorted(remaining))
-            break
-        layers.append(sorted(ready))
-        done.update(ready)
-        remaining = [x for x in remaining if x not in done]
-    return {
-        "ok": True, "action": "tasktree-flow", "tree": tree,
-        "flow": {
-            "domains": len(doms),
-            "layers": layers,
-            "dep_count": dep_count,
-            "names": {str(n.get("id") or ""): n for n in doms},
-            "deps": {str(n.get("id") or ""): [str(x) for x in (n.get("depends_on") or [])]
-                     for n in doms},
-        },
-    }
+    return {"ok": True, "action": "tasktree-flow", "tree": tree, "flow": _UV.build_flow(tree)}
 
 
 def _tasktree_edit(ctx: FactoryContext, args: Any) -> dict:
@@ -2942,32 +2909,33 @@ def _print_tasktree(args: Any, r: dict) -> None:
         print()
         print("  （☐ 待办 · 🚧 进行中 · ✅ 完成 · ⛔ 已终止）")
     elif cmd == "flow":
-        # ★ 功能链路图（看关系）: 有哪些功能 · 谁依赖谁 · 先做哪层
+        # ★ 功能链路图（看关系）: 有哪些模块 · 谁在谁前面 · 哪个是核心
+        #   视图数据由服务层给（user_view.build_flow）—— 这里只排版, 不重算视图。
         f = r["flow"]
-        names = f["names"]      # id → 节点（取 display_name 用）
+        more = f["domains"] - f["modules"]
         print()
-        print(f"  功能链路    {r['tree'].get('plan_id')}    {f['domains']} 个模块")
+        print(f"  功能链路    {r['tree'].get('plan_id')}    {f['modules']} 个模块"
+              + (f"（另有 {more} 个细拆子模块 —— 明细见 `tasktree todo`）" if more > 0 else ""))
         print(f"  {'━' * 52}")
         print()
-        for i, layer in enumerate(f["layers"], 1):
-            doms = [x for x in layer if x in names]
-            if not doms:
-                continue
-            print(f"  第 {i} 层" + ("（可先做）" if i == 1 else "（等上一层）"))
-            for nid in doms:
-                nm = _node_name(names[nid])
-                cnt = f["dep_count"].get(nid, 0)
-                tail = f"    ← 被 {cnt} 个模块依赖" if cnt else ""
-                print(f"    · {nm}{tail}")
+        show_ids = bool(getattr(args, "ids", False))
+        for b in f["batches"]:
+            print(f"  第 {b['level']} 批" + ("（可先做）" if b["level"] == 1 else "（等前面做完）"))
+            for m in b["nodes"]:
+                bits = []
+                if m["deps"]:
+                    bits.append("前置: " + " / ".join(m["deps"]))
+                if m["core"]:
+                    bits.append(f"★ 核心（被 {m['depended_by']} 个依赖）")
+                elif m["depended_by"]:
+                    bits.append(f"被 {m['depended_by']} 个依赖")
+                if m["kids"]:
+                    bits.append(f"{m['kids']} 个子模块")
+                idpart = f"   [{m['id'][-8:]}]" if show_ids else ""
+                tail = ("    " + " · ".join(bits)) if bits else ""
+                print(f"    {_todo_mark(m['status'])} {m['name']}{idpart}{tail}")
             print()
-        print("  依赖明细:")
-        for nid, deps in f["deps"].items():
-            if not deps or nid not in names:
-                continue
-            src = " / ".join(_node_name(names[d]) for d in deps if d in names)
-            print(f"    {_node_name(names[nid]):<20} ← {src}")
-        print()
-        print("  （同层可并行 · 层间有前后依赖）")
+        print("  （同一批可并行 · 批次之间有前后依赖; 前置 = 必须先做完的模块）")
     elif cmd == "edit":
         n = r.get("node") or {}
         print(f"✔ {r.get('action')}: {_todo_display_name(n.get('title'))}")

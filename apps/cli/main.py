@@ -2560,21 +2560,20 @@ def cmd_product_develop(ctx: FactoryContext, args: Any) -> dict:
         from ai_factory_os.services.work.decomposition import prd_text as _req_text
 
         _gate = enforce_requirement_traces(meta, _req_text(ctx.root, {"project_id": project_id}))
-        if _gate.get("skipped"):
-            print("  ⚠ 这份 PRD 没带「出处表」⇒ 本次**没有过滤**（不误杀）; 但把可疑的标出来给你看:")
-            for _f in (_gate.get("flagged") or [])[:10]:
-                print(f"      ? {str(_f.get('feature'))[:50]}  （与需求原话共同文字仅 {_f.get('overlap')} 字）")
-            if not _gate.get("flagged"):
-                print("      （没有可疑项：每条特性都能在需求原话里找到依据）")
-        elif _gate.get("moved"):
-            print(f"  ⚠ 需求→PRD 门: 移出 {len(_gate['moved'])} 条【你需求里没有的】功能"
+        _moved = list(_gate.get("moved") or [])
+        if _moved:
+            print(f"  ⚠ 需求→PRD 门: 移出 {len(_moved)} 条【你需求里找不到依据的】"
                   f"（已另列 out_of_scope_suggestions, 不做）:")
-            for _m in _gate["moved"][:8]:
-                print(f"      - {str(_m.get('feature'))[:52]} —— {str(_m.get('why'))[:40]}")
-            if len(_gate["moved"]) > 8:
-                print(f"      … 还有 {len(_gate['moved']) - 8} 条")
+            for _m in _moved[:10]:
+                print(f"      - [{str(_m.get('section'))}] {str(_m.get('item'))[:44]} —— {str(_m.get('why'))[:34]}")
+            if len(_moved) > 10:
+                print(f"      … 还有 {len(_moved) - 10} 条")
         elif _gate.get("checked"):
-            print(f"  ✓ 需求→PRD 门: {_gate['kept']}/{_gate['checked']} 条特性都能对回你的需求原话")
+            print(f"  ✓ 需求→PRD 门: {_gate['kept']}/{_gate['checked']} 条都能对回你的需求原话"
+                  + ("（含自动补的出处）" if _gate.get("skipped") else ""))
+        for _f in (_gate.get("flagged") or [])[:10]:
+            print(f"      ? [{str(_f.get('section'))}] {str(_f.get('item'))[:46]}  "
+                  f"（与需求原话共同文字仅 {_f.get('overlap')} 字）")
     except Exception as _exc:  # noqa: BLE001 — 门本身出问题不许挡产出（但要说出来）
         print(f"  ⚠ 需求→PRD 门没跑成: {type(_exc).__name__}: {str(_exc)[:80]}")
     store = ProjectStore(ctx.root / "org")

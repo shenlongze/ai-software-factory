@@ -2371,16 +2371,24 @@ def _check_prd_requirement_gate() -> list[str]:
     if r1.get("kept") != 2:
         bad.append("kept 计数不对")
 
-    # ③ 没有出处表 ⇒ 不移出, 但标记可疑
-    p2 = {"feature_list": ["私教排课", "微信登录", "订阅消息推送"]}
+    # ③ 不靠模型: 没有出处表时**自动补出处**（条目 ↔ 需求原话的最长公共子串 ≥2 字 ⇒ 可核对）
+    #    —— 连 2 字都对不上 ⇒ 凭空发明 ⇒ 移出
+    p2 = {"feature_list": ["私教排课", "微信登录", "消息推送推送"],
+          "user_stories": ["会员查看并预约私教课程"], "mvp_scope": {"in": ["消课确认", "课程提醒"], "out": []}}
     r2 = E(p2, req)
-    if len(p2["feature_list"]) != 3:
-        bad.append("没有出处表时被误移出（应只标不移）")
-    flagged = {x["feature"] for x in (r2.get("flagged") or [])}
-    if "微信登录" not in flagged or "订阅消息推送" not in flagged:
-        bad.append(f"可疑项没被标出（实得 {flagged}）")
-    if "私教排课" in flagged:
-        bad.append("在需求里的特性被误标为可疑")
+    kept_feats = [str(x) for x in p2["feature_list"]]
+    if "微信登录" in kept_feats:
+        bad.append("凭空发明（微信登录, 与需求 0 字交集）没被移出")
+    if "私教排课" not in kept_feats:
+        bad.append("真实需求（私教排课）被误移出")
+    if "消课确认" not in (p2["mvp_scope"]["in"] or []):
+        bad.append("MVP 范围内的真需求被误移出")
+    if "课程提醒" in (p2["mvp_scope"]["in"] or []):
+        bad.append("凭空发明（课程提醒）没被移出")
+    if not p2.get("out_of_scope_suggestions"):
+        bad.append("移出的没进 out_of_scope_suggestions（人看不到）")
+    if r2.get("checked") != 6:
+        bad.append(f"检查条数不对（三处清单合计 6, 实得 {r2.get('checked')}）")
 
     # ④ 调用点
     src = _insp.getsource(_il.import_module("apps.cli.main").cmd_product_develop)

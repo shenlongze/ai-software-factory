@@ -177,6 +177,41 @@ def _mark_needs_decision(ports: Ports, execution_id: str, verdict: str, reason: 
         return
 
 
+def _record_memory(ports: Ports, execution_id: str, *, kind: str, text: str,
+                   authority: str = "agent_claim") -> None:
+    """★ 把一次执行的【经验】写进项目级记忆（全量测试查出的"写侧零调用者" ⇒ 这里接线）。
+
+    为什么接在调度器: 执行完成/停手是**真实事件**, 而原来唯一的写入者
+    （`services/execution/external/gateway.py`）没有任何调用者 ⇒ 项目记忆至今零数据,
+    "跨会话记忆"这个机制实际没生效。
+    · 落盘失败 ⇒ 显式告警到 stderr（`add()` 现在返回 bool; 禁静默丢）
+    """
+    try:
+        from ai_factory_os.services.conversation.project_memory import MemoryStore
+
+        root = Path(getattr(ports.work, "_root", "."))
+        node_id = plan_id = project_id = ""
+        for req in open_runtime_store(root).list_executions():
+            if str(req.id) == execution_id:
+                node_id = str((req.input or {}).get("node_id") or "")
+                plan_id = str(req.task_id or "")
+                project_id = str(getattr(req, "project_id", "") or "")
+                break
+        if not project_id and plan_id:
+            from ai_factory_os.services.work import decomposition as D
+            _t = D.load_tree(root, plan_id)
+            project_id = str((_t or {}).get("project_id") or "")
+        if not project_id:
+            return                                   # 无项目 ⇒ 项目级记忆无处可放（不编）
+        ms = MemoryStore.load(root, project_id)
+        if not ms.add(f"[{node_id[-10:]}] {text}", source=f"exec:{execution_id}",
+                      kind=kind, authority=authority):
+            import sys as _sys
+            print(f"⚠ 项目记忆落盘失败（这次经验没记住）: {text[:60]}", file=_sys.stderr)
+    except Exception:  # noqa: BLE001 — 记忆写失败不阻塞执行结果
+        return
+
+
 def _repo_changed(repo: str, *, window_sec: int = 1800) -> bool | None:
     """项目仓库有没有【产出迹象】⇒ True/False; 判不出来 ⇒ None（调用方标"待核"）。
 
@@ -208,8 +243,8 @@ def _repo_changed(repo: str, *, window_sec: int = 1800) -> bool | None:
         return None
 
 
-def _mark_evidence(ports: Ports, execution_id: str) -> None:
-    """★ 完成必须留【产出证据】（全链路实跑踩到, 卡点 3）。
+def _mark_evidence(ports: Ports, execution_id: str) -> str:
+    """★ 记【产出证据】（完成时附加信息）—— 返回证据串（repo-changed / no-change / unknown）。
 
     实测: 执行体"核验 + 停手、零改动"照样被记成 `completed` ⇒ 进度 1/199 是**假的**。
     这里只做**标记**, 不动状态（改状态会牵动调度器终态集合, 风险大; 且验证类任务本来就无改动）:
@@ -237,7 +272,7 @@ def _mark_evidence(ports: Ports, execution_id: str) -> None:
                 project_id = str(getattr(req, "project_id", "") or "")
                 break
         if not (node_id and plan_id):
-            return
+            return "unknown"
         # ★ 执行请求里没有 project_id（契约只有 task_id/input）⇒ 从树上取
         #   （真跑踩到: 没有它 ⇒ 找不到仓库 ⇒ evidence=unknown, 白标一条"待核"）
         if not project_id:
@@ -261,22 +296,17 @@ def _mark_evidence(ports: Ports, execution_id: str) -> None:
         changed = _repo_changed(repo)          # ★ 判据抽成纯函数（可守, 见下）
         tree = D.load_tree(root, plan_id, project_id)
         if not tree:
-            return
+            return "unknown"
         for n in tree.get("nodes") or []:
             if str(n.get("id") or "") != node_id:
                 continue
-            if changed is True:
-                D.set_node_evidence(root, plan_id, node_id, evidence="repo-changed",
-                                    verify_needed=False, project_id=project_id)
-            elif changed is False:
-                D.set_node_evidence(root, plan_id, node_id, evidence="no-change",
-                                    verify_needed=True, project_id=project_id)
-            else:
-                D.set_node_evidence(root, plan_id, node_id, evidence="unknown",
-                                    verify_needed=True, project_id=project_id)
-            return
+            ev = "repo-changed" if changed is True else ("no-change" if changed is False else "unknown")
+            D.set_node_evidence(root, plan_id, node_id, evidence=ev,
+                                verify_needed=(changed is not True), project_id=project_id)
+            return ev
     except Exception:  # noqa: BLE001 — 标记失败不影响执行结果
-        return
+        return "unknown"
+    return "unknown"
 
 
 def _write_back_node_status(ports: Ports, execution_id: str, status: str) -> bool:
@@ -457,6 +487,11 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
         _leaf = D.get_leaf(root, task_id, node_id, project_id=project_id) or {}
         _tries = int(_leaf.get("retry_count") or 0)
         _st, _note = _on_failure(_tries)
+        if _st == "cancelled":
+            # ★ 终止（重试到上限）也是最该记住的经验（下次别再撞同一面墙）
+            _record_memory(ports, execution_id, kind="error",
+                           text=f"重试 {_tries} 次仍失败 ⇒ 终止: {_note[:140]}",
+                           authority="repo_evidence")
         D.release_leaf(root, task_id, node_id, status=_st, project_id=project_id, note=_note)
     return result
 
@@ -619,6 +654,10 @@ def drive(
                     if _v in ("needs_decision", "blocked"):
                         if _write_back_node_status(ports, eid, "cancelled"):
                             _mark_needs_decision(ports, eid, _v, _why)
+                            # ★ 停手也是【该记住的经验】（第 3 项 + 记忆接线）
+                            _record_memory(ports, eid, kind="decision",
+                                           text=f"执行体停手待裁决（{_v}）: {_why[:160]}",
+                                           authority="agent_claim")
                             inv = getattr(ports.work, "invalidate", None)
                             if callable(inv):
                                 inv()
@@ -628,7 +667,12 @@ def drive(
                     if _looks_completed(out):
                         if _write_back_node_status(ports, eid, "completed"):
                             # ★ 完成必须留产出证据（实跑踩到: 停手零改动也被记成 completed）
-                            _mark_evidence(ports, eid)
+                            _ev = _mark_evidence(ports, eid)
+                            # ★ 完成的经验进项目记忆（含裁定与产出证据 —— 跨会话可复用）
+                            _record_memory(ports, eid, kind="learning",
+                                           text=f"任务完成（裁定={_v or '未表态'}, 产出证据={_ev}）"
+                                                + (f" · {_why[:120]}" if _why else ""),
+                                           authority="repo_evidence")
                             # ★ 回写后必须让适配器的树缓存失效 —— 否则本轮 tick 仍读旧树,
                             #   下游叶看不到"前驱已验收"（实测踩过）。
                             inv = getattr(ports.work, "invalidate", None)

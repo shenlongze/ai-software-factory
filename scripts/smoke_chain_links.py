@@ -706,6 +706,86 @@ def test_executor_verdict() -> None:
     assert _check_executor_verdict() == []
 
 
+def _check_project_memory() -> list[str]:
+    """★ 项目级记忆（全量测试查出"写侧零调用者 + add 不落盘 ⇒ 静默丢"）。
+
+    判据:
+      · `add()` 必须**自动落盘**（新进程能读到 —— 实测踩过: 忘了 save 就悄悄丢）
+      · 落盘失败/无数据根 ⇒ 返回 False（调用方据此可见地告警, 不许静默）
+      · 调度器在【执行完成/停手/重试终止】时**真的写进项目记忆**（写侧接线）
+    """
+    import tempfile
+    from types import SimpleNamespace
+
+    from ai_factory_os.bootstrap import scheduler_pump as SP
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        from ai_factory_os.services.conversation.project_memory import MemoryStore
+
+        # ① add 自动落盘: 写完**换一个实例**读
+        ms = MemoryStore.load(root, "P-m")
+        if ms.add("第一次尝试: 环境变量统一读取已落地", kind="learning",
+                  authority="repo_evidence") is not True:
+            bad.append("add() 没报落盘成功（应该自动落盘）")
+        fresh = MemoryStore.load(root, "P-m")
+        if len(fresh.recent(n=5)) != 1:
+            bad.append("★ add() 没落盘 —— 新实例读不到（就是那个静默丢的坑）")
+        # ② 未 load 数据根 ⇒ 只能是内存态, 必须返回 False 让人看得见
+        orphan = MemoryStore("P-x")
+        if orphan.add("无数据根") is not False:
+            bad.append("没有数据根时应返回 False（否则调用方以为记住了）")
+        # ③ 调度器写侧接线: 造一个"已完成的执行" ⇒ `_record_memory` 必须落一条
+        proj = root / "projects" / "P-m" / "tasks"
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "PLAN-m.json").write_text(json.dumps(
+            {"plan_id": "PLAN-m", "project_id": "P-m", "status": "confirmed", "nodes": [
+                {"id": "p", "kind": "project", "parent_id": "", "title": "项目"},
+                {"id": "L", "kind": "task", "parent_id": "p", "status": "completed",
+                 "title": "初始化脚手架"}]}, ensure_ascii=False), encoding="utf-8")
+
+        class _Req:
+            def __init__(self):
+                self.id = "EXR-m"
+                self.task_id = "PLAN-m"
+                self.input = {"node_id": "L"}
+                self.project_id = ""
+
+        class _Store:
+            def list_executions(self):
+                return [_Req()]
+
+        orig = SP.open_runtime_store
+        try:
+            SP.open_runtime_store = lambda _r: _Store()      # type: ignore[assignment]
+            ports = SimpleNamespace(work=SimpleNamespace(_root=str(root), _plan_id="PLAN-m"))
+            SP._record_memory(ports, "EXR-m", kind="learning",  # type: ignore[arg-type]
+                              text="任务完成（裁定=done, 产出证据=repo-changed）",
+                              authority="repo_evidence")
+        finally:
+            SP.open_runtime_store = orig                    # type: ignore[assignment]
+        got = MemoryStore.load(root, "P-m").recent(n=5)
+        if not any("任务完成" in str(e.get("text")) for e in got):
+            bad.append("调度器没把执行经验写进项目记忆（写侧仍是死的）: "
+                       f"{[str(e.get('text'))[:20] for e in got]}")
+        # ④ 去重 + 权威升级（同文本不重复; 更高权威覆盖）
+        ms2 = MemoryStore.load(root, "P-m")
+        ms2.add("同一句话", kind="observation", authority="agent_claim")
+        ms2.add("同一句话", kind="learning", authority="verified_state")
+        same = [e for e in ms2.recent(n=9) if e.get("text") == "同一句话"]
+        if len(same) != 1:
+            bad.append(f"同文本该去重: {len(same)} 条")
+        elif same[0].get("authority") != "verified_state":
+            bad.append(f"更高权威该覆盖: {same[0].get('authority')}")
+    return bad
+
+
+def test_project_memory() -> None:
+    """项目级记忆: add 自动落盘 · 失败可见 · 调度器写侧真的写。"""
+    assert _check_project_memory() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -730,6 +810,7 @@ def main() -> int:
     results.append(("陈旧认领交回（不抢活跃执行）", not _check_stale_claim_sweep(), "；".join(_check_stale_claim_sweep())))
     results.append(("实体清单来源（设计优先/DDL 兜底/空则不编）", not _check_entity_catalog(), "；".join(_check_entity_catalog())))
     results.append(("执行体裁定（停手可表达·待裁决≠完成）", not _check_executor_verdict(), "；".join(_check_executor_verdict())))
+    results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

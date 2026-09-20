@@ -61,6 +61,7 @@ class MemoryStore:
     def __init__(self, project_id: str, data: dict[str, Any] | None = None):
         self.project_id = project_id
         self.entries: list[dict[str, Any]] = list((data or {}).get("entries") or [])
+        self._dir: Path | None = None      # ★ load() 记住数据根 ⇒ add() 可自动落盘（见下）
 
     # ------------------------------------------------------------ 持久化
     @classmethod
@@ -68,6 +69,7 @@ class MemoryStore:
         st = cls(project_id)
         if not data_dir or not project_id:
             return st
+        st._dir = Path(data_dir)
         try:
             d = json.loads((Path(data_dir) / "project_memory" / f"{project_id}.json").read_text(encoding="utf-8"))
             st.entries = list((d.get("entries") if isinstance(d, dict) else None) or [])
@@ -75,29 +77,38 @@ class MemoryStore:
             pass
         return st
 
-    def save(self, data_dir: str | Path | None) -> None:
-        if not data_dir or not self.project_id:
-            return
+    def save(self, data_dir: str | Path | None = None) -> bool:
+        """落盘 —— 返回是否真的写成功（★ 调用方据此可见地告警, 别静默丢）。
+
+        ★ 2026-09-20: `add()` 现在**自动落盘**（若 load 过数据根）; 保留 save() 供显式调用,
+          并把"吞 OSError 静默返回"改成**返回 bool** ——
+          全量测试踩到: add() 只写内存, 忘了 save 就悄悄丢（实测写完新进程读 0 条）。
+        """
+        d = Path(data_dir) if data_dir else self._dir
+        if not d or not self.project_id:
+            return False
         try:
-            path = Path(data_dir) / "project_memory" / f"{self.project_id}.json"
+            path = d / "project_memory" / f"{self.project_id}.json"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({"project_id": self.project_id,
                                         "entries": self.entries[-MAX_ENTRIES:]},
                                        ensure_ascii=False, indent=2), encoding="utf-8")
+            return True
         except OSError:
-            pass
+            return False
 
     # ------------------------------------------------------------ 记忆操作
     def add(self, text: str, *, source: str = "session",
-            kind: str = "observation", authority: str = "agent_claim") -> None:
-        """追加记忆 (去重: 相同文本不重复; 类型非法 → observation 兜底)。
+            kind: str = "observation", authority: str = "agent_claim") -> bool:
+        """追加记忆 (去重: 相同文本不重复; 类型非法 → observation 兜底) —— 并**自动落盘**。
 
         kind: decision/learning/error/pattern/observation (M3.2)
         authority: user_intent/verified_state/repo_evidence/agent_claim/summary
+        返回: 是否落盘成功（未 load 过数据根 ⇒ False, 仅是内存态; 调用方应据此告警）
         """
         text = str(text or "").strip()
         if not text:
-            return
+            return False
         if kind not in KINDS:
             kind = "observation"
         if authority not in AUTHORITY:
@@ -109,9 +120,10 @@ class MemoryStore:
                     e["authority"] = authority
                     e["kind"] = kind
                     e["ts"] = _now_iso()
-                return
+                return self.save()
         self.entries.append({"text": text[:300], "source": str(source)[:40],
                              "kind": kind, "authority": authority, "ts": _now_iso()})
+        return self.save()
 
     def recent(self, n: int = 5, query: str | None = None) -> list[dict[str, Any]]:
         """最近 N 条 (最新在前, 按权威加权排序 — 高权威优先, 同权威按时间衰减)。

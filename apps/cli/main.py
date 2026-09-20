@@ -471,6 +471,25 @@ def build_parser() -> Any:
     p_pr_adopt.add_argument("--user-id", default="", help="发起人 (可选)")
 
     # factory knowledge <sub> —— 记忆 · 知识索引（★ 2026-09-19 mem-6）
+    # ★ 项目级记忆（跨会话经验）—— 查看 / 手工追加
+    #   背景（2026-09-20 全量测试）: 机制早就有（类型化 + 权威 + 衰减）, 但**写侧零调用者**、
+    #   且 add() 不落盘（忘了 save 就静默丢）⇒ 给人一个能看能写的入口。
+    p_mem = sub.add_parser("memory", help="项目级记忆（跨会话经验）: 查看 / 手工追加")
+    json_opt(p_mem)
+    msub = p_mem.add_subparsers(dest="memory_command", required=True)
+    p_mem_ls = msub.add_parser("list", help="看某项目的记忆（按权威×时间衰减排序）")
+    json_opt(p_mem_ls)
+    p_mem_ls.add_argument("--project", required=True, help="项目 id")
+    p_mem_ls.add_argument("--n", type=int, default=10, help="最多几条（默认 10）")
+    p_mem_add = msub.add_parser("add", help="手工追加一条记忆")
+    json_opt(p_mem_add)
+    p_mem_add.add_argument("--project", required=True, help="项目 id")
+    p_mem_add.add_argument("--text", required=True, help="记忆内容")
+    p_mem_add.add_argument("--kind", default="observation",
+                           choices=["decision", "learning", "error", "pattern", "observation"])
+    p_mem_add.add_argument("--authority", default="user_intent",
+                           choices=["user_intent", "verified_state", "repo_evidence",
+                                    "agent_claim", "summary"])
     p_kn = sub.add_parser("knowledge", help="知识索引（记忆第 3 层）: 看是否过期 / 重建")
     json_opt(p_kn)
     knsub = p_kn.add_subparsers(dest="knowledge_command", required=True)
@@ -1276,6 +1295,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_approval(ctx, args)
         elif args.command == "knowledge":
             result = _dispatch_knowledge(ctx, args)
+        elif args.command == "memory":
+            result = _dispatch_memory(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         elif args.command == "llm":
@@ -3801,6 +3822,41 @@ def _print_backup(sub: str, r: dict) -> None:
     print(f"✅ 恢复完成: {x['restored']} 个文件 (来自 {x['file']})")
 
 
+def _dispatch_memory(ctx: FactoryContext, args: Any) -> dict:
+    """`factory memory list|add` —— 项目级记忆的读写入口（一数据一源: 仍走 MemoryStore）。"""
+    from ai_factory_os.services.conversation.project_memory import MemoryStore
+
+    cmd = getattr(args, "memory_command", "") or "list"
+    pid = str(getattr(args, "project", "") or "")
+    if not pid:
+        raise CliError("--project 必填（项目级记忆按项目隔离）", exit_code=2)
+    ms = MemoryStore.load(ctx.root, pid)
+    if cmd == "add":
+        ok = ms.add(str(args.text), source="cli", kind=str(args.kind),
+                    authority=str(args.authority))
+        if not ok:
+            raise CliError("记忆没写进去（落盘失败或文本为空）—— 没记住, 别当成功", exit_code=1)
+        return {"ok": True, "action": "memory_add", "project_id": pid,
+                "entries": len(ms.entries)}
+    items = ms.recent(n=int(getattr(args, "n", 10) or 10))
+    return {"ok": True, "action": "memory_list", "project_id": pid,
+            "count": len(items), "items": items,
+            "inject_block": ms.inject_block(n=4)}
+
+
+def _print_memory(cmd: str, r: dict) -> None:
+    """memory list|add 的人话输出。"""
+    if r.get("action") == "memory_add":
+        print(f"✔ 已记住（项目 {r['project_id']}, 现有 {r['entries']} 条）")
+        return
+    items = r.get("items") or []
+    print(f"▲ 项目记忆: {r['project_id']} · {r.get('count', 0)} 条")
+    if not items:
+        print("  （空 —— 执行完成后会自动留经验; 也可以 memory add 手工加）")
+    for m in items:
+        print(f"  · [{m.get('kind')}|{m.get('authority')}] {str(m.get('text'))[:76]}")
+        print(f"    来源 {str(m.get('source'))[:40]} · {str(m.get('ts'))[:19]}")
+
 def _dispatch_knowledge(ctx: FactoryContext, args: Any) -> dict:
     if args.knowledge_command == "status":
         return cmd_knowledge_status(ctx, args)
@@ -4250,6 +4306,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_plugin(result)
     elif args.command == "knowledge":
         _print_knowledge(args.knowledge_command, result)
+    elif args.command == "memory":
+        _print_memory(args.memory_command, result)
     elif args.command == "project":
         _print_project(args.project_command, result)
     elif args.command == "provider":

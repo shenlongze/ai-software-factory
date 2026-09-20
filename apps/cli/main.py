@@ -618,6 +618,13 @@ def build_parser() -> Any:
     json_opt(p_pu)
     p_pu.add_argument("--project", required=True, help="项目 id")
     p_pu.add_argument("--product", default=None, help="(可选) 指定 product 产物 id; 缺省取项目最新")
+    # ★ factory product breakdown —— 需求拆解（业务模块拆分）
+    #   Founder 说的"两层拆解"的**业务层**: 需求由哪些业务模块组成（人话粒度, 给人看）。
+    #   与 `tasktree decompose`（执行层: 具体做哪些活）是两层不同的东西。
+    p_pb = psub.add_parser(
+        "breakdown", help="★ 需求拆解（业务模块拆分）—— 业务层, 给人看的那层")
+    json_opt(p_pb)
+    p_pb.add_argument("--project", required=True, help="项目 id")
     # product idea <sub>
     p_pi = psub.add_parser("idea", help="产品想法管理 (发 idea.* 事件)")
     json_opt(p_pi)
@@ -2306,6 +2313,45 @@ def cmd_product_develop(ctx: FactoryContext, args: Any) -> dict:
             "exit_code": 0, "args": args}
 
 
+
+def cmd_product_breakdown(ctx: FactoryContext, args: Any) -> dict:
+    """`factory product breakdown --project P` —— ★ 需求拆解（业务模块拆分）。
+
+    Founder 说的"两层拆解"的**业务层**:
+      · 本命令: 业务视角 —— 需求由哪些业务模块组成（「商品管理/订单/支付」）人话粒度
+      · tasktree: 执行视角 —— 具体做哪些活（「编写 Prisma schema 与迁移」）
+    ⇒ 业务层是**给人看的**（喂给功能链路图）; 执行层是给 agent 做的。
+    """
+    from ai_factory_os.services.organization.projects import (
+        Artifact, ArtifactType, ProjectStore,
+    )
+    from ai_factory_os.services.work.business_breakdown import breakdown
+
+
+    project_id = str(args.project)
+    # ★ PRD 实际存在 product_truth 域（不是 org/artifacts.json —— 实测踩到过）。
+    pf = ctx.root / "projects" / project_id / "product_truth" / "prds.json"
+    if not pf.is_file():
+        raise CliError(
+            f"项目 {project_id} 内无 PRD（{pf}）—— 先跑 `factory conversation prd`"
+            "（需求拆解需要 PRD 作输入）",
+            exit_code=2)
+    prds = json.loads(pf.read_text(encoding="utf-8")) or {}
+    prd = list(prds.values())[-1] if isinstance(prds, dict) else prds[-1]
+    prd_text = json.dumps(prd, ensure_ascii=False)
+    mods = breakdown(prd_text, provider=_prod_provider())
+    store = ProjectStore(ctx.root / "org")       # 产物注册用
+
+    from ai_factory_os.infrastructure.ids import new_id
+    rec = Artifact(id=new_id("A"), stage_id="", type=ArtifactType.PRODUCT,
+                   ref="file:///docs/business_breakdown.json", project_id=project_id,
+                   producer_role="product_manager", producer_agent="pm",
+                   metadata={"business_modules": mods})
+    store.save_artifact(rec)
+    return {"ok": True, "command": "product breakdown",
+            "artifact": {"id": getattr(rec, "id", ""), "type": "business_breakdown"},
+            "modules": mods, "count": len(mods)}
+
 def cmd_product_ux(ctx: FactoryContext, args: Any) -> dict:
     """factory product ux --project P — UX/UI Agent 产出 UX/UI Artifact(7 节)。
 
@@ -3262,6 +3308,8 @@ def _dispatch_product(ctx: FactoryContext, args: Any) -> dict:
     """product idea/approval/workflow/generate/experience/develop/ux 分发 (Phase 9A ADR-0026 + 9B ADR-0027)。"""
     if args.product_command == "develop":
         return cmd_product_develop(ctx, args)
+    if args.product_command == "breakdown":
+        return cmd_product_breakdown(ctx, args)
     if args.product_command == "ux":
         return cmd_product_ux(ctx, args)
     if args.product_command == "idea":
@@ -4194,6 +4242,20 @@ def _print_understand(args: Any, r: dict) -> None:
 # ------------------------------------------------------------------ product 输出 (Phase 9A, ADR-0026)
 
 def _print_product(args: Any, r: dict) -> None:
+    if r.get("command") == "product breakdown":
+        # ★ 需求拆解（业务层）—— 给人看的粒度
+        print()
+        print(f"  需求拆解（业务模块）    {r.get('count')} 个")
+        print(f"  {'━' * 48}")
+        for i, m in enumerate(r.get("modules") or [], 1):
+            deps = m.get("depends_on") or []
+            tail = f"    ← 依赖: {' / '.join(deps)}" if deps else ""
+            print(f"  {i}. {m.get('name')}{tail}")
+            for f in m.get("features") or []:
+                print(f"       · {f}")
+        print()
+        print("  （业务层的粒度 —— 给人看; 执行层粒度见 tasktree todo）")
+        return
     """factory product 输出: idea create/list/show + approval request/decide/list
     + workflow start/status + generate + experience list/record (发对应
     idea.*/approval.*/product.* 审计事件; Phase 9A ADR-0026 + 9B ADR-0027)。"""

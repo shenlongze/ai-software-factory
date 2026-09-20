@@ -574,6 +574,15 @@ def build_parser() -> Any:
     p_tt_flow.add_argument("--project", default=None, help="项目 id")
     p_tt_flow.add_argument("--ids", action="store_true",
         help="显示节点 id（★ 默认不显示 —— 普通人看不懂内部 id; 要改节点时才需要）")
+    p_tt_flow.add_argument("--mermaid", action="store_true",
+        help="输出 mermaid 流程图源码（设计 §4.3: CLI 可渲染 mermaid, 贴进支持它的工具即成图）")
+    p_tt_df = ttsub.add_parser(
+        "dataflow", help="用户视图: 数据流程图（数据实体 / 哪个模块碰它 / 实体之间怎么连）")
+    json_opt(p_tt_df)
+    p_tt_df.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
+    p_tt_df.add_argument("--project", default=None, help="项目 id")
+    p_tt_df.add_argument("--mermaid", action="store_true",
+        help="输出 mermaid 源码（模块↔实体 与 实体↔实体 两张关系图）")
     p_tt_e = ttsub.add_parser(
         "edit", help="★ 逐节点编辑（改标题/验收/人话名/依赖, 或删节点）—— 改完回到候选态")
     json_opt(p_tt_e)
@@ -2469,6 +2478,29 @@ def _tasktree_flow(ctx: FactoryContext, args: Any) -> dict:
     return {"ok": True, "action": "tasktree-flow", "tree": tree, "flow": _UV.build_flow(tree)}
 
 
+def _tasktree_dataflow(ctx: FactoryContext, args: Any) -> dict:
+    """`factory tasktree dataflow <plan>` —— ★ 投影 C（数据流程图: 看数据）。
+
+    与页面/API **同源**: 都调 `services/work/data_flow.build_data_flow`
+    （视图数据只有服务层一个来源 —— 别在 CLI 里另写一套）。
+    ★ 数据来源必须真实（DDL / 产线声明）, 文案匹配只作线索 —— 见 data_flow.py 头部。
+    """
+    from pathlib import Path as _Path
+
+    from ai_factory_os.services.work import data_flow as _DF
+    from ai_factory_os.services.work import decomposition as _D
+
+    plan_id = str(getattr(args, "plan_id", "") or "")
+    project = str(getattr(args, "project", "") or "")
+    tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+    if not tree:
+        raise CliError(f"任务树不存在: {plan_id}（factory tasktree list 看有哪些）", exit_code=1)
+    pid = str(tree.get("project_id") or "")
+    proj_dir = (_Path(ctx.root) / "projects" / pid) if pid else None
+    return {"ok": True, "action": "tasktree-dataflow", "tree": tree,
+            "dataflow": _DF.build_data_flow(tree, proj_dir)}
+
+
 def _tasktree_edit(ctx: FactoryContext, args: Any) -> dict:
     """`factory tasktree edit <plan> --node <id> [--title/--acceptance/--display-name] [--drop]`
     —— ★ 逐节点编辑（Founder: "每一个子节点, 用户都有可能做修改"）。
@@ -2670,6 +2702,8 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
         return _tasktree_todo(ctx, args)
     if cmd == "flow":
         return _tasktree_flow(ctx, args)
+    if cmd == "dataflow":
+        return _tasktree_dataflow(ctx, args)
     if cmd == "edit":
         return _tasktree_edit(ctx, args)
     if cmd == "translate":
@@ -2833,6 +2867,106 @@ def _todo_mark(status: Any) -> str:
         return "⛔"
     return "☐"
 
+def _mq(text: Any) -> str:
+    """mermaid 标签里的危险字符换掉 —— 宁可换个字, 也不要渲染成乱码。"""
+    return (str(text or "").replace('"', "'").replace("#", "＃")
+            .replace("[", "（").replace("]", "）")
+            .replace("{", "（").replace("}", "）"))
+
+
+def _flow_mermaid(f: dict) -> str:
+    """功能链路图 → mermaid 源码（设计 §4.3: CLI 可渲染 mermaid）。"""
+    mid: dict[str, str] = {}
+    lines: list[str] = ["flowchart TB"]
+    core: list[str] = []
+    for b in f.get("batches") or []:
+        stage = "（可先做）" if b["level"] == 1 else "（等前面做完）"
+        lines.append(f'  subgraph B{b["level"]}["第 {b["level"]} 批{stage}"]')
+        for m in b["nodes"]:
+            mid[m["id"]] = f"M{len(mid) + 1}"
+            bits = ["前置: " + " / ".join(m["deps"])] if m.get("deps") else ["无前置"]
+            bits.append(f'被 {m["depended_by"]} 个依赖' if m.get("depended_by") else "没人依赖它")
+            if m.get("kids"):
+                bits.append(f'{m["kids"]} 个子模块')
+            lines.append(f'    {mid[m["id"]]}["{_mq(m["name"])}<br/>{_mq(" · ".join(bits))}"]')
+            if m.get("core"):
+                core.append(mid[m["id"]])
+        lines.append("  end")
+    for e in f.get("edges") or []:
+        a, b = mid.get(e["from"]), mid.get(e["to"])
+        if a and b:
+            lines.append(f"  {a} --> {b}")
+    if core:
+        lines.append("  classDef core fill:#eaf3ff,stroke:#0071e3,color:#0058b0")
+        lines.append("  class " + ",".join(core) + " core")
+    return "\n".join(lines)
+
+
+def _dataflow_mermaid(d: dict) -> str:
+    """数据流程图 → mermaid 源码（虚线=线索, 粗线=声明, 细线+外键=真实外键）。"""
+    lines: list[str] = ["flowchart LR"]
+    mid: dict[str, str] = {}
+    for i, m in enumerate(d.get("modules") or []):
+        mid[m["id"]] = f"M{i + 1}"
+        lines.append(f'  {mid[m["id"]]}["{_mq(m["name"])}"]')
+    eid: dict[str, str] = {}
+    for i, e in enumerate(d.get("entities") or []):
+        eid[e["name"]] = f"E{i + 1}"
+        tag = "（产线声明）" if e.get("from") == "declared" else f'被 {e.get("refs", 0)} 张表引用'
+        lines.append(f'  {eid[e["name"]]}(["{_mq(e["name"])}<br/>{_mq(tag)}"])')
+    for k in d.get("module_links") or []:
+        a, b = mid.get(k.get("module_id")), eid.get(k.get("entity"))
+        if not a or not b:
+            continue
+        lines.append(f"  {a} -. 线索 .-> {b}" if k.get("kind") == "evidence"
+                     else f"  {a} == 声明 ==> {b}")
+    for rel in d.get("relations") or []:
+        a, b = eid.get(rel.get("from")), eid.get(rel.get("to"))
+        if a and b:
+            lines.append(f"  {a} -->|外键| {b}")
+    return "\n".join(lines)
+
+
+def _print_dataflow(d: dict) -> None:
+    """数据流程图（终端文字版）—— 来源/覆盖率必须写清楚, 线索不许说成事实。"""
+    if not d.get("available"):
+        print()
+        print("  数据流程图    没有数据模型可依据 —— 项目里找不到 *.prisma / *.sql（不编一张图）")
+        return
+    cov = d.get("coverage") or {}
+    print()
+    print(f"  数据流程图    {len(d.get('entities') or [])} 个实体 · "
+          f"{len(d.get('relations') or [])} 条真实外键 · "
+          f"{len(d.get('module_links') or [])} 条模块↔实体线"
+          f"（声明 {d.get('declared_count', 0)} / 线索 {d.get('evidence_count', 0)}）")
+    print(f"  {'━' * 52}")
+    print()
+    print(f"  数据来源: {d.get('source_file') or '（无）'}（真实 DDL）")
+    ents = d.get("entities") or []
+    print("  实体（被引用次数）: " + " · ".join(
+        f"{e['name']} {e['refs']}" for e in ents))
+    print()
+    print("  ① 模块 ↔ 实体" + ("（⇢ = 线索, 不是系统记录）" if d.get("evidence_count") else ""))
+    by_mod: dict[str, list[str]] = {}
+    for k in d.get("module_links") or []:
+        mark = "→" if k["kind"] == "declared" else "⇢"
+        by_mod.setdefault(k["module"], []).append(f"{mark} {k['entity']}")
+    for name, items in by_mod.items():
+        print(f"    {name:<12} {'  '.join(items)}")
+    print()
+    print("  ② 实体之间（真实外键）")
+    for r in d.get("relations") or []:
+        via = f"  via {r['via']}" if r.get("via") else ""
+        print(f"    {r['from']:<16} ──▶ {r['to']}{via}")
+    print()
+    if (cov.get("missing") or []):
+        print(f"  ⚠ 未覆盖的模块（{len(cov['missing'])} 个）: " + "、".join(cov["missing"]))
+        print("    （它们的文案里没出现任何实体名 ⇒ 图上没有它们的线, 不编）")
+    if d.get("hint"):
+        print(f"  ⚠ {d['hint']}")
+    print()
+
+
 def _print_tasktree(args: Any, r: dict) -> None:
     cmd = getattr(args, "tasktree_command", None) or "list"
     if cmd == "list":
@@ -2912,6 +3046,11 @@ def _print_tasktree(args: Any, r: dict) -> None:
         # ★ 功能链路图（看关系）: 有哪些模块 · 谁在谁前面 · 哪个是核心
         #   视图数据由服务层给（user_view.build_flow）—— 这里只排版, 不重算视图。
         f = r["flow"]
+        if getattr(args, "mermaid", False):       # ★ 设计 §4.3: CLI 可渲染 mermaid
+            print()
+            print(_flow_mermaid(f))
+            print()
+            return
         more = f["domains"] - f["modules"]
         print()
         print(f"  功能链路    {r['tree'].get('plan_id')}    {f['modules']} 个模块"
@@ -2936,6 +3075,14 @@ def _print_tasktree(args: Any, r: dict) -> None:
                 print(f"    {_todo_mark(m['status'])} {m['name']}{idpart}{tail}")
             print()
         print("  （同一批可并行 · 批次之间有前后依赖; 前置 = 必须先做完的模块）")
+    elif cmd == "dataflow":
+        # ★ 数据流程图（看数据）: 实体 · 谁碰它 · 实体之间怎么连
+        if getattr(args, "mermaid", False):
+            print()
+            print(_dataflow_mermaid(r["dataflow"]))
+            print()
+            return
+        _print_dataflow(r["dataflow"])
     elif cmd == "edit":
         n = r.get("node") or {}
         print(f"✔ {r.get('action')}: {_todo_display_name(n.get('title'))}")

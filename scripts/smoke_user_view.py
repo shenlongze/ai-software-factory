@@ -242,6 +242,31 @@ def _check_dataflow(root: Path) -> list[str]:
     return bad
 
 
+def _check_mermaid(flow: dict, dataflow: dict) -> list[str]:
+    """CLI 的 mermaid 输出必须【结构自洽】—— 否则贴进渲染器就是一堆报错（设计 §4.3）。"""
+    import re
+
+    from apps.cli.main import _dataflow_mermaid, _flow_mermaid
+
+    bad: list[str] = []
+    for label, src in (("flow", _flow_mermaid(flow)), ("dataflow", _dataflow_mermaid(dataflow))):
+        body = "\n".join(ln for ln in src.splitlines() if ln.strip())
+        head = body.splitlines()[0].strip() if body else ""
+        if head not in ("flowchart TB", "flowchart LR"):
+            bad.append(f"{label} 首行不是 flowchart: {head!r}")
+        sub = len(re.findall(r"^\s*subgraph ", body, re.M))
+        end = len(re.findall(r"^\s*end$", body, re.M))
+        if sub != end:
+            bad.append(f"{label} subgraph/end 不平衡: {sub}/{end}")
+        defined = set(re.findall(r"^\s*([A-Z]\d+)[\[(]", body, re.M))
+        used = set(re.findall(r"^\s*([A-Z]\d+)\s*(?:-->|==>|-\.)", body, re.M))
+        if used - defined:
+            bad.append(f"{label} 悬空引用: {sorted(used - defined)}")
+        if not defined:
+            bad.append(f"{label} 一个节点都没定义")
+    return bad
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="用户视图端到端冒烟（不变式门）")
     ap.add_argument("--root", default="", help="额外扫描的真实数据根（诊断用）")
@@ -281,6 +306,10 @@ def main() -> int:
         # ⑦ 数据流程图（投影 C）: 每条线都要有真实来源
         df_bad = _check_dataflow(root)
         results.append(("数据流程图 判据(真实来源/不编)", not df_bad, "；".join(df_bad)))
+        # ⑧ CLI 的 mermaid 输出（设计 §4.3）: 结构必须自洽
+        from ai_factory_os.services.work import data_flow as _DF
+        m_bad = _check_mermaid(UV.build_flow(nest), _DF.build_data_flow(nest, root / "projects" / "P1"))
+        results.append(("CLI mermaid 结构自洽", not m_bad, "；".join(m_bad)))
 
     if args.root:
         rroot = Path(args.root).expanduser()

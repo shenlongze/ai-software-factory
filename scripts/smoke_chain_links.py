@@ -1438,6 +1438,170 @@ def test_recover_plan_from_checkpoint() -> None:
     assert _check_recover_plan_from_checkpoint() == []
 
 
+def _check_metrics_not_empty_shells() -> list[str]:
+    """★ 监控不能骗人: metrics 的 Agents / Validation 两段不能是**结构性空壳**。
+
+    实测病（2026-09-21）: 这两段数的是 `ASSIGNMENT_*` 与 `VALIDATION_RULE_COMPLETED` 事件,
+    而**全仓没有任何地方发过它们** ⇒ 表在、数恒 0, 分不清"真的没干"与"没接线"。
+    判据:
+      ① 跑一批后, 事件库里真的有派活事件（ASSIGNMENT_CREATED/COMPLETED）
+      ② 验证事件也真的发（VALIDATION_RULE_COMPLETED, 规则=leaf-evidence）+ 每批一条 VALIDATION_COMPLETED
+      ③ 两个 calculator 读这些事件后**不再是 0**（Agents.assignment_count / Validation.total_rules）
+    """
+    import tempfile
+
+    from ai_factory_os.bootstrap import scheduler_pump as SP
+    from ai_factory_os.bootstrap.scheduler_wiring import wire_scheduler
+    from ai_factory_os.infrastructure.events.logger import EventLogger
+    from ai_factory_os.infrastructure.events.store import EventStore
+    from ai_factory_os.infrastructure.events.types import EventType
+    from ai_factory_os.services.metrics.calculators import (
+        calculate_agent_metrics, calculate_validation_metrics,
+    )
+
+    bad: list[str] = []
+    # ★ 先断言【调用点】接线（反向验证暴露的漏洞: 只测函数 ⇒ 删掉调用点也过）
+    import inspect as _insp
+
+    from apps.cli import commands as _C
+
+    if "_emit_execution_events(logger, ctx.root, rep)" not in _insp.getsource(_C.cmd_run_plan):
+        bad.append("cmd_run_plan 里没调用 _emit_execution_events ⇒ 事件永远不会发（护栏没接上）")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        proj, plan = "P-m", "PLAN-m"
+        d = root / "projects" / proj / "tasks"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{plan}.json").write_text(json.dumps({
+            "plan_id": plan, "project_id": proj, "status": "confirmed",
+            "nodes": [{"id": "t1", "kind": "task", "title": "一件事", "status": "pending",
+                       "acceptance": "一句话验收", "required_capabilities": ["developer"]}],
+        }, ensure_ascii=False), encoding="utf-8")
+        (root / "agents").mkdir(parents=True, exist_ok=True)
+        (root / "agents" / "agents.json").write_text(json.dumps({
+            "d1": {"id": "d1", "name": "D", "role": "developer", "status": "AVAILABLE"}}),
+            encoding="utf-8")
+        ports = wire_scheduler(root, plan_id=plan)
+        rep = SP.drive(ports, run_execution=lambda eid: _fake_ok(ports, eid), max_parallel=1,
+                       max_ticks=2, limit=1)
+        store = EventStore(root / "events.db")
+        try:
+            logger = EventLogger(store)
+            from apps.cli.commands import _emit_execution_events
+
+            _emit_execution_events(logger, root, rep)
+            events = list(store.recent(limit=200))
+        finally:
+            store.close()
+        types = [str(getattr(e.type, "value", e.type)) for e in events]
+        if not any(t == EventType.ASSIGNMENT_CREATED.value for t in types):
+            bad.append(f"没有派活事件 ⇒ Agents 段结构性空壳: {sorted(set(types))}")
+        if not any(t == EventType.ASSIGNMENT_COMPLETED.value for t in types):
+            bad.append("没有派活完成事件")
+        if not any(t == EventType.VALIDATION_RULE_COMPLETED.value for t in types):
+            bad.append("没有验证事件 ⇒ Validation 段结构性空壳")
+        agents, _ = calculate_agent_metrics([], events)
+        if not any(m.assignment_count > 0 for m in agents.values()):
+            bad.append(f"Agents 指标仍是 0: {agents}")
+        vm = calculate_validation_metrics(events)
+        if vm.total_rules <= 0 or vm.runs <= 0:
+            bad.append(f"Validation 指标仍是 0: total_rules={vm.total_rules} runs={vm.runs}")
+    return bad
+
+
+def test_metrics_not_empty_shells() -> None:
+    """metrics 的 Agents/Validation 两段接真事件: 派活/验证事件真的发、指标不再恒 0。"""
+    assert _check_metrics_not_empty_shells() == []
+
+
+def _check_analysis_persist_fresh() -> list[str]:
+    """★ 理解产物落盘不能过期（第 5 件·监控不能骗人）。
+
+    实测病: 档案里的分析记录是 `project adopt` 那次写的（且那条路依赖未安装的 exec 扩展 ⇒
+    载荷是 "unavailable" 桩, language=unknown）; 而 `factory understand` 算出的**真报告从不落盘**
+    ⇒ 档案永远与实时报告不一致（我全量测试时正是这么发现的）。
+
+    判据: `factory understand <仓库>` 之后 ——
+      ① 项目多出一条分析记录, 载荷是**实时**值（语言/文件数/类型/阶段来自本次报告）
+      ② 项目的 analysis_ref 指向它（消费方读到的就是最新的）
+      ③ 分析的不是任何项目的仓库 ⇒ 不落盘、不报错（没归属就没有档案可落, 不编）
+    """
+    import tempfile
+
+    import inspect as _insp
+    from types import SimpleNamespace
+
+    from apps.cli.commands import cmd_understand
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        repo = root / "repo"
+        (repo / "src").mkdir(parents=True, exist_ok=True)
+        (repo / "src" / "a.py").write_text("print(1)\n", encoding="utf-8")
+        (repo / "package.json").write_text('{"name":"x"}', encoding="utf-8")
+        (root / "org").mkdir(parents=True, exist_ok=True)
+        (root / "org" / "projects.json").write_text(json.dumps({
+            "projects": {"P-an": {"id": "P-an", "name": "x", "repo_path": str(repo)}}},
+            ensure_ascii=False), encoding="utf-8")
+
+        from contextlib import contextmanager
+
+        from ai_factory_os.infrastructure.events.logger import EventLogger
+        from ai_factory_os.infrastructure.events.store import EventStore
+
+        _ev = EventStore(root / "events.db")
+
+        @contextmanager
+        def _scope():
+            yield EventLogger(_ev)               # 真 logger（understand 会记事件）
+
+        if "_persist_analysis(ctx.root, path, report)" not in _insp.getsource(cmd_understand):
+            bad.append("cmd_understand 里没调用 _persist_analysis ⇒ 档案仍会过期（护栏没接上）")
+        ctx = SimpleNamespace(root=root, logger_scope=_scope)
+        args = SimpleNamespace(path=str(repo), stage=False)
+        cmd_understand(ctx, args)          # 注: 事件库在本 guard 结束前不关（第二次调用还要用）
+        try:
+            rows = json.loads((root / "org" / "project_analyses.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            rows = {}
+        recs = [v for v in (rows.get("project_analyses") or {}).values()]
+        if not recs:
+            bad.append("understand 之后档案里没有分析记录（实时报告没落盘 ⇒ 档案会一直过期）")
+        else:
+            p = recs[-1].get("payload") or {}
+            if not p.get("language") or p.get("files") is None:
+                bad.append(f"落盘的载荷不是实时值: language={p.get('language')} files={p.get('files')}")
+            if payload_stage_missing(p):
+                bad.append(f"载荷缺阶段: {p.get('stage')}")
+            proj = (json.loads((root / "org" / "projects.json").read_text(encoding="utf-8"))
+                    .get("projects") or {}).get("P-an") or {}
+            if proj.get("analysis_ref") != recs[-1].get("id"):
+                bad.append(f"项目指针没指向最新记录: {proj.get('analysis_ref')} vs {recs[-1].get('id')}")
+        # ③ 不属于任何项目的仓库 ⇒ 不落盘
+        other = root / "other"
+        other.mkdir()
+        (other / "b.py").write_text("x=1\n", encoding="utf-8")
+        cmd_understand(ctx, SimpleNamespace(path=str(other), stage=False))
+        try:
+            rows2 = json.loads((root / "org" / "project_analyses.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            rows2 = {}
+        if len((rows2.get("project_analyses") or {})) != len(recs):
+            bad.append("没有归属的仓库不该落盘分析记录")
+        _ev.close()
+    return bad
+
+
+def payload_stage_missing(p: dict) -> bool:
+    return not str(p.get("stage") or "")
+
+
+def test_analysis_persist_fresh() -> None:
+    """理解产物落盘: 实时报告写进档案 + 指针更新 + 无归属不落盘。"""
+    assert _check_analysis_persist_fresh() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -1471,6 +1635,8 @@ def main() -> int:
     results.append(("文件冲突降级串行（并行安全前提·不是死代码）", not _check_file_conflict_demotion(), "；".join(_check_file_conflict_demotion())))
     results.append(("容量门/预算门接真数据（不再是 0/1e9 假数据）", not _check_load_gate_real_data(), "；".join(_check_load_gate_real_data())))
     results.append(("失败恢复接树（检查点+recover --plan·幂等）", not _check_recover_plan_from_checkpoint(), "；".join(_check_recover_plan_from_checkpoint())))
+    results.append(("监控不装样子（Agents/Validation 接真事件）", not _check_metrics_not_empty_shells(), "；".join(_check_metrics_not_empty_shells())))
+    results.append(("理解产物落盘不过期（实时报告进档案）", not _check_analysis_persist_fresh(), "；".join(_check_analysis_persist_fresh())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

@@ -1398,6 +1398,8 @@ def cmd_run_plan(ctx: FactoryContext, args: Any) -> dict:
 
         rep = drive(ports, run_execution=_run_one, max_parallel=max_parallel,
                     limit=int(getattr(args, "limit", 0) or 0))
+        # ★ 第 5 件·监控不能骗人: 派活/验证落成事件（metrics 的 Agents / Validation 两段读它们）
+        _emit_execution_events(logger, ctx.root, rep)
 
     return {
         "ok": True, "plan_id": plan_id, "ticks": rep.ticks,
@@ -2567,6 +2569,13 @@ def cmd_understand(ctx: FactoryContext, args: Any) -> dict:
         service = UnderstandingService(logger=logger)
         try:
             report = service.analyze(path)
+            # ★ 第 5 件·监控不能骗人: 实时报告**落盘**（原来只打印 ⇒ 档案停在 adopt 的快照, 会误导）
+            try:
+                _aid = _persist_analysis(ctx.root, path, report)
+            except Exception as exc:  # noqa: BLE001 — 落盘失败不影响报告
+                _aid = ""
+                print(f"⚠ 理解产物落盘失败（不影响报告）: {type(exc).__name__}: {str(exc)[:80]}",
+                      file=sys.stderr)
         except UnderstandingError as exc:
             raise CliError(str(exc), exit_code=1) from exc
         present = [a.artifact for a in report.artifacts if a.present]
@@ -4426,3 +4435,151 @@ def cmd_recover_plan(ctx: FactoryContext, args: Any) -> dict:
                         "node_status": (cp.workflow_state or {}).get("node_status"),
                         "at": str(cp.created_at)} if cp else None),
     }
+
+
+def _emit_execution_events(logger: Any, root: Path, rep: Any) -> None:
+    """★ 把"派活 / 验证"落成事件 —— metrics 的 Agents 与 Validation 两段读的就是它们。
+
+    实测病（第 5 件·监控不能骗人）: 这两段数的是 `ASSIGNMENT_CREATED/COMPLETED/FAILED`
+    与 `VALIDATION_RULE_COMPLETED/VALIDATION_COMPLETED` 事件, 而**全仓没有任何地方发过它们**
+    ⇒ 结构性空白: 表在、数恒 0, 你分不清"真的没干"还是"没接线"。
+
+    映射（全部来自真实执行结果, 不编）:
+      · ASSIGNMENT_CREATED   ← 本轮新建的执行（rep.scheduled）
+      · ASSIGNMENT_COMPLETED ← 该执行成功 · ASSIGNMENT_FAILED ← 失败
+      · VALIDATION_RULE_COMPLETED（规则 id = leaf-evidence）:
+          产出已提交(repo-changed) ⇒ PASS;  待核(未提交/无改动/判不出/未表态) ⇒ SKIP;  执行失败 ⇒ FAIL
+      · VALIDATION_COMPLETED ← 每批一次（runs/failed_runs 口径）
+    失败安全: 事件发不出去不影响执行结果（只记 stderr 一行）。
+    """
+    try:
+        from ai_factory_os.infrastructure.events.types import EventType
+        from ai_factory_os.services.execution.runtime.store import open_runtime_store
+        from ai_factory_os.services.work import decomposition as _D
+
+        store = open_runtime_store(root)
+        ex_by_id = {str(e.id): e for e in store.list_executions()}
+
+        def _member(eid: str) -> str:
+            e = ex_by_id.get(str(eid))
+            return str(((getattr(e, "input", None) or {}) if e else {}).get("member_id") or "")
+
+        def _info(eid: str) -> tuple[str, str]:
+            e = ex_by_id.get(str(eid))
+            inp = (getattr(e, "input", None) or {}) if e else {}
+            return str(getattr(e, "task_id", "") or ""), str(inp.get("node_id") or "")
+
+        for eid in list(getattr(rep, "scheduled", []) or []):
+            task_id, node = _info(eid)
+            logger.record(EventType.ASSIGNMENT_CREATED, source=SOURCE, task_id=task_id or None,
+                          agent_id=_member(eid) or None, stage="assigned",
+                          action=f"dispatch {eid}", result="OK",
+                          payload={"execution_id": eid, "node_id": node})
+
+        for o in list(getattr(rep, "outcomes", []) or []):
+            eid = str(o.get("execution_id") or "")
+            if not eid or "," in eid:                      # 汇总行（如"降级串行 N 个"）不发
+                continue
+            task_id, node = _info(eid)
+            ok = bool(o.get("ok"))
+            mem = _member(eid)
+            logger.record(
+                EventType.ASSIGNMENT_COMPLETED if ok else EventType.ASSIGNMENT_FAILED,
+                source=SOURCE, task_id=task_id or None, agent_id=mem or None,
+                stage="completed" if ok else "failed", action=f"run {eid}",
+                result="OK" if ok else "FAIL", payload={"execution_id": eid, "node_id": node})
+            # 验证（规则 = 产出证据）: 读叶上的证据标记
+            ev, need = "", False
+            try:
+                tree = _D.load_tree(root, task_id) if task_id else None
+                for n in (tree or {}).get("nodes") or []:
+                    if str(n.get("id") or "") == node:
+                        ev, need = str(n.get("evidence") or ""), bool(n.get("verify_needed"))
+                        break
+            except Exception:  # noqa: BLE001 — 读不到证据 ⇒ 按待核
+                ev, need = "", True
+            if not ok:
+                vres = "FAIL"
+            elif ev == "repo-changed" and not need:
+                vres = "PASS"
+            else:
+                vres = "SKIP"                              # 待核（未提交/无改动/未表态）
+            logger.record(EventType.VALIDATION_RULE_COMPLETED, source=SOURCE,
+                          task_id=task_id or None, stage="validated",
+                          action=f"validate {eid}", result=vres,
+                          evidence=ev or None,
+                          payload={"execution_id": eid, "node_id": node, "rule": "leaf-evidence",
+                                   "verify_needed": need})
+        if list(getattr(rep, "outcomes", []) or []):
+            logger.record(EventType.VALIDATION_COMPLETED, source=SOURCE, stage="validated",
+                          action="batch validation", result="OK",
+                          payload={"plan_id": str(getattr(rep, "stopped_because", "") or "")})
+    except Exception as exc:  # noqa: BLE001 — 事件不影响执行结果
+        print(f"⚠ 派活/验证事件发送失败（不影响执行）: {type(exc).__name__}: {str(exc)[:80]}",
+              file=sys.stderr)
+
+
+def _persist_analysis(root: Path, path: str, report: Any) -> str:
+    """★ 把 `understand` 的**实时报告**落盘成项目的分析记录（第 5 件·监控不能骗人）。
+
+    实测病: 档案里的分析记录是 adopt 时写的 —— 而那条路依赖未安装的 exec 扩展
+      ⇒ 载荷是 "unavailable" 桩（language=unknown 等）;  而 `factory understand` 算出的**真报告
+      从不落盘** ⇒ 档案永远停在旧快照, 与实时报告不一致（我全量测试时正是这么发现的）。
+
+    做: 按仓库路径找到项目 ⇒ 写一条新分析记录（载荷 = 实时报告）+ 把项目的 analysis_ref 指过去。
+    不做/找不到项目 ⇒ 返回 ""（不编 —— 没归属的仓库路径本来就没有"项目档案"可落）。
+    """
+    import json as _json
+    import uuid as _uuid
+
+    from ai_factory_os.services.organization.project_adoption import (
+        ProjectAdoptionStore, ProjectAnalysisRecord,
+    )
+    from ai_factory_os.services.organization.projects import ProjectStore
+
+    pj_path = Path(root) / "org" / "projects.json"
+    try:
+        rows = (_json.loads(pj_path.read_text(encoding="utf-8")).get("projects") or {})
+    except (OSError, ValueError):
+        return ""
+    target = str(Path(path).resolve())
+    pid = ""
+    for k, v in rows.items():
+        rp = str(v.get("repo_path") or "")
+        if rp and str(Path(rp).resolve()) == target:
+            pid = str(v.get("id") or k)
+            break
+    if not pid:
+        return ""
+    raw = report.to_dict() if hasattr(report, "to_dict") else dict(report or {})
+    bi = raw.get("basic_info") or {}
+    st = raw.get("stage") or {}
+    # 按契约形状落（language/framework/files… 是消费方直接读的键; 原样塞 raw 会让它们读到 None）
+    payload = {
+        "source": "factory understand（实时报告）",
+        "path": raw.get("path"),
+        "generated_at": raw.get("generated_at"),
+        "language": bi.get("languages"),
+        "framework": bi.get("tech_stack"),
+        "files": bi.get("file_count"),
+        "dirs": bi.get("dir_count"),
+        "project_type": bi.get("type"),
+        "state": bi.get("status"),
+        "scale": bi.get("scale"),
+        "stage": st.get("stage"),
+        "confidence": st.get("confidence"),
+        "artifacts": raw.get("artifacts"),
+        "missing": raw.get("missing"),
+        "next_actions": raw.get("next_actions"),
+    }
+    rec = ProjectAnalysisRecord(id=f"PA-{_uuid.uuid4().hex[:10]}", project_id=pid,
+                                payload=payload, valid=True, errors=[])
+    ProjectAdoptionStore(Path(root) / "org").save_analysis(rec)
+    try:
+        proj = ProjectStore(Path(root) / "org").get_project(pid)
+        if proj is not None:
+            proj.analysis_ref = rec.id
+            ProjectStore(Path(root) / "org").save_project(proj)
+    except Exception:  # noqa: BLE001 — 指针更新失败不影响记录本身
+        pass
+    return rec.id

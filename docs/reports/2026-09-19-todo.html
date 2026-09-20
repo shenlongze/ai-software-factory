@@ -140,7 +140,7 @@
       <span class="t"><span class="tag p2">P2</span>分类铁律红：R18 一能力一域 8 项 · R20 清单漂移 1</span>
       <span class="meta">R23 命令登记已修（13 个命令补进 registry）</span></span></label>
     <label class="item done"><input type="checkbox" checked id="t2-5"><span class="body">
-      <span class="t"><span class="tag p3">P3</span>lint 存量 48 个（src/）</span>
+      <span class="t"><span class="tag p3">P3</span>lint 存量 48 个 ✅ 已清（src/）</span>
       <span class="meta">E402 23（刻意延迟导入, 该加 noqa）· E702 9 · F841 9 · E741 5 · F401 2</span></span><br><b style="color:#0a8">【2026-09-21 已清】</b>全仓 47 条清零（apps+src+scripts ruff 0 错）, 并把 ruff 全仓提为【阻塞门禁】防反弹（0dc32e2f / 87b3f3c8）</label>
     <label class="item"><input type="checkbox" id="t2-6"><span class="body">
       <span class="t"><span class="tag p3">P3</span>R14/R15 规则仍在, 只是"无基线 ⇒ 不报红"</span>
@@ -999,8 +999,8 @@
     </label>
     <label class="item done">
       <input type="checkbox" id="cr-15" checked>
-      <span><b>cr-15</b> ⬜ ux（交互设计）同样会截断 —— 待做（Founder: "ux先记录，晚点在做"）</span>
-      <span class="tag">P0 待做</span>
+      <span><b>cr-15</b> ✅ ux（交互设计）同样会截断 —— 待做（Founder: "ux先记录，晚点在做"）</span>
+      <span class="tag">P0 已修</span>
       <span class="note">实测: chain 跑到 ⑤ 时 ux 报 truncated（27536 字符）—— 根因与 arch 完全相同。
         ★ 这不是个别问题, 是【通用规律】: 任何"一次生成大量结构化内容"的 LLM 调用都可能超
         8192 tokens 上限。⇒ 修法**不该**就地在 ux 的 prompt 上打补丁（R25 重复造轮子）,

@@ -183,6 +183,18 @@ class OpenAIProvider:
                 "openai empty response: message.content is empty "
                 "(reasoning model produced no output — retryable)"
             )
+        # ★ 2026-09-19（实测事故）: **内容非空但被截断**也必须响亮报错 ——
+        #   原先只检查"空内容 ⇒ 截断", 于是"非空但截断"的坏数据被**静默返回**:
+        #   ArchitectAgent 拿到不完整 JSON ⇒ json.loads 失败 ⇒ 报
+        #   "missing required fields: system_architecture, …" （**完全误导**,
+        #   让人以为是 prompt/字段问题, 实测查了十几轮才定位到真因）。
+        #   ⇒ 截断的产物是坏数据, 与"空内容"同性质: 响亮失败优于污染下游。
+        if first.get("finish_reason") == "length":
+            raise ProviderError(
+                f"openai response truncated: finish_reason=length "
+                f"(content 已收到 {len(text)} 字符但未写完 — max_tokens 不足; "
+                f"对策: 提高 max_tokens, 或让调用方【分节生成】)"
+            )
         return text
 
     # ------------------------------------------------------------ 接口实现

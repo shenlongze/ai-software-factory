@@ -79,13 +79,7 @@ _TASK_KEYS: tuple[str, ...] = ("module", "task", "api_contract", "ui_guidance")
 #:   消费方: services/work/decomposition.parallel_groups（按名匹配 → 拓扑分层）。
 #:   为什么让架构给: 依赖是架构设计的产物 —— 架构 agent 本就按模块划分,
 #:   由它给是"源头给"; 靠后从关键词/路径猜都不如源头准。
-_TASK_OPTIONAL_KEYS: tuple[str, ...] = (
-    "depends_on", "required_capabilities",
-    # ★ 2026-09-19 增: children —— 复杂模块的【子任务】（同结构, 可再嵌套）
-    #   Founder 指出"任务→子任务→子子任务"的递归分解在老区删除时丢了;
-    #   本键让 architect 能产出多级, 消费方 decomposition 已支持递归物化。
-    "children",
-)
+_TASK_OPTIONAL_KEYS: tuple[str, ...] = ("depends_on", "required_capabilities")
 
 #: product 契约中 Architect 消费的 3 节 (功能/MVP/故事 → 模块划分与任务拆分)
 _PRODUCT_ARCH_SECTIONS: tuple[str, ...] = (
@@ -130,8 +124,7 @@ class DesignArtifact:
     frontend_architecture: 前端架构 str (目录/组件边界, UI 实现指导依据);
     backend_architecture: 后端架构 str (服务/模块);
     task_breakdown: 任务拆分 list — 每项 task = {module, task,
-      api_contract, ui_guidance}; ★ 复杂模块可加 children（同结构的子任务,
-      可再嵌套）⇒ 树深由需求复杂度决定（任务→子任务→子子任务）。
+      api_contract, ui_guidance} (Developer 消费: 模块/API 约定/UI 指导)。
     """
 
     system_architecture: str = ""
@@ -303,10 +296,7 @@ _ARCH_AGENT_PROMPT = (
     "- task_breakdown: 任务拆分 (数组, 每项 task = {{module, task, "
     "api_contract, ui_guidance, depends_on, required_capabilities}} — 模块/技术任务/"
     "API 约定/UI 实现指导/先决模块/必需能力, "
-    "供 Developer 直接消费; 若该模块含 2 个以上可独立验收的交付物"
-    "（例: 一个模块里既有「下单接口」又有「回调验签」又有「退款」），可在该项内加 "
-    "children 数组把它们列成子任务（每项与父项同结构, 可再嵌套）⇒ 任务→子任务; "
-    "若是一个连续动作（如「初始化脚手架+统一配置」）则不加 children。一般 1-2 层即可）\n"
+    "供 Developer 直接消费)\n"
     "  ★ required_capabilities = 该任务**需要什么能力**（角色名数组, 从下面清单里选; "
     "可多选）。清单: {roles}。不确定 → 空数组 []（不猜）。\n"
     "  ★ depends_on = 该模块依赖的**模块名数组**（无依赖 → 空数组 []）。"

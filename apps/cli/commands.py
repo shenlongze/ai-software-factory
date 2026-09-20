@@ -1763,6 +1763,21 @@ def _open_git_services(ctx: FactoryContext, projects: list) -> list[GitService]:
     return services
 
 
+def _with_dev_tasks(ctx: FactoryContext, snapshot: Any) -> Any:
+    """把【开发任务（任务树 = 执行真账本）】填进 dashboard 快照 —— 口径归一到权威源。
+
+    背景（实测）: dashboard 的 Tasks 一直显示 0（数的是**旧任务表**）, 而工厂在干活 ⇒ 数字骗人 ✗。
+    这里把真账本（`services/work/progress.summary`：任务树的叶）也喂进去, 两个口径并列可见。
+    """
+    try:
+        from ai_factory_os.services.work import progress as _prog
+
+        snapshot.dev_tasks = dict(_prog.summary(ctx.root) or {})
+    except Exception:  # noqa: BLE001 — 拿不到就留空（视图里会显示"暂无"）, 不挡 dashboard
+        pass
+    return snapshot
+
+
 def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
     """factory dashboard — 只读控制台总览 (Rich 视图), 发 dashboard.viewed;
     --workspace → Workspace Summary (跨项目运营视图组), 发 workspace.dashboard.viewed。
@@ -1908,7 +1923,7 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
         "ok": True,
         "view": view,
         "workspace": workspace,
-        "snapshot": snapshot.to_dict(),
+        "snapshot": _with_dev_tasks(ctx, snapshot).to_dict(),
         "event_seq": ev.seq,
     }
 

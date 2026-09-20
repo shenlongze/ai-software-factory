@@ -2475,6 +2475,32 @@ def test_one_authority_projects() -> None:
     assert _check_one_authority_projects() == []
 
 
+def _check_chat_memory_and_clear() -> list[str]:
+    """★ 会话打磨（Founder 选 F）: 跨重启记得上下文（接最近一次会话）· 会说清"这条会改什么" · clear/新会话可用。"""
+    import inspect as _insp
+
+    from apps.cli.domains import chat as C
+    from apps.cli.domains import welcome as W
+
+    bad: list[str] = []
+    ws = _insp.getsource(W.run_shell)
+    if "conversations" not in ws or "_chat_hist" not in ws:
+        bad.append("启动时没接最近一次会话（跨重启不记得上下文）")
+    if "新会话" not in ws:
+        bad.append("没有「新会话」入口（用户想从零开始时没办法）")
+    if "clear" not in ws:
+        bad.append("不支持 clear/cls")
+    cs = _insp.getsource(C._system_prompt)
+    if "会改什么" not in cs:
+        bad.append("念命令时没说清「会改什么」（点头前要知道后果）")
+    return bad
+
+
+def test_chat_memory_and_clear() -> None:
+    """会话打磨: 跨重启接上下文 · 新会话清空 · clear 可用 · 念命令说明后果。"""
+    assert _check_chat_memory_and_clear() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2515,6 +2541,7 @@ def main() -> int:
     results.append(("CLI 会话（说话=会话 · /命令=执行 · 写命令不自动跑）", not _check_cli_chat(), "；".join(_check_cli_chat())))
     results.append(("需求→PRD 的门（无出处的功能不进 PRD·标出可疑）", not _check_prd_requirement_gate(), "；".join(_check_prd_requirement_gate())))
     results.append(("口径一致（status/project list/dashboard 项目数同源）", not _check_one_authority_projects(), "；".join(_check_one_authority_projects())))
+    results.append(("会话打磨（跨重启记上下文·新会话·clear·念命令说后果）", not _check_chat_memory_and_clear(), "；".join(_check_chat_memory_and_clear())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

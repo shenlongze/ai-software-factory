@@ -392,6 +392,9 @@ class FactorySnapshot(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     project_id: str | None = None
     tasks: TaskSnapshot = Field(default_factory=TaskSnapshot)
+    # ★ 2026-09-21（客户精度/口径归一）: 开发任务（**任务树** = 执行的真实账本）。
+    #   `tasks` 那份是【旧任务表】（空的）—— 两者不是一个概念, 所以并列展示, 谁都不冒名。
+    dev_tasks: dict[str, Any] = Field(default_factory=dict)
     agents: AgentSnapshot = Field(default_factory=AgentSnapshot)
     workflows: WorkflowSnapshot = Field(default_factory=WorkflowSnapshot)
     executions: ExecutionSnapshot = Field(default_factory=ExecutionSnapshot)

@@ -242,6 +242,28 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
     _conv_id = ""
     _chat_hist: list[dict[str, str]] = []
     _pending_cmd = ""            # ★ 待你点头的命令（会话里它念出来的写命令）
+    # ★ F2 多轮上下文持久化（跨重启还记得）: 启动时接上**最近一次会话**的最后几条消息。
+    try:
+        import json as _json
+
+        for _f in sorted((Path(ctx.root) / "projects").glob("*/conversations/*.json"),
+                         key=lambda p: p.stat().st_mtime, reverse=True)[:5]:
+            try:
+                _d = _json.loads(_f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 — 坏文件跳过（继续找下一个）
+                continue
+            _msgs = [m for m in (_d.get("messages") or [])
+                     if str(m.get("role")) in ("human", "assistant", "ai")][-6:]
+            if not _msgs:
+                continue
+            _conv_id = str(_d.get("id") or _f.stem)
+            _chat_hist = [{"role": ("assistant" if str(m.get("role")) == "ai" else str(m.get("role"))),
+                           "content": str(m.get("content"))[:1500]} for m in _msgs]
+            print(f"  （接着上次的会话 {_conv_id} · 已载入 {len(_chat_hist)} 条上下文;"
+                  f" 想从零开始就说「新会话」）")
+            break
+    except Exception:  # noqa: BLE001 — 载入失败就正常开新会话
+        pass
     while True:
         try:
             line = input("factory> ").strip()
@@ -282,6 +304,10 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             break
         if low in ("help", "h", "?", "/help", "/h", "/?"):
             print(render_help(""))
+            continue
+        if low in ("新会话", "new", "new session", "/new"):
+            _conv_id, _chat_hist = "", []
+            print("  （已开新会话: 上下文清空, 后面说的从零开始记）")
             continue
         if low in ("clear", "cls", "/clear", "/cls"):
             print("\033[2J\033[H", end="")     # ANSI 清屏（Founder 在会话里敲过 clear）

@@ -136,7 +136,16 @@ def build_recent_events(snapshot: FactorySnapshot, *, limit: int = 10) -> Panel:
 
 
 def build_tasks(snapshot: FactorySnapshot) -> Panel:
-    """Task 列表视图 (每任务一行)。"""
+    """Task 列表视图 (每任务一行) + 顶部先报【开发任务（任务树）= 执行真账本】。"""
+    # ★ 2026-09-21: 真账本优先显示（口径归一）—— 旧任务表那份在下面, 并标明是旧表。
+    dev = getattr(snapshot, "dev_tasks", None) or {}
+    if dev:
+        head = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+        for col in ("来源", "叶(总数)", "已完成", "完成率", "任务树", "按状态"):
+            head.add_column(col)
+        head.add_row("开发任务（任务树 = 执行真账本）", str(dev.get("leaves", 0)), str(dev.get("done", 0)),
+                     f"{dev.get('percent', 0)}%", str(dev.get("plans", 0)), _text(str(dev.get("by_status") or "{}")))
+        return _panel(head, "Tasks 真实口径（任务树）", border="green")
     table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
     for col in ("Task", "Status", "Project", "Type", "Title", "Owner"):
         table.add_column(col)

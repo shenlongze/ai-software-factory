@@ -132,6 +132,8 @@ def _system_prompt(root: Path | str) -> str:
         "    run --plan PLAN-xxx --project P-xxx --limit 3 --parallel 2          派活+执行\n"
         "    recover --plan PLAN-xxx --stale-after 60                            中断恢复\n"
         "    intelligence experience list / evaluate --task <类型>                经验与推荐\n"
+        "6 ★ 你念出 RUN: 命令时, 正文里**再用一句人话说清它会改什么**（例: 「会往你的数据目录写一个\n"
+        "   备份包」「会给这个项目建一棵任务树, 不会动代码」）—— 老板点头前要知道后果。\n"
         "5 会改数据的命令(run/chain/confirm/decompose/backup/create 等)也**必须**用 RUN: 格式写出来"
         "（写成 \`RUN: backup create\` 这种一行）, 系统会自动挂起、问老板要不要跑 —— 不要只在正文里描述命令。\n"
     )

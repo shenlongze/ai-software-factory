@@ -2013,6 +2013,59 @@ def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     assert _check(tmp_path) == []
 
 
+def _check_cli_welcome() -> list[str]:
+    """★ "怎么进入 CLI"（Founder 问「我需要如何进入 factory 的 cli」）。
+
+    实测病: 敲 `factory` 不带参数 ⇒ 只有一句英文报错
+      `factory: error: the following arguments are required: command` —— 对非技术用户等于**进不去**。
+    判据:
+      ① 空参 ⇒ 友好首屏（版本 + 数据概览 + 编号菜单 + help 提示）, **退出码 0**, 且不含英文 argparse 报错
+      ② 非终端（管道/脚本）⇒ 只打印**不挂住**（不读 stdin）
+      ③ `factory help [--role X]` ⇒ 中文帮助中心, 四类角色齐
+      ④ 首屏里的编号必须都对应**真实存在**的命令（不能写没做的）
+    """
+    import io as _io
+    import contextlib as _ctx
+
+    from apps.cli import main as _cli_main  # 注意: apps.cli.__init__ 把 main 暴露为**函数**
+    from apps.cli.domains import welcome as W
+
+    bad: list[str] = []
+    buf = _io.StringIO()
+    with _ctx.redirect_stdout(buf):
+        rc = _cli_main([])
+    out = buf.getvalue()
+    if rc != 0:
+        bad.append(f"空参退出码该是 0, 实得 {rc}")
+    if "required: command" in out or "usage:" in out:
+        bad.append("空参还是甩 argparse 英文报错（等于进不去）")
+    for kw in ("AI Factory OS", "你想做什么", "经验", "help"):
+        if kw not in out:
+            bad.append(f"首屏缺「{kw}」")
+    # 非终端不该挂住: 上面 main([]) 在非 TTY 下已跑完 ⇒ 若它读 stdin 会 EOFError/挂住 ⇒ 视为坏
+    # ④ 首屏编号 → 真实命令（逐个查 --help 不报错）
+    import subprocess as _sp
+
+    for key, (_label, argv) in W._MENU.items():
+        r = _sp.run(["sh", "-c", f"cd {Path.cwd()} && .venv/bin/factory {' '.join(argv)} --help"],
+                    capture_output=True, text=True, timeout=20)
+        if r.returncode != 0:
+            bad.append(f"首屏第 {key} 条指向的命令不存在/报错: {' '.join(argv)}")
+    # ③ 帮助中心
+    hb = W.render_help("")
+    for role in ("老板", "产品", "开发", "运维"):
+        if role not in hb:
+            bad.append(f"帮助中心缺角色「{role}」")
+    if "command not found" in hb or "Traceback" in hb:
+        bad.append("帮助中心内容不干净")
+    return bad
+
+
+def test_cli_welcome() -> None:
+    """空参 ⇒ 友好首屏（不是英文报错）· 非终端不挂住 · 帮助中心四角色齐 · 菜单指向真命令。"""
+    assert _check_cli_welcome() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2047,6 +2100,7 @@ def main() -> int:
     results.append(("学习自治（经验从真执行来·失败也记·幂等）", not _check_experience_learning(), "；".join(_check_experience_learning())))
     results.append(("provider 域经验（用量⇒经验⇒推荐引擎读得到）", not _check_provider_experience_learning(), "；".join(_check_provider_experience_learning())))
     results.append(("拆解一次到位（原子任务·契约要验收·同模块归一域）", not _check_decompose_is_atomic(), "；".join(_check_decompose_is_atomic())))
+    results.append(("CLI 友好首屏（空参不甩英文报错·帮助中心四角色）", not _check_cli_welcome(), "；".join(_check_cli_welcome())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

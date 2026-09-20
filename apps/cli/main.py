@@ -226,7 +226,18 @@ def build_parser() -> Any:
     json_opt(p_disc)
     p_disc.add_argument("what", nargs="?", default="all",
                         choices=["all", "ai-clis", "mcp", "projects"], help="扫描对象")
-    json_opt(sub.add_parser("init", help="初始化工厂: 目录骨架 + 事件库 (幂等)"))
+    p_init = sub.add_parser(
+        "init", help="初始化工厂: 目录骨架 + 事件库 (幂等)",
+        description="初始化工厂数据目录（默认 ~/.factory）: 建目录骨架 + 事件库, 并发一条 system.init。"
+                    "幂等 —— **任何命令都会自动建目录**, 所以不跑本命令也能直接用; 它的用途是"
+                    "首次安装后确认环境、或想显式留一条 init 事件时。")
+    json_opt(p_init)
+
+    # factory help —— 中文帮助中心（按角色: 老板/产品/开发/运维）
+    p_help = sub.add_parser("help", help="中文帮助中心（按角色: 老板/产品/开发/运维）",
+                            description="按角色列出常用命令与一句话说明（命令全部真实存在）。")
+    json_opt(p_help)
+    p_help.add_argument("--role", default="", help="只看某个角色: 老板 / 产品 / 开发 / 运维")
 
     # factory task <sub>
     p_task = sub.add_parser("task", help="任务管理")
@@ -1259,8 +1270,27 @@ def build_parser() -> Any:
 
 def main(argv: list[str] | None = None) -> int:
     """CLI 入口: 返回退出码 (console script 以返回值作为进程退出码)。"""
+    # ★ 2026-09-21（Founder: "我需要如何进入 factory 的 cli"）: 空参**不再甩英文报错**,
+    #   而是进友好首屏（版本 + 你的数据概览 + 编号菜单; 有终端可交互, 非终端只打印）。
+    #   实测病: 原来 `factory` ⇒ "error: the following arguments are required: command" ✗ 等于进不去。
+    _argv = list(sys.argv[1:] if argv is None else argv)
+    if not any(not a.startswith("-") for a in _argv):
+        from .domains.welcome import run_welcome
+
+        _root = ""
+        for _i, _a in enumerate(_argv):
+            if _a == "--root" and _i + 1 < len(_argv):
+                _root = _argv[_i + 1]
+            elif _a.startswith("--root="):
+                _root = _a.split("=", 1)[1]
+        if not _root:
+            from .context import DEFAULT_ROOT
+
+            _root = str(DEFAULT_ROOT)
+        return run_welcome(_root)
+
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(_argv)
     ctx = FactoryContext(args.root)
     ctx.ensure_dirs()  # ADR-0002 决策 5: 所有命令幂等自建目录与 DB, 不强制先 init
 
@@ -1278,6 +1308,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "init":
             result = cmd_init(ctx)
+        elif args.command == "help":
+            from .domains.welcome import render_help
+
+            if getattr(args, "json", False):
+                return 0
+            print(render_help(str(getattr(args, "role", "") or "")))
+            return 0
         elif args.command == "task":
             result = _dispatch_task(ctx, args)
         elif args.command == "conversation":

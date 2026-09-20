@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>任务视图 · Factory</title>
+<style>
+  :root{
+    --bg:#f5f5f7; --card:#ffffff; --ink:#1d1d1f; --ink2:#6e6e73; --line:#d2d2d7;
+    --brand:#0071e3; --ok:#34c759; --warn:#ff9f0a; --dead:#ff3b30;
+    --r:18px; --shadow:0 4px 24px rgba(0,0,0,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Helvetica Neue",Arial,sans-serif;
+       -webkit-font-smoothing:antialiased}
+  header{position:sticky;top:0;z-index:9;background:rgba(245,245,247,.78);
+         backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
+         border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+  .bar{display:flex;align-items:center;gap:16px;height:64px}
+  .brand{font-weight:600;font-size:19px;letter-spacing:-.01em}
+  .brand small{color:var(--ink2);font-weight:400;margin-left:8px;font-size:13px}
+  select{margin-left:auto;padding:8px 14px;border-radius:999px;border:1px solid var(--line);
+         background:#fff;font-size:14px;color:var(--ink);outline:none}
+  main{padding:28px 0 80px}
+  .hero{display:flex;align-items:baseline;gap:14px;margin:6px 0 10px}
+  h1{font-size:28px;font-weight:600;letter-spacing:-.02em;margin:0}
+  .pill{font-size:13px;color:var(--ink2);background:#fff;border:1px solid var(--line);
+        padding:4px 12px;border-radius:999px}
+  .prog{margin:10px 0 26px;height:8px;border-radius:999px;background:#e8e8ed;overflow:hidden}
+  .prog span{display:block;height:100%;background:linear-gradient(90deg,#0071e3,#3d9bff);
+             border-radius:999px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+  .cols{display:grid;grid-template-columns:1.05fr 1fr;gap:20px}
+  @media(max-width:900px){.cols{grid-template-columns:1fr}}
+  .card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:22px 22px 18px}
+  .card h2{font-size:15px;font-weight:600;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  .card h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--brand)}
+  .sub{color:var(--ink2);font-size:13px;margin:0 0 18px}
+  /* 待办清单 */
+  .row{display:flex;align-items:center;gap:10px;padding:7px 0}
+  .row .mark{width:18px;text-align:center;flex:none;font-size:14px}
+  .row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .nm.d0{font-weight:600}
+  .row .who{color:var(--ink2);font-size:12.5px;flex:none}
+  .row .pg{color:var(--ink2);font-size:12.5px;flex:none;font-variant-numeric:tabular-nums}
+  .row.d1{padding-left:26px}
+  .row.d2{padding-left:52px}
+  .row.d3{padding-left:78px}
+  /* 链路图 */
+  .layer{margin-bottom:16px}
+  .layer .lv{font-size:12px;color:var(--ink2);margin-bottom:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:#f5f5f7;border:1px solid var(--line);border-radius:999px;
+        padding:6px 14px;font-size:13.5px;display:inline-flex;align-items:center;gap:7px}
+  .chip .n{color:var(--ink2);font-size:11.5px;font-variant-numeric:tabular-nums}
+  .chip.core{background:#eaf3ff;border-color:#cfe4ff;color:#0058b0}
+  .deps{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+  .dep{display:flex;gap:10px;font-size:13.5px;padding:5px 0;color:var(--ink2)}
+  .dep b{color:var(--ink);font-weight:500;min-width:120px}
+  .empty{color:var(--ink2);font-size:14px;padding:40px 0;text-align:center}
+  .foot{color:var(--ink2);font-size:12.5px;margin-top:26px;text-align:center}
+  .err{background:#fff2f0;border:1px solid #ffd6d0;color:#b3261e;border-radius:12px;
+       padding:14px 16px;font-size:14px;margin:20px 0}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <div class="brand">Factory<small>用户视图 · 同一份数据的两种看法</small></div>
+    <select id="pick"></select>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <h1 id="title">加载中…</h1>
+    <span class="pill" id="status"></span>
+  </div>
+  <div class="prog"><span id="bar" style="width:0%"></span></div>
+  <div id="msg"></div>
+
+  <div class="cols">
+    <!-- 投影 B: 功能链路图（看关系） -->
+    <section class="card">
+      <h2><span class="dot"></span>功能链路图</h2>
+      <p class="sub">这个需求包含哪些功能、它们怎么串起来（先后顺序）</p>
+      <div id="flow"></div>
+    </section>
+    <!-- 投影 A: 层级待办清单（看进度） -->
+    <section class="card">
+      <h2><span class="dot"></span>层级待办清单</h2>
+      <p class="sub">要做的活、谁在做、做到哪了</p>
+      <div id="todo"></div>
+    </section>
+  </div>
+
+  <p class="foot">★ 两个视图读的是同一份任务树数据 —— 说的是一件事的两种看法</p>
+</main>
+
+<script>
+const MARK = {todo:"☐", doing:"🚧", done:"✅", dead:"⛔"};
+const esc = s => (s??"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $ = id => document.getElementById(id);
+
+function err(m){ $("msg").innerHTML = `<div class="err">${esc(m)}</div>`; }
+
+async function api(path){
+  const r = await fetch(path);
+  if(!r.ok){ throw new Error((await r.json().catch(()=>({}))).detail || `HTTP ${r.status}`); }
+  return r.json();
+}
+
+function renderTodo(d){
+  if(!d.lines || !d.lines.length) return `<div class="empty">暂无任务</div>`;
+  return d.lines.map(l => {
+    const who = l.who ? `<span class="who">${esc(l.who)}</span>` : "";
+    const pg  = l.kind === "domain" ? `<span class="pg">${l.done}/${l.total}</span>` : "";
+    return `<div class="row d${Math.min(l.depth,3)}">
+      <span class="mark">${MARK[l.mark]||"☐"}</span>
+      <span class="nm ${l.depth===0?"d0":""}">${esc(l.name)}</span>${pg}${who}</div>`;
+  }).join("");
+}
+
+function renderFlow(d){
+  if(!d.layers || !d.layers.length) return `<div class="empty">暂无模块</div>`;
+  const max = Math.max(...d.layers.flatMap(L => L.nodes.map(n => n.depended_by)), 0);
+  const body = d.layers.map(L => {
+    const chips = L.nodes.map(n => {
+      const core = (max && n.depended_by === max) ? " core" : "";
+      const cnt = n.depended_by ? `<span class="n">被 ${n.depended_by} 个依赖</span>` : "";
+      return `<span class="chip${core}">${MARK[n.status]||""} ${esc(n.name)} ${cnt}</span>`;
+    }).join("");
+    return `<div class="layer"><div class="lv">第 ${L.level} 层${L.level===1?"（可先做）":"（等上一层）"}</div>
+            <div class="chips">${chips}</div></div>`;
+  }).join("");
+  const deps = (d.deps||[]).length
+    ? `<div class="deps">${d.deps.map(x=>`<div class="dep"><b>${esc(x.name)}</b><span>← ${esc(x.on.join(" / "))}</span></div>`).join("")}</div>`
+    : "";
+  return body + deps;
+}
+
+async function load(planId){
+  const both = await api(`/api/trees/${encodeURIComponent(planId)}/both`);
+  const t = both.todo || {};
+  $("title").textContent = t.plan_id || planId;
+  $("status").textContent = t.status === "candidate" ? "候选态（待确认）" : (t.status || "");
+  $("bar").style.width = (t.percent||0) + "%";
+  $("todo").innerHTML = renderTodo(t);
+  $("flow").innerHTML = renderFlow(both.flow || {});
+  $("msg").innerHTML = `<p class="sub" style="margin:0 0 18px">进度 ${t.done}/${t.total}（${t.percent}%）· 共 ${(both.flow||{}).domains||0} 个模块</p>`;
+}
+
+async function boot(){
+  try{
+    const list = await api("/api/trees");
+    const sel = $("pick");
+    if(!list.trees.length){ err("没有任务树 —— 先用 `factory tasktree decompose` 生成一棵"); return; }
+    sel.innerHTML = list.trees.map(x =>
+      `<option value="${esc(x.plan_id)}">${esc(x.plan_id)} · ${esc(x.project_id||"无项目")} · ${x.done}/${x.leaves}</option>`).join("");
+    sel.onchange = () => load(sel.value).catch(e => err(e.message));
+    await load(list.trees[0].plan_id);
+  }catch(e){ err("接口调用失败: " + e.message + "（确认 API 已启动）"); }
+}
+boot();
+</script>
+</body>
+</html>

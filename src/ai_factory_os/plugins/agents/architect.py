@@ -44,6 +44,8 @@ S8-002 report §S8-003 接入说明):
 
 from __future__ import annotations
 
+import sys
+
 import json
 import re
 from dataclasses import dataclass, field as dc_field
@@ -312,6 +314,8 @@ _ARCH_AGENT_PROMPT = (
     "别人能**独立验收**的最小实现单元（能一句话写出验收）。"
     "一个叶里塞 3 件事（顿号枚举, 如\"设计并创建 A、B、C 三张表\"）就是还没拆到位 ⇒ "
     "继续拆成 children, 或拆成并列多项。宁可多几条, 不要一条包多件事。\n"
+    "  ★ 每一层（含 children 内的每一项）都必须带全 module/task/api_contract/ui_guidance/acceptance;"
+    "不适用写 \"-\", 不能省略。\n"
     "  ★ acceptance = 该任务的**一句话验收标准**（怎么算做完, 可被别人独立核对; 必填; "
     "禁止\"等/…/无\"这类兜底写法）\n"
     "  ★ required_capabilities = 该任务**需要什么能力**（角色名数组, 从下面清单里选; "
@@ -416,6 +420,74 @@ def _extract_json(content: str) -> Any:
         if parsed is not None:
             return parsed
     raise ArchitectError("Architect output is not valid JSON")
+
+
+def _gen_task_breakdown_sliced(*, prompt: str, provider: Any, max_tokens: int) -> list[Any] | None:
+    """★ task_breakdown 分片生成（2026-09-21: 递归嵌套让它变大 ⇒ 撞单次输出上限）。
+
+    实测: 改成"递归嵌套 + 拆到最小实现"后, 真跑报
+      `ProviderError: openai response truncated: finish_reason=length (content 已收到 25085 字符)`
+      ⇒ 单次生成装不下（deepseek 单次输出上限 8192 tokens, 提不上去）。
+    做法（与 api_design 同一套路, 不另造）:
+      ① 先要【模块清单】(name + 一句 scope, 体量小)
+      ② **逐模块**要它自己的原子任务（递归嵌套, 每项带 acceptance）—— 每次输出都小
+      ③ 程序合并成完整 task_breakdown
+    任一环节失败 ⇒ 返回 None（调用方回落"一次生成" —— 增强失败不阻塞主流程, 不静默丢）。
+    """
+    head = prompt[:2500]
+    list_ask = (
+        "你在为下面这个项目做架构设计。**只输出【模块清单】**(3-12 个模块; 每个模块给 name 与一句 scope)。\n"
+        "★ 只输出 JSON: {\"modules\": [{\"module\": \"名称\", \"scope\": \"一句范围\"}]}\n"
+        "不要 markdown, 不要解释。\n\n"
+        f"项目背景（节选）:\n{head}\n"
+    )
+    try:
+        r1 = provider.generate(ProviderRequest(task_context=list_ask, max_tokens=2048))
+        if not getattr(r1, "ok", False) or not (r1.content or "").strip():
+            return None
+        d1 = _extract_json(r1.content)
+        mods = (d1 or {}).get("modules") if isinstance(d1, dict) else None
+        if not isinstance(mods, list) or not mods:
+            return None
+    except Exception:  # noqa: BLE001 — 分片是"增强", 失败回落
+        return None
+
+    out: list[Any] = []
+    for m in mods[:12]:
+        if isinstance(m, str):
+            name, scope = m, ""
+        elif isinstance(m, dict):
+            name, scope = str(m.get("module") or m.get("name") or ""), str(m.get("scope") or "")
+        else:
+            continue
+        if not name.strip():
+            continue
+        ask = (
+            f"你在为项目做架构设计。**只输出模块「{name}」的任务拆分**（范围: {scope}）。\n"
+            "★★ 递归拆到【最小单位 / 最小实现】: 叶子必须是一个工程师一次能做完、别人能独立验收的"
+            "最小实现单元（能一句话写出验收）。可带 `children` 继续嵌套（层数不限）, 也可并列多项。\n"
+            "★ 每项字段: {module, task, api_contract, ui_guidance, acceptance, required_capabilities?}"
+            " —— **含 children 里的每一项都要带全**（递归的每一层都一样）; 不适用就写 \"-\""
+            "（**不能省略字段**, 缺字段会被判无效）。\n"
+            "★ 只输出 JSON: {\"tasks\": [ ... ]}（module 一律填 \"" + name + "\"）\n"
+            "不要 markdown, 不要解释。\n\n"
+            f"项目背景（节选）:\n{head}\n"
+        )
+        try:
+            r2 = provider.generate(ProviderRequest(task_context=ask, max_tokens=max_tokens))
+            if not getattr(r2, "ok", False) or not (r2.content or "").strip():
+                return None
+            d2 = _extract_json(r2.content)
+            tasks = (d2 or {}).get("tasks") if isinstance(d2, dict) else None
+            if not isinstance(tasks, list) or not tasks:
+                return None
+            for tk in tasks:
+                if isinstance(tk, dict):
+                    tk.setdefault("module", name)
+                    out.append(tk)
+        except Exception:  # noqa: BLE001 — 单模块失败 ⇒ 回落（不产半成品）
+            return None
+    return out or None
 
 
 def _gen_api_design_sliced(*, prompt: str, provider: Any, max_tokens: int) -> dict[str, Any] | None:
@@ -528,6 +600,9 @@ def _gen_sections_individually(*, prompt: str, provider: Any, max_tokens: int) -
     for key in SECTION_KEYS:
         if key == "api_design":
             sec = _gen_api_design_sliced(prompt=prompt, provider=provider, max_tokens=max_tokens)
+        elif key == "task_breakdown":
+            # ★ 递归嵌套让它变大 ⇒ 单次装不下（实测 25085 字符被截断）⇒ 分片（先模块清单→逐模块）
+            sec = _gen_task_breakdown_sliced(prompt=prompt, provider=provider, max_tokens=max_tokens)
         else:
             ask = (
                 f"你在为下面这个项目做架构设计。**只输出 `{key}` 这一节**的 JSON。\n"
@@ -536,15 +611,32 @@ def _gen_sections_individually(*, prompt: str, provider: Any, max_tokens: int) -
                 f'输出格式: {{"{key}": <这一节的内容>}}\n\n'
                 f"项目背景（节选）:\n{head}\n"
             )
-            try:
-                resp = provider.generate(ProviderRequest(task_context=ask, max_tokens=max_tokens))
-                if not getattr(resp, "ok", False) or not (resp.content or "").strip():
-                    return None
-                data = _extract_json(resp.content)
-                if not isinstance(data, dict) or key not in data:
-                    return None
-                sec = data[key]
-            except Exception:  # noqa: BLE001 — 逐节是"增强", 失败就回落一次生成
+            # ★ 2026-09-21: 单节失败**先重试一轮**再决定; 且失败要**说清是哪一节、为什么**
+            #   （实测: 分节中途静默返回 None ⇒ 回落到"一次生成"那条必爆的路 ⇒ 报截断,
+            #    但真因在别处 —— 静默降级把人引向了错误的方向 ✗）
+            sec = None
+            for _try in range(2):
+                try:
+                    _ask = ask if _try == 0 else (
+                        f"{ask}\n★ 上一次输出不是合法 JSON。请**只输出** {{\"{key}\": ...}} 这一节的 JSON,"
+                        f" 不要任何解释、不要 markdown 围栏。\n")
+                    resp = provider.generate(ProviderRequest(task_context=_ask, max_tokens=max_tokens))
+                    if not getattr(resp, "ok", False) or not (resp.content or "").strip():
+                        _why = str(getattr(resp, "error", "") or "空响应")[:80]
+                        print(f"⚠ 架构分节 {key}: 第 {_try + 1} 次调用失败 —— {_why}", file=sys.stderr)
+                        continue
+                    data = _extract_json(resp.content)
+                    if not isinstance(data, dict) or key not in data:
+                        print(f"⚠ 架构分节 {key}: 第 {_try + 1} 次输出不是含 {key} 的 JSON"
+                              f"（前 80 字: {(resp.content or '')[:80]!r}）", file=sys.stderr)
+                        continue
+                    sec = data[key]
+                    break
+                except Exception as exc:  # noqa: BLE001 — 单节失败: 说清 + 重试
+                    print(f"⚠ 架构分节 {key}: 第 {_try + 1} 次异常 {type(exc).__name__}: {str(exc)[:70]}",
+                          file=sys.stderr)
+            if sec is None:
+                print(f"⚠ 架构分节 {key}: 两轮均失败 ⇒ 放弃分节（将回落到一次生成）", file=sys.stderr)
                 return None
         if sec in (None, "", [], {}):
             return None

@@ -1905,6 +1905,16 @@ def _check_decompose_is_atomic() -> list[str]:
         bad.append(f"架构把模块级种子拦了（它只是种子, 该由递归拆）: {AR._validate_tasks(coarse)}")
     if AR._validate_tasks(fine):
         bad.append(f"架构误伤了原子任务: {AR._validate_tasks(fine)}")
+    # ★ 递归嵌套会让 task_breakdown 变大 ⇒ 必须走【分片生成】, 不能回落到"一次生成"(必爆):
+    #   实测单次生成 25085 字符被截断（deepseek 单次输出上限 8192 tokens, 提不上去）。
+    import importlib as _il2
+    import inspect as _insp2
+
+    _archmod = _il2.import_module("ai_factory_os.plugins.agents.architect")
+    if not hasattr(_archmod, "_gen_task_breakdown_sliced"):
+        bad.append("task_breakdown 分片函数不存在 ⇒ 递归嵌套输出会撞单次上限")
+    elif "_gen_task_breakdown_sliced" not in _insp2.getsource(_archmod._gen_sections_individually):
+        bad.append("分节生成没给 task_breakdown 挂分片（实测会截断）")
     # 嵌套种子（递归输出）必须被接受: 容器项带 children ⇒ 由构建递归物化
     nested = [{"module": "用户与鉴权", "task": "用户与鉴权", "api_contract": "POST /login",
                "ui_guidance": "登录页", "acceptance": "登录可用",

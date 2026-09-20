@@ -3962,14 +3962,24 @@ def cmd_provider_add(ctx: FactoryContext, args: Any) -> dict:
 
 
 def _write_env_key(env_name: str, key: str) -> str:
-    """把 key 写进 ~/.hermes/.env（本仓约定: key 只存 env 文件, 不进仓库/不进 providers.json）。"""
+    """把 key 写进 **factory 自己的** `~/.factory/.env`（权限 600）。
+
+    ★ 2026-09-21 修（Founder: 「配置不应该在 AI Factory OS 自己的配置文件么，和 .hermes/.env 有什么关系」）:
+      原来写 `~/.hermes/.env` —— 那是 **Hermes（另一个系统）的地盘** ✗ 归属错,
+      而 factory 自己的解析链（`_default_env_file()`）指向源码目录内的死路 ⇒ 写读不同源。
+      约定: key 本体只存这里（600）; `providers.json` 只存 `env:VAR` 引用（不落明文）。
+    """
     try:
-        f = Path.home() / ".hermes" / ".env"
+        f = Path.home() / ".factory" / ".env"
         f.parent.mkdir(parents=True, exist_ok=True)
         lines = f.read_text(encoding="utf-8").splitlines() if f.is_file() else []
         lines = [ln for ln in lines if not ln.startswith(f"{env_name}=")]
         lines.append(f"{env_name}={key}")
         f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        try:
+            f.chmod(0o600)          # 密钥文件: 仅本人可读写
+        except OSError:
+            pass
         return str(f)
     except Exception:  # noqa: BLE001 — 写不了就只留在本次进程环境
         return ""

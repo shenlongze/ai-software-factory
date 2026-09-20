@@ -376,29 +376,47 @@ def llm_semantic_interpreter(root: str, conversation_id: str, text: str,
     # 2) LLM 调用 (显式注入 → 本域不直连别的域)
     fn = llm_fn or _hooks.get("llm_fn")
     if fn is None:
-        return _degrade_clarify(text)
+        return _degrade_clarify(text, "LLM 通道未接线（无 llm_fn）")
 
     prompt = build_llm_prompt(snapshot, stripped, history_root=root)
     try:
         raw = fn(prompt)
-    except Exception:  # noqa: BLE001 — LLM 挂 → 降级 (不猜)
-        return _degrade_clarify(text)
+    except Exception as exc:  # noqa: BLE001 — LLM 挂 → 降级 (不猜)
+        return _degrade_clarify(text, f"LLM 调用异常: {type(exc).__name__}: {str(exc)[:100]}")
     if not raw or not str(raw).strip():
-        return _degrade_clarify(text)
+        return _degrade_clarify(text, _llm_reason() or "LLM 返回空内容")
 
     # 3) 解析 + Domain Validation (失败 → 降级, 不部分写)
     try:
         return parse_semantic_json(str(raw))
-    except ProposalValidationError:
-        return _degrade_clarify(text)
+    except ProposalValidationError as exc:
+        return _degrade_clarify(text, f"LLM 输出不是合法 proposal: {str(exc)[:100]}")
 
 
-def _degrade_clarify(text: str) -> dict[str, Any]:
-    """确定性降级: 不猜产品事实 — 诚实引导 (而不是静默忽略或错误记录)。"""
+def _llm_reason() -> str:
+    """上游 LLM 通道的失败原因（若它留痕了; 取不到 → 空）。
+
+    ★ 2026-09-21: 降级原来只说"我暂时无法可靠理解这句话与产品的关联" ⇒ 把人引向"换个说法"
+      （错误方向）; 真因（如"降级链为空 = key 没解析到"）必须说出来。
+    """
+    try:
+        from ai_factory_os.infrastructure.llm import complete_text as _ct
+        return str(getattr(_ct, "LAST_REASON", "") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _degrade_clarify(text: str, reason: str = "") -> dict[str, Any]:
+    """确定性降级: 不猜产品事实 — 诚实引导 (而不是静默忽略或错误记录)。
+
+    ★ reason: 降级的技术原因（无 LLM 通道 / 调用异常 / 空响应 / 校验失败）——
+      必须可见, 否则会把人引向"换个说法"这种错误方向。
+    """
+    why = f"（原因: {reason}）" if reason else ""
     return build_proposal(
         operations=[],
-        reply=("我暂时无法可靠理解这句话与产品的关联。"
-               "可以换一种说法, 或告诉我它属于哪个方面"
+        reply=("我暂时无法可靠理解这句话与产品的关联。" + why
+               + " 可以换一种说法, 或告诉我它属于哪个方面"
                " (核心想法 / 平台 / 功能 / 约束 / 交互方式 / 以后再说)?"),
         question="这句话想表达的是……?",
     )

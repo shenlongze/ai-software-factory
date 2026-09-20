@@ -97,8 +97,16 @@ _ENV_PREFIX: dict[str, str] = {"llm": "LLM_", "core": "",
 
 
 def _default_env_file() -> Path:
-    """项目 .env = 本文件所在目录 (factory-console/) 的 .env。"""
-    return Path(__file__).resolve().parent / ".env"
+    """.env 层 = **factory 自己的** `~/.factory/.env`（与 user config 同根, HOME 重定向即隔离）。
+
+    ★ 2026-09-21 修（Founder 实测「配了 key 却不生效」）:
+      原来指向 `本文件所在目录/.env` = `src/ai_factory_os/infrastructure/config/.env` —— 源码目录内,
+      那是**死路**（没人往那写、也不该往那写）。而唯一给人配 key 的入口 `factory provider add`
+      写的是 `~/.hermes/.env`（**Hermes 的地盘** ✗ 归属错）⇒ 【写的地方 ≠ 读的地方】⇒ 配了不生效。
+      现在: key 本体持久化在 factory 自己的 `~/.factory/.env`（600）, 配置里只留 `env:` 引用
+      （守 docs/ssot/code-placement.md 「密钥只存 env: 引用」）。
+    """
+    return _default_user_config_file().parent / ".env"
 
 
 def _default_user_config_file() -> Path:

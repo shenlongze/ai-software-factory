@@ -798,6 +798,74 @@ def test_project_memory() -> None:
     assert _check_project_memory() == []
 
 
+def _check_llm_key_resolution() -> list[str]:
+    """★ LLM key 的【归属与写读同源】（2026-09-21 实测"配了 key 却不生效"）。
+
+    Founder 原话: 「配置不应该在 AI Factory OS 自己的配置文件么，和 .hermes/.env 有什么关系」
+    实测病: ① `provider add` 把 key 写 ~/.hermes/.env（别人地盘）② 解析链读【源码目录内】的 .env（死路）
+            ③ 降级时不说原因 ⇒ 只报"我暂时无法可靠理解…"，把人引向"换个说法"
+    判据: key 归 factory 自己的 `~/.factory/.env`（600）; 配置只存 env: 引用; 写读同源; 降级理由可见。
+    """
+    import os
+    import tempfile
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        home = Path(td)
+        old_home = os.environ.get("HOME")
+        os.environ["HOME"] = str(home)                     # 隔离: 不碰真实 ~/.factory
+        try:
+            from ai_factory_os.infrastructure.config import provider as CFG
+            from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
+            from apps.cli.commands import _write_env_key
+
+            # ① .env 层必须落在 factory 自己的数据根（不是源码目录、不是 ~/.hermes）
+            envf = CFG._default_env_file()
+            want = home / ".factory" / ".env"
+            if envf != want:
+                bad.append(f".env 层路径不对: {envf}（应为 {want}）")
+            if "site-packages" in str(envf) or str(envf).startswith(str(Path.cwd())):
+                bad.append(f"★ .env 层仍指向源码/包目录（死路）: {envf}")
+
+            # ② provider add 写 key ⇒ 落 factory 自己的 .env + 权限 600
+            written = _write_env_key("FACTORY_TEST_KEY", "dummy-value")
+            if not written or Path(written) != want:
+                bad.append(f"provider add 写到了别处: {written!r}（应为 {want}）")
+            if want.is_file() and (want.stat().st_mode & 0o777) != 0o600:
+                bad.append(f"密钥文件权限不是 600: {oct(want.stat().st_mode)[-3:]}")
+
+            # ③ 解析链读同一处 ⇒ 用临时 HOME 造 providers.json, key 必须解析得到
+            (home / ".factory").mkdir(parents=True, exist_ok=True)
+            (home / ".factory" / "providers.json").write_text(json.dumps({
+                "version": 1, "fallback_chain": ["p1"],
+                "providers": {"p1": {"id": "p1", "enabled": True, "models": ["m"],
+                                     "base_url": "http://x/v1", "api_key_ref": "env:FACTORY_TEST_KEY"}}},
+                ensure_ascii=False), encoding="utf-8")
+            plane = LLMControlPlane(providers_file=home / ".factory" / "providers.json")
+            if plane.fallback_order() != ["p1"]:
+                bad.append(f"★ 解析链读不到 factory 自己的 .env（写读不同源, 就是那个 bug）: {plane.fallback_order()}")
+            if plane.resolve_api_key("p1") != "dummy-value":
+                bad.append(f"key 没解析出来: {plane.resolve_api_key('p1')!r}")
+        finally:
+            if old_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = old_home
+
+    # ④ 降级必须【说出原因】（否则把人引向"换个说法"这个错误方向）
+    from ai_factory_os.services.conversation import interpreter as II
+
+    prop = II._degrade_clarify("随便一句话", "测试原因: 无可用 provider")
+    if "测试原因" not in str(prop.get("reply") or ""):
+        bad.append(f"降级没说原因（又回到误导性提示）: {str(prop.get('reply'))[:60]}")
+    return bad
+
+
+def test_llm_key_resolution() -> None:
+    """LLM key: 归 factory 自己的 .env · 写读同源 · 权限 600 · 降级理由可见。"""
+    assert _check_llm_key_resolution() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -822,6 +890,7 @@ def main() -> int:
     results.append(("陈旧认领交回（不抢活跃执行）", not _check_stale_claim_sweep(), "；".join(_check_stale_claim_sweep())))
     results.append(("实体清单来源（设计优先/DDL 兜底/空则不编）", not _check_entity_catalog(), "；".join(_check_entity_catalog())))
     results.append(("执行体裁定（停手可表达·待裁决≠完成）", not _check_executor_verdict(), "；".join(_check_executor_verdict())))
+    results.append(("LLM key 归属（factory 自己的 .env·写读同源）", not _check_llm_key_resolution(), "；".join(_check_llm_key_resolution())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

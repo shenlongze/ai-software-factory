@@ -317,13 +317,23 @@ class LLMControlPlane:
         return self._env_layer().get(name, "")
 
     def _env_layer(self) -> dict[str, str]:
-        """.env 层: 优先复用 ConfigProvider 已解析值 (同源); 独立构造时自解析项目 .env。"""
+        """.env 层: 优先复用 ConfigProvider 已解析值 (同源); 否则读 **factory 自己的** .env。
+
+        ★ 2026-09-21 修: 原来回落读 `control_plane.py 自己所在目录/.env`（源码目录内 = 死路）
+          ⇒ 而 `factory provider add` 把 key 写在别处 ⇒ 写读不同源 ⇒ "配了 key 却不生效"。
+          现在与 `_write_env_key()` 对齐到同一处: 配置模块的 `_default_env_file()`
+          = `~/.factory/.env`。
+        """
         cfg = self._config
         if cfg is not None:
             values = getattr(cfg, "_env_values", None)
-            if isinstance(values, dict):
+            if isinstance(values, dict) and values:
                 return values
-        return _parse_env_file(Path(__file__).resolve().parent / ".env")
+        try:
+            from ai_factory_os.infrastructure.config.provider import _default_env_file
+            return _parse_env_file(_default_env_file())
+        except Exception:  # noqa: BLE001 — 路径助手不可用 ⇒ 不再瞎猜目录
+            return {}
 
     # ------------------------------------------------------------------ 降级链
 

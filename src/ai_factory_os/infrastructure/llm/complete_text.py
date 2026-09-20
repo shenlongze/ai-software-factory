@@ -35,6 +35,12 @@ def _control_plane() -> Any:
         return None
 
 
+#: ★ 2026-09-21: 最后一次调用的【失败原因】—— 供上层把"降级理由"说给人听。
+#:   背景（Founder 实测）: 需求理解降级时只报"我暂时无法可靠理解这句话与产品的关联",
+#:   把人引向"换个说法"（错误方向）; 真因是 provider 的 key 没解析到 ⇒ 这里把真因留痕。
+LAST_REASON: str = ""
+
+
 def llm_identity() -> tuple[str, str]:
     """当前 LLM 身份 (model, provider) —— 供留痕/展示; 取不到 → ("", "")。"""
     plane = _control_plane()
@@ -56,12 +62,16 @@ def complete_text(prompt: str, *, system: str = "", timeout: int = 120) -> str |
     留痕由 `gateway.complete` 内的唯一汇聚点完成（kind=llm_complete, 带 tokens/cost）,
     本函数不重复记录。
     """
+    global LAST_REASON
     plane = _control_plane()
     if plane is None:
+        LAST_REASON = "LLM 控制面不可用（providers.json 缺失/损坏）"
         return None
     try:
         pid = plane.selected_provider_id()
         if pid is None:
+            LAST_REASON = ("没有可用的 provider —— 降级链为空（查 providers.json 的 api_key_ref "
+                           "对应的环境变量, 或 ~/.factory/.env 是否已配）")
             return None
         cfg = plane.resolve_runtime_config(pid) or {}
         from ai_factory_os.infrastructure.llm.gateway import complete
@@ -79,6 +89,8 @@ def complete_text(prompt: str, *, system: str = "", timeout: int = 120) -> str |
             timeout=int(timeout),
         )
         text = str(out.get("content") or "").strip()
+        LAST_REASON = "" if text else "LLM 返回空内容"
         return text or None
-    except Exception:  # noqa: BLE001 — LLM 挂 → None（同老区 llm_raw 语义）
+    except Exception as exc:  # noqa: BLE001 — LLM 挂 → None（同老区 llm_raw 语义）
+        LAST_REASON = f"LLM 调用失败: {type(exc).__name__}: {str(exc)[:120]}"
         return None

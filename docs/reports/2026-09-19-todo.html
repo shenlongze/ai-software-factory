@@ -956,6 +956,34 @@
       是历史包袱、建议删掉; Founder 反问"有没有可能任务没有项目 id？" ⇒ 实测 6 棵树
       <b>4 棵 project_id 为空</b> ⇒ 该回落是<b>合法场景</b> ⇒ 改为止"同一 plan 多处 ⇒ 响亮报错"。<br>
       <b>文件</b>: <code>docs/ssot/code-placement.md</code>（硬约束表 R26/R27/R28）。</span></span></label>
+    <label class="item"><input type="checkbox" id="cr-12"><span class="body">
+      <span class="t"><span class="tag p0">P0</span>★ arch design 输出被 max_tokens 截断 ⇒ 需【分节生成】</span>
+      <span class="meta"><b>现象</b>: arch design 报 <code>design artifact missing required fields:
+      system_architecture, technical_stack, database_design, api_design, frontend_architecture,
+      backend_architecture, task_breakdown</code>（7 节全缺）<br>
+      <b>★ 真因（逐层排除定位）</b>: LLM 输出 <b>22624 字符</b>超过 architect 的
+      <code>max_tokens=8192</code> ⇒ 被截断 ⇒ JSON 未闭合（大括号平衡=2）⇒
+      <code>json.loads</code> 失败 ⇒ 报"字段缺失"（<b>完全误导</b>）。<br>
+      <b>排除过程</b>: ① 完全回退 prompt 改动 ⇒ 仍失败（排除"我改的"）② curl 直连 deepseek
+      200/0.54s（排除 API/key/额度）③ AIF provider 直调 ok=True/content 23839 字符
+      （排除装配）④ 看 content 结尾发现句子未完 + 大括号未闭合 ⇒ 定位截断。<br>
+      <b>本刀已修</b>: <code>openai.py</code> 的 <code>_parse_content</code> 原先只在
+      "内容为空"时检查 <code>finish_reason=length</code>；"非空但截断"会<b>静默返回坏数据</b>
+      ⇒ 已改为同样响亮报错（含字符数 + 真因 + 对策）。<br>
+      <b>★ 待做（根治）</b>: <code>deepseek-chat</code> 的 max output 就是 8192 ⇒ 输入一大必然触顶
+      ⇒ 该【分节生成】（7 节拆 2-3 次调用, 如 架构3节 + API/DB + 任务拆分）。<br>
+      <b>验收</b>: 输入 ux_ui 摘要 8000 字符（现触顶值）时 arch design 能稳定成功。</span></span></label>
+    <label class="item"><input type="checkbox" id="cr-13"><span class="body">
+      <span class="t"><span class="tag p2">P2</span>children 产出侧: 3 版 prompt 未生效（换思路）</span>
+      <span class="meta"><b>现象</b>: <code>finish_reason=stop</code>（完整输出）下 task_breakdown
+      10-14 项 <b>全部 0 children</b> ⇒ 与截断无关, 是 LLM 保守。<br>
+      <b>试过 3 版</b>: 保守表述（"只在确有必要时"）→ 加 8 行判据+正反例（把 prompt 改坏, design 直接失败）
+      → 精简一行（仍 0）。<br>
+      <b>★ 结论</b>: "在 prompt 里加说明"这条路对 children 效果不佳。<br>
+      <b>可换的思路</b>: ① 让 architect 分节生成时<b>专门用一次调用做任务拆分</b>
+      （那时 token 充裕, 可展开多级）② 让 decompose 侧<b>按验收标准规则驱动拆分</b>
+      （不依赖 LLM 自觉）③ 先做 cr-12, 再评估（截断修好后 token 充裕可能自然改善）。<br>
+      <b>注</b>: 消费侧（decompose 支持嵌套）已完成, 实测能物化出"子子任务"。</span></span></label>
   </div>
 
   <h2><span class="n">16</span>已完成（本轮 · 留档不删）</h2>

@@ -2277,6 +2277,36 @@ def _check_cli_chat() -> list[str]:
                                    on_run=lambda argv: (_ for _ in ()).throw(AssertionError("不该跑到这里")))
         if not (_m2 or {}).get("elapsed"):
             bad.append("回合信息里没有用时（Hermes 那样的回合信息没接）")
+        # ★ "你点头它就执行"（Founder 选 A）: 写命令先挂起 → 回"好"才跑 → 回"不"就不跑
+        #   全程用**临时根**, 不碰用户真实数据
+        import tempfile as _tf2
+
+        with _tf2.TemporaryDirectory() as td2:
+            _NL = chr(10)
+            C._provider = lambda: _FakeProv(["RUN: backup create" + _NL + "这条会写数据, 要我跑吗?", "好的。"])
+            for feed, must_have, must_not in (
+                # 第一句是"消息"（触发它念出写命令 ⇒ 建挂起）, 第二句才是点头/摇头
+                ("帮我备份一下" + _NL + "不" + _NL + "exit" + _NL, ["待你点头", "已取消"], ["备份完成"]),
+                ("帮我备份一下" + _NL + "好" + _NL + "exit" + _NL, ["待你点头", "▶ 执行", "备份完成"], []),
+            ):
+                _sys = __import__("sys")
+                old_in = _sys.stdin
+                _sys.stdin = _io.StringIO(feed)
+                buf2 = _io.StringIO()
+                try:
+                    with _ctx.redirect_stdout(buf2):
+                        _cli_main(["--root", td2, "start"])
+                except SystemExit:
+                    pass
+                finally:
+                    _sys.stdin = old_in
+                got = buf2.getvalue()
+                for kw in must_have:
+                    if kw not in got:
+                        bad.append(f"点头流程缺「{kw}」（feed={feed!r}）")
+                for kw in must_not:
+                    if kw in got:
+                        bad.append(f"不该出现「{kw}」（feed={feed!r}）")
         _h = C.turn_header({"model": "m", "provider": "p", "usage": {"prompt_tokens": 1, "completion_tokens": 2,
                                                                     "estimated_cost_usd": 0.0001},
                             "elapsed": 1.0, "rounds": 1})

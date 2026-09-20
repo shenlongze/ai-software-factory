@@ -34,6 +34,28 @@ def is_readonly(argv: list[str]) -> bool:
     return any(head == p or head.startswith(p + " ") for p in READONLY_PREFIXES)
 
 
+_YES = ("好", "好的", "行", "可以", "同意", "确认", "执行", "跑吧", "跑", "开始", "y", "yes", "ok", "okay", "go")
+_NO = ("不", "不要", "不用", "取消", "算了", "别", "n", "no", "cancel", "stop")
+
+
+def approval(text: str) -> bool | None:
+    """用户这一句是不是"点头/摇头"。True=点头, False=摇头, None=都不是（当普通消息处理）。"""
+    t = str(text or "").strip().lower().rstrip("!。.~ ")
+    if t in _YES:
+        return True
+    if t in _NO:
+        return False
+    return None
+
+
+def to_argv(cmd_line: str) -> list[str]:
+    """把模型念出来的命令行变成 argv（去掉可能的 `factory ` 前缀）。"""
+    argv = str(cmd_line or "").split()
+    if argv and argv[0] == "factory":
+        argv = argv[1:]
+    return argv
+
+
 def _snapshot(root: Path | str) -> str:
     """给 LLM 的一页数据摘要（用平台自己的口径, 不编）。"""
     from apps.cli.domains.welcome import _data_overview
@@ -101,7 +123,17 @@ def _system_prompt(root: Path | str) -> str:
         "2 需要数据时, **先**输出一行或多行 `RUN: <命令>`, 我会执行并把结果回给你, 然后你再作答。\n"
         "3 老板在提'要做什么'时, 不要自己动手; 回一句'我理解成…, 要我开始吗?'并给出建议的第一条命令。\n"
         "4 不许编数据; 查不到就说查不到。\n"
-        "5 会改数据的命令(run/chain/confirm/decompose/backup 等)不许自己跑, 只能**念出来**让老板确认。\n"
+        "5 你**念出来**的写命令必须写法正确（这几个最常用, 照抄）:\n"
+        "    backup create            备份数据\n"
+        "    create company --name \"名字\" --template solo|software_company   建公司\n"
+        "    create project --name \"名字\" --company C-xxx --repo-path /path     建项目\n"
+        "    chain \"我要做…\" --project P-xxx        一条命令走需求→PRD→设计→拆解\n"
+        "    tasktree todo PLAN-xxx / tasktree confirm PLAN-xxx                 看树/确认树\n"
+        "    run --plan PLAN-xxx --project P-xxx --limit 3 --parallel 2          派活+执行\n"
+        "    recover --plan PLAN-xxx --stale-after 60                            中断恢复\n"
+        "    intelligence experience list / evaluate --task <类型>                经验与推荐\n"
+        "5 会改数据的命令(run/chain/confirm/decompose/backup/create 等)也**必须**用 RUN: 格式写出来"
+        "（写成 \`RUN: backup create\` 这种一行）, 系统会自动挂起、问老板要不要跑 —— 不要只在正文里描述命令。\n"
     )
 
 
@@ -144,17 +176,22 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
         if not runs or on_run is None:
             break
         results: list[str] = []
+        _pending: list[str] = []
         for r in runs:
             argv = r.split()
             if argv and argv[0] == "factory":
                 argv = argv[1:]
             if not is_readonly(argv):
-                results.append(f"`{r}` → 这是会改数据的命令, 我不能自动跑（请你自己确认后执行）")
+                # ★ 2026-09-21（Founder 选 A: "你点头它就执行"）: 写命令**挂起**等用户点头,
+                #   不当场跑（安全）, 也不丢掉（可执行）—— shell 会问"要我跑吗?"
+                _pending.append(r)
+                results.append(f"`{r}` → 这条会改数据: **已挂起, 等用户点头**（不要重复列出, 一句话问他要不要跑）")
                 continue
             try:
                 results.append(f"`{r}` → " + str(on_run(argv))[:1500])
             except Exception as exc:  # noqa: BLE001 — 查询失败不该打断对话
                 results.append(f"`{r}` → 出错: {type(exc).__name__}: {str(exc)[:100]}")
+        _meta["pending"] = list(dict.fromkeys(_pending))
         msgs.append({"role": "assistant", "content": answer})
         msgs.append({"role": "human", "content": "（命令结果）\n" + "\n".join(results) + "\n请据此回答我。"})
     answer = "\n".join(ln for ln in answer.splitlines() if not ln.strip().startswith("RUN:")).strip()

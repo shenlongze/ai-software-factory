@@ -241,6 +241,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
 
     _conv_id = ""
     _chat_hist: list[dict[str, str]] = []
+    _pending_cmd = ""            # ★ 待你点头的命令（会话里它念出来的写命令）
     while True:
         try:
             line = input("factory> ").strip()
@@ -252,6 +253,30 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             continue
         if not line:
             continue
+        # ★ 2026-09-21（Founder 选 A）: 有挂起的命令 ⇒ 先看这一句是不是"点头/摇头"
+        if _pending_cmd:
+            from apps.cli.domains.chat import approval as _appr, to_argv as _toargv
+
+            _yes = _appr(line)
+            if _yes is True:
+                _argv = _toargv(_pending_cmd)
+                print(f"  ▶ 执行: factory {' '.join(_argv)}")
+                _pending_cmd = ""
+                try:
+                    from apps.cli.main import main as _m3
+
+                    _m3(["--root", str(ctx.root), *_argv])
+                except SystemExit:
+                    pass
+                except Exception as exc:  # noqa: BLE001 — 一条命令炸了不带走 shell
+                    print(f"  ⚠ 出错: {type(exc).__name__}: {str(exc)[:120]}")
+                continue
+            if _yes is False:
+                print("  （已取消那条命令, 没执行）")
+                _pending_cmd = ""
+                continue
+            print("  （那条挂起的命令我先搁着; 你这句话按普通消息处理）")
+            _pending_cmd = ""
         low = line.lower()
         if low in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
             break
@@ -295,6 +320,13 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             print()
             print(_chat.turn_header(_meta))
             print(_ans or "（没答上来; 换句话再说一次?）")
+            # ★ 它念了写命令 ⇒ 明确问一句（并显示**精确**命令, 让你看清要跑什么）
+            _pend = list(_meta.get("pending") or [])
+            if _pend:
+                _pending_cmd = str(_pend[0])
+                print()
+                print(f"  ⏸ 待你点头: factory {_pending_cmd}")
+                print("     回「好」我就跑; 回「不」就取消（也可以自己敲 /命令 直接跑）")
             print("  " + "─" * 66)
             continue
         argv = line.split()

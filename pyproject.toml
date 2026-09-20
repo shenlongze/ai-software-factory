@@ -58,7 +58,21 @@ packages = [
 #   （旧 Web 前端已不在仓库; 新 Web 面按 Founder 决定暂缓）
 
 [tool.pytest.ini_options]
-testpaths = []  # 刀29: tests/ 已删除（归档于 archive/tests-before-delete-2026-09-14）
+testpaths = ["scripts", "examples"]  # scripts=门禁守卫（见下 python_files）; examples=demo
+# ★ 2026-09-20: 门禁守卫都在 scripts/smoke_*.py, 但**裸 pytest 之前一个都收不到**
+#   （testpaths=[] + 默认只认 test_*.py）⇒ 每次都要人工带路径, "verification" 形同虚设。
+#   ⇒ 这里**显式登记**门禁守卫（含 test_* 用例的那几个; 其余 smoke_*.py 是临时脚本, 故意不收 —— 
+#      它们有导入副作用/会长跑, 收进来会污染裸 pytest）。
+#   ★ 新增守卫: 用 `test_*.py` 命名, 或到这里登记。
+python_files = [
+    "test_*.py",
+    "smoke_user_view.py",      # 用户视图（三投影 + 联动接线 + 数据流程 + mermaid + pytest 兼容层）
+    "smoke_exec_dispatch.py",  # 执行面: 调度器摊平依赖
+    "smoke_keypath.py",        # 关键路径判据
+    "smoke_priority.py",       # 优先级 ABC + 人工最高
+    "smoke_staffing.py",       # 派工（谁做）→ 声明后必须 READY
+    "smoke_chain_links.py",    # 链路接缝（会话→想法 · 监控看得见执行 · 执行状态语义）
+]
 # ★ 2026-09-15: src/legacy/factory-core 随老区删除 ⇒ 只剩 src
 pythonpath = ["src"]
 

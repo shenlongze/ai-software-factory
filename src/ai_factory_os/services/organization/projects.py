@@ -603,14 +603,42 @@ class ProjectStore:
         return [s for s in self.list_stages() if s.workflow_id == workflow_id]
 
     # ----------------------------------------------------------- Artifact
+    # ★ 2026-09-19（Founder: "属于项目的文件必在该项目目录下"）:
+    #   **artifact 属于项目** ⇒ 有 project_id 的落 `projects/<P>/artifacts.json`;
+    #   无 project_id 的才落全局 `org/artifacts.json`。
+    #   ★ 为什么只搬 artifact: ProjectStore 管 5 个实体（project/sprint/stage/link
+    #     是**跨项目**的组织数据）—— 只有产物天然属于某个项目。
+    #   ★ 读时**两处都读**（兼容迁移前的旧数据 + 未绑项目的产物）, 合并返回;
+    #     写只写一处 ⇒ 迁移后不再有两份。
+    def _proj_artifact_store(self, artifact_or_pid: Any) -> Any:
+        """按 project_id 取得该项目的 artifact store（无则返回全局那个）。"""
+        pid = artifact_or_pid if isinstance(artifact_or_pid, str) else getattr(artifact_or_pid, "project_id", "")
+        if not pid:
+            return self._artifacts
+        root = self._dir.parent                      # self._dir = <root>/org
+        return type(self._artifacts)(root / "projects" / pid)
+
     def save_artifact(self, artifact: Artifact) -> None:
-        self._artifacts.save(artifact)
+        self._proj_artifact_store(artifact).save(artifact)
 
     def get_artifact(self, artifact_id: str) -> Artifact | None:
-        return self._artifacts.get(artifact_id)
+        return next((a for a in self.list_artifacts() if getattr(a, "id", "") == artifact_id), None)
 
     def list_artifacts(self) -> list[Artifact]:
-        return self._artifacts.list_all()
+        """★ 两处都读（兼容）: 全局 org/ + 每个项目的 projects/<P>/。"""
+        out = list(self._artifacts.list_all())
+        root = self._dir.parent
+        pdir = root / "projects"
+        if pdir.is_dir():
+            for d in sorted(pdir.iterdir()):
+                if not d.is_dir():
+                    continue
+                try:
+                    st = type(self._artifacts)(d)
+                    out.extend(st.list_all())
+                except Exception:  # noqa: BLE001 — 单项目损坏不拖垮整体读取
+                    continue
+        return out
 
     def list_artifacts_by_stage(self, stage_id: str) -> list[Artifact]:
         return [a for a in self.list_artifacts() if a.stage_id == stage_id]

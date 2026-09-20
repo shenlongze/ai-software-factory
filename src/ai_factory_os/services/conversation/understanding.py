@@ -281,6 +281,35 @@ def _public_conv(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def set_location(root: Path | str, conv_id: str, *, intent: str = "",
+                 evidence: str = "", proposer: str = "",
+                 suggested_role: str = "", project_id: str = "",
+                 missing: list[str] | None = None) -> dict[str, Any]:
+    """★ 把【定位结果】写进会话（流程第一步的落盘）。
+
+    为什么必须落盘（R26: 状态必须落盘）:
+      定位是"需求进来第一件事"; 它的结果（类型/承接）是后续步骤的输入 ——
+      尤其**承接决定④拆解的粒度**。不落盘 ⇒ 下一步读不到 ⇒ 定位白做。
+
+    落在会话的 `location` 字段（与已有的 project_id/created_by 并列）。
+    """
+    from datetime import datetime, timezone
+
+    def _apply(doc: dict[str, Any]) -> None:
+        doc["location"] = {
+            "intent": intent,
+            "evidence": evidence,                 # ★ 判据（用户可据此判断对不对）
+            "proposer": proposer,
+            "suggested_role": suggested_role,
+            "missing": list(missing or []),        # ★ 还缺什么（要问用户的）
+            "located_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if project_id:
+            doc["project_id"] = project_id
+
+    return _mutate(root, conv_id, _apply)
+
+
 def conversations(root: Path | str) -> list[dict[str, Any]]:
     # ★ 会话可能在【项目目录】里（绑项目的会话）✓ → 两处都扫 ✓
     dirs = [Path(root) / "conversations"]

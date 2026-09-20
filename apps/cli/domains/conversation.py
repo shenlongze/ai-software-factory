@@ -70,6 +70,16 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
     p_prd = csub.add_parser(
         "prd", help="从理解派生 PRD（链路第 2 环; product-manager）")
     json_opt(p_prd)
+    p_loc = csub.add_parser(
+        "locate", help="★ 需求定位（流程第一步）: 归属/类型/承接 + 判据 + 还缺什么")
+    json_opt(p_loc)
+    p_loc.add_argument("conversation_id", help="会话 id（conv-*）")
+    p_loc.add_argument("text", help="需求原文")
+    p_loc.add_argument("--type", dest="intent", default="",
+                       choices=["", "新项目", "改现有", "问答", "一次性"],
+                       help="显式指定类型（不给=按规则判定）")
+    p_loc.add_argument("--project", default=None, help="归属项目 id（可选）")
+    p_loc.add_argument("--proposer", default="", help="谁提的（承接）")
     p_prd.add_argument("conversation_id", help="会话 ID（conv-*）")
     p_prd.add_argument("--title", default="", help="PRD 标题（缺省 = 会话标题）")
     p_prd.add_argument("--list", action="store_true", help="只列出 PRD，不派生")
@@ -94,10 +104,40 @@ def run(ctx: Any, args: Any) -> dict[str, Any]:
         return _facts(root, args)
     if act == "understand":
         return _understand(root, args)
+    if act == "locate":
+        return _locate(root, args)
     if act == "prd":
         return _prd(root, args)
     raise ValueError(f"未知子命令: {act!r}")
 
+
+
+def _locate(root: Path, args: Any) -> dict[str, Any]:
+    """★ 需求定位（Founder: "需求进来先定位"）—— 判定三要素并【落盘到会话】。
+
+    为什么落盘（R26 状态必须落盘）: 定位结果（尤其**承接**）是后续步骤的输入 ——
+    "承接决定④拆解的粒度"。不落盘 ⇒ 下一步读不到 ⇒ 定位白做。
+    """
+    from ai_factory_os.services.conversation import understanding as U
+    from ai_factory_os.services.conversation.intake import locate
+
+    cid = str(getattr(args, "conversation_id", "") or "")
+    conv = U.get_conversation(root, cid)
+    if not conv:
+        raise ValueError(f"会话不存在: {cid}（factory conversation list 看有哪些）")
+    r = locate(
+        str(getattr(args, "text", "") or ""),
+        project_id=str(getattr(args, "project", None) or conv.get("project_id") or ""),
+        proposer=str(getattr(args, "proposer", "") or conv.get("created_by") or ""),
+        intent=str(getattr(args, "intent", "") or ""),
+    )
+    # ★ 落盘到会话（后续步骤读它）
+    U.set_location(
+        root, cid, intent=r.intent, evidence=r.evidence, proposer=r.proposer,
+        suggested_role=r.suggested_role, project_id=r.project_id, missing=r.missing,
+    )
+    return {"ok": True, "action": "conversation-locate", "location": r.to_dict(),
+            "conversation_id": cid}
 
 def _new(root: Path, args: Any) -> dict[str, Any]:
     """建会话；可选 --project 绑定项目。
@@ -413,6 +453,30 @@ def render(result: dict[str, Any], as_json: bool = False) -> None:
     """终端输出（--json 时由 main 统一处理, 这里只管人类可读形态）。"""
     if "error" in result and not result.get("ok", True):
         print(f"  ✗ {result['error']}")
+        return
+    if result.get("location"):
+        # ★ 需求定位（流程第一步）—— 显示三要素 + 判据 + 还缺什么
+        loc = result["location"]
+        g = loc.get("归属") or {}
+        c = loc.get("承接") or {}
+        print()
+        print(f"  定位结果    {result.get('conversation_id')}")
+        print(f"  {'━' * 48}")
+        print(f"  归属  项目={g.get('project') or '（未指定）'}"
+              f"  部门={g.get('department') or '-'}  公司={g.get('company') or '-'}")
+        print(f"  类型  {loc.get('类型')}")
+        print(f"  判据  {loc.get('判据')}")
+        print(f"  承接  提出者={c.get('提出者') or '-'}   建议角色={c.get('建议角色') or '-'}")
+        miss = loc.get("还缺") or []
+        if miss:
+            print()
+            print("  ⚠ 还缺（不确认很可能做错）:")
+            for m in miss:
+                print(f"    · {m}")
+        else:
+            print()
+            print("  ✓ 三要素齐了 —— 可进入下一步（理解）")
+        print()
         return
     if "created" in result:
         print(f"  ✓ 会话已建: {result['created']} — {result.get('title')}")

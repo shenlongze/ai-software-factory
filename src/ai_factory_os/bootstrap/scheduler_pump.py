@@ -91,6 +91,37 @@ def _looks_failed(out: Any) -> bool:
     return _run_status(out) in ("FAILED", "ERROR", "ERRORED", "CANCELLED")
 
 
+def _repo_changed(repo: str, *, window_sec: int = 1800) -> bool | None:
+    """项目仓库有没有【产出迹象】⇒ True/False; 判不出来 ⇒ None（调用方标"待核"）。
+
+    判据（可解释）: ① 有未提交改动 ⇒ True ② 否则看最近一次提交时间是否落在 `window_sec` 内 ⇒ True/False
+    ③ git 跑不动/不是仓库 ⇒ None（**不猜**）。
+    ★ 抽成函数是为了能守（真跑一次执行要几分钟, 而这段逻辑一行就能验）。
+    """
+    import subprocess
+    import time as _t
+
+    if not repo or not Path(repo).is_dir():
+        return None
+    try:
+        st = subprocess.run(["git", "-C", repo, "status", "--porcelain"],
+                            capture_output=True, text=True, timeout=20)
+        if st.returncode != 0:
+            return None
+        if st.stdout.strip():
+            return True
+        lg = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%ct"],
+                            capture_output=True, text=True, timeout=20)
+        if lg.returncode != 0:
+            return False                      # 空仓库（无提交）⇒ 没产出
+        try:
+            return abs(_t.time() - float(lg.stdout.strip() or 0)) < window_sec
+        except ValueError:
+            return False
+    except Exception:  # noqa: BLE001 — git 跑不动 ⇒ 不猜
+        return None
+
+
 def _mark_evidence(ports: Ports, execution_id: str) -> None:
     """★ 完成必须留【产出证据】（全链路实跑踩到, 卡点 3）。
 
@@ -104,7 +135,6 @@ def _mark_evidence(ports: Ports, execution_id: str) -> None:
     """
     try:
         import json as _json
-        import subprocess
 
         from ai_factory_os.services.work import decomposition as D
 
@@ -136,21 +166,7 @@ def _mark_evidence(ports: Ports, execution_id: str) -> None:
                                  if isinstance(r, dict) and str(r.get("id")) == project_id), "")
             except Exception:  # noqa: BLE001
                 repo = ""
-        changed = None
-        if repo and Path(repo).is_dir():
-            r = subprocess.run(["git", "-C", repo, "status", "--porcelain"],
-                               capture_output=True, text=True, timeout=20)
-            log = subprocess.run(["git", "-C", repo, "log", "--oneline", "-1", "--format=%ct"],
-                                 capture_output=True, text=True, timeout=20)
-            if r.returncode == 0:
-                changed = bool(r.stdout.strip())
-                if not changed and log.returncode == 0:
-                    # 没有未提交改动时: 看最近提交时间是否落在本次执行附近（±30 分钟）
-                    try:
-                        import time as _t
-                        changed = abs(_t.time() - float(log.stdout.strip() or 0)) < 1800
-                    except Exception:  # noqa: BLE001
-                        changed = None
+        changed = _repo_changed(repo)          # ★ 判据抽成纯函数（可守, 见下）
         tree = D.load_tree(root, plan_id, project_id)
         if not tree:
             return

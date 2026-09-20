@@ -1572,11 +1572,15 @@ def _task_rows(data_dir: Any) -> list[dict[str, Any]]:
     # ⑤ ★ 任务树的叶（= 开发任务 = 执行的真实账本）——
     #    实测踩到（全链路实跑, 卡点 1）: 上面四源都没有它 ⇒ 工厂干着活、看板却显示 0。
     #    判据只在 progress.py 一份（一能力一处）, 这里只做合并。
+    # ★★ 读失败【不许静默】（我自己踩过: 一句 `except: pass` 把"树文件有副本 ⇒ 读树被拒"
+    #    吞成了看板 0 个任务 —— 看起来像"没任务", 其实是坏了）。⇒ 显式告警到 stderr。
     try:
         from ai_factory_os.services.work import progress as _prog
         rows.extend(_prog.leaf_rows(data_dir))
-    except Exception:  # noqa: BLE001 — 失败安全: 读不到树不拖垮看板（但下面会报出来）
-        pass
+    except Exception as exc:  # noqa: BLE001 — 失败安全（但必须可见）
+        import sys as _sys
+        print(f"⚠ 任务树读取失败（看板/清单会少掉'开发任务'那一部分）: "
+              f"{type(exc).__name__}: {str(exc)[:160]}", file=_sys.stderr)
     return rows
 
 

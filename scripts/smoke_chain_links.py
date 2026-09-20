@@ -309,6 +309,143 @@ def test_granularity_judgement() -> None:
     assert _check_granularity() == []
 
 
+def _check_ux_truncation_fallback() -> list[str]:
+    """★ 输出被截断时要能自愈（实测: 社区团购场景 UX/UI 7 节 23357 字符写不完 ⇒ 整环失败）。
+
+    architect 早有"分节生成"兜底, uxui 没有 ⇒ 这刀给它补上。用假 provider 验:
+    第一次假截断 ⇒ 必须转成逐节生成, 且 7 节齐全。
+    """
+    import re as _re
+
+    from ai_factory_os.plugins.agents.uxui import (
+        _PRODUCT_UX_SECTIONS, _gen_sections_individually, _is_truncated,
+    )
+
+    bad: list[str] = []
+
+    class _Resp:
+        def __init__(self, ok, content="", error=""):
+            self.ok, self.content, self.error = ok, content, error
+
+    class _FakeProv:
+        """逐节调用: 按 prompt 里问到的节返回对应 JSON。
+
+        ★ 注意: 截断判定发生在【调用方】(design), 逐节函数进来时已是兜底阶段 ⇒
+          这个假 provider **不该**再返截断（我第一次就写错了, 守卫当场抓出来）。
+        """
+        def __init__(self):
+            self.calls: list[str] = []
+
+        def generate(self, req):
+            self.calls.append(req.task_context)
+            m = _re.search(r'\{"([a-z_]+)": \.\.\.', req.task_context)
+            sec = m.group(1) if m else "?"
+            return _Resp(True, '{"%s": {"k": "v"}}' % sec)
+
+    if not _is_truncated(_Resp(False, "", "…truncated…")):
+        bad.append("截断判定失灵（会把可自愈的截断当硬失败）")
+    if _is_truncated(_Resp(False, "", "network timeout")):
+        bad.append("网络错误被误判成截断")
+
+    prov = _FakeProv()
+    merged = _gen_sections_individually(prompt="原始提示", provider=prov, max_tokens=128)
+    if not merged or set(merged) != set(_PRODUCT_UX_SECTIONS):
+        bad.append(f"逐节兜底没凑齐 7 节: {sorted(merged or {})}")
+    if len(prov.calls) != len(_PRODUCT_UX_SECTIONS):
+        bad.append(f"逐节调用次数不对: {len(prov.calls)}（应为 {len(_PRODUCT_UX_SECTIONS)}）")
+
+    class _BadProv:
+        def generate(self, req):
+            return _Resp(False, "", "boom")
+
+    if _gen_sections_individually(prompt="p", provider=_BadProv(), max_tokens=128) is not None:
+        bad.append("逐节里某节失败时应返回 None（不许产半成品）")
+    return bad
+
+
+def test_ux_truncation_fallback() -> None:
+    """UX/UI 输出被截断 ⇒ 自动转逐节生成; 不产半成品。"""
+    assert _check_ux_truncation_fallback() == []
+
+
+def _check_tree_write_path() -> list[str]:
+    """★ 写树的位置只认【树自己的 project_id】（第二轮实跑踩到的副本 bug）。
+
+    实测: 执行回写时 project_id 传空 ⇒ 副本落到 `task_trees/`（回落位置）, 与
+    `projects/<P>/tasks/` 那份并存 ⇒ 读树的 R27 守卫拒绝 ⇒ 监控/完成证据全崩。
+    """
+    import json as _json
+    import tempfile
+
+    from ai_factory_os.services.work import decomposition as D
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "projects" / "P-x").mkdir(parents=True)
+        tree = {"plan_id": "PLAN-w", "project_id": "P-x", "status": "candidate", "nodes": []}
+        # 调用方【故意】漏传 project_id —— 位置仍必须落在项目内
+        p = D._save(root, "PLAN-w", tree, "")          # noqa: SLF001 — 就是要验这个内部写入路径
+        want = root / "projects" / "P-x" / "tasks" / "PLAN-w.json"
+        if Path(p) != want:
+            bad.append(f"写错位置: {p}（应为 {want}）")
+        if (root / "task_trees" / "PLAN-w.json").exists():
+            bad.append("有 project_id 的树被写进了回落位置 task_trees/ ⇒ 会造出副本")
+        # 无项目的树仍应回落（合法场景）
+        p2 = D._save(root, "PLAN-np", {"plan_id": "PLAN-np", "nodes": []}, "")   # noqa: SLF001
+        if Path(p2) != root / "task_trees" / "PLAN-np.json":
+            bad.append(f"无项目的树该回落却没回落: {p2}")
+        # 读得回来（没有副本 ⇒ 不触发 R27 守卫）
+        got = D.load_tree(root, "PLAN-w", "P-x")
+        on_disk = _json.loads(want.read_text()).get("plan_id") if want.is_file() else None
+        if not got or on_disk != "PLAN-w":
+            bad.append(f"写完读不回来（文件在={want.is_file()}, 读到={got is not None}）")
+    return bad
+
+
+def test_tree_write_path_is_unique() -> None:
+    """写树位置只认树自己的 project_id（漏传也不许造副本）。"""
+    assert _check_tree_write_path() == []
+
+
+def _check_evidence_judgement() -> list[str]:
+    """★ 产出证据的判定（真跑一次要几分钟, 这里一行验完）。
+
+    · 有未提交改动 ⇒ 有产出 · 干净且最近提交在窗口内 ⇒ 有产出 · 干净且提交很久前 ⇒ 无产出
+    · 不是 git 仓库 ⇒ 判不出（None, 调用方标"待核" —— 不猜）
+    """
+    import subprocess
+    import tempfile
+
+    from ai_factory_os.bootstrap.scheduler_pump import _repo_changed
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "r"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=False)
+        (repo / "a.txt").write_text("x")
+        if _repo_changed(str(repo)) is not True:
+            bad.append("空仓库有未提交改动时，应判为【有产出】")
+        subprocess.run(["git", "-C", str(repo), "-c", "user.email=d@l", "-c", "user.name=d",
+                        "add", "-A"], check=False)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.email=d@l", "-c", "user.name=d",
+                        "commit", "-qm", "init"], check=False)
+        if _repo_changed(str(repo)) is not True:
+            bad.append("刚提交过（在窗口内）应判为【有产出】")
+        (repo / "a.txt").write_text("y")
+        if _repo_changed(str(repo)) is not True:
+            bad.append("有未提交改动应判为【有产出】")
+        if _repo_changed(str(Path(td) / "不存在")) is not None:
+            bad.append("不是仓库时应判【判不出】(None)，不许猜成 False")
+    return bad
+
+
+def test_evidence_judgement() -> None:
+    """产出证据判定: 有改动/刚提交 ⇒ 有产出; 判不出 ⇒ None（不猜）。"""
+    assert _check_evidence_judgement() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -327,6 +464,9 @@ def main() -> int:
     results.append(("执行状态语义（可重试 / 完成留证据）", not bad3, "；".join(bad3)))
     results.append(("小卡点（限量 / 引用语义 / create 不静默）", not bad4, "；".join(bad4)))
     results.append(("拆解粒度（一句话写不出验收 ⇒ 没拆到位）", not _check_granularity(), "；".join(_check_granularity())))
+    results.append(("UX/UI 截断自愈（逐节生成）", not _check_ux_truncation_fallback(), "；".join(_check_ux_truncation_fallback())))
+    results.append(("写树位置唯一（漏传 project_id 也不造副本）", not _check_tree_write_path(), "；".join(_check_tree_write_path())))
+    results.append(("产出证据判定（不猜）", not _check_evidence_judgement(), "；".join(_check_evidence_judgement())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

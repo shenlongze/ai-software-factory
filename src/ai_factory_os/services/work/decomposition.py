@@ -128,12 +128,28 @@ def _read(root: Path | str, plan_id: str, project_id: str = "") -> dict[str, Any
 
 
 def _save(root: Path | str, plan_id: str, tree: dict[str, Any], project_id: str = "") -> Path:
-    p = _tree_file(root, plan_id, project_id)
+    """写树 —— ★ 路径只认【树自己的 project_id】（调用方漏传也不许写到回落位置）。
+
+    实测踩到（第二轮全链路实跑）: 执行回写时 project_id 传空 ⇒ 同一棵树被写到 `task_trees/`
+    （无项目的回落位置）, 与 `projects/<P>/tasks/` 那份并存 ⇒ 读树的 R27 守卫直接拒绝
+    ⇒ 监控/完成证据全崩（而且被上层的"失败安全" except 静默吞成"0 个任务"）。
+    ⇒ 根治: 位置由 **tree["project_id"]** 决定（数据自己说了算, 不依赖调用方传参）;
+      写完顺手检查回落位置有没有【历史 bug 留下的同名副本】, 有就**显式告警**（不静默, 也不替人删）。
+    """
+    pid = str(project_id or tree.get("project_id") or "")
+    p = _tree_file(root, plan_id, pid)
     with _lock:
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".tmp")
         tmp.write_text(json.dumps(tree, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, p)
+    # ★ 副本告警: 有 pid 的树不该出现在回落位置
+    if pid:
+        stale = Path(root) / "task_trees" / f"{plan_id}.json"
+        if stale.is_file():
+            import sys as _sys
+            print(f"⚠ 同一棵树存在副本: {stale}（权威在 {p}）—— 违反 R27, 请删掉副本后重试读树",
+                  file=_sys.stderr)
     return p
 
 

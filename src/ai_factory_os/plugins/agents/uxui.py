@@ -338,6 +338,36 @@ def _parse_uxui(content: str) -> UXUIArtifact:
     return UXUIArtifact.from_dict(data)
 
 
+def _gen_sections_individually(*, prompt: str, provider: Any, max_tokens: int) -> dict[str, Any] | None:
+    """单次生成被**截断**时的兜底: **逐节生成**再合并（architect 同套路, 不另造轮子）。
+
+    实测踩到（社区团购场景）: 单次输出 23357 字符仍未写完 ⇒ `ProviderError: ... truncated
+    finish_reason=length` ⇒ 整个 UX/UI 环直接失败。UX/UI 有 7 节, 逐节问就不会超长。
+    任一节失败 ⇒ 返回 None（由调用方响亮报错, 不产半成品）。
+    """
+    merged: dict[str, Any] = {}
+    for sec in _PRODUCT_UX_SECTIONS:
+        ask = (prompt + f"\n\n★ 只输出这一节的 JSON: {{\"{sec}\": ...}}\n"
+               "  （不要输出其它节; 内容要实质可用, 不要占位符）")
+        resp = provider.generate(ProviderRequest(task_context=ask, max_tokens=max_tokens))
+        if not resp.ok or not (resp.content or "").strip():
+            return None
+        data = _extract_json(resp.content)
+        if isinstance(data, dict) and sec in data:
+            merged[sec] = data[sec]
+        elif data is not None:                    # 容忍直接给内容（没套外层键）
+            merged[sec] = data
+        else:
+            return None
+    return merged or None
+
+
+def _is_truncated(resp: Any) -> bool:
+    """判定"输出被截断"（provider 已自述: truncated / finish_reason=length）。"""
+    err = str(getattr(resp, "error", "") or "").lower()
+    return "truncated" in err or "finish_reason=length" in err
+
+
 def _build_retry_prompt(original_prompt: str, error: UXUIDesignerError) -> str:
     """契约失败反馈 (生产自愈闭环, S8-005 PM 同模式): 原始 prompt + 校验
     错误明细 + 修正要求 → 重试轮输入。"""
@@ -429,6 +459,12 @@ class UXUIDesignerAgent:
                 ProviderRequest(task_context=prompt, max_tokens=self._max_tokens)
             )
             if not response.ok or not (response.content or "").strip():
+                # ★ 截断 ≠ 失败: 单次太长 ⇒ 逐节生成兜底（实测踩到: 7 节内容 23357 字符写不完）
+                if _is_truncated(response):
+                    sliced = _gen_sections_individually(
+                        prompt=prompt, provider=self._provider, max_tokens=self._max_tokens)
+                    if sliced:
+                        return UXUIArtifact.from_dict(sliced)
                 raise UXUIDesignerError(
                     f"ux_ui design failed: {response.error or 'empty provider response'}"
                 )

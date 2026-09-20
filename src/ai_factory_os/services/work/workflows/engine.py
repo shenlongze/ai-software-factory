@@ -168,6 +168,58 @@ class WorkflowEngine:
 
     # ------------------------------------------------------------------ 运行: 启动
 
+    def start_run_for(self, run_key: str, workflow_id: str) -> tuple[WorkflowRun, Event | None]:
+        """★ 2026-09-21 新增: **按 run_key 启动流程运行**（不依赖任务域账本）。
+
+        为什么需要它（本仓"无固定流程(可编排)"这条产品定义的落点）:
+          · 原 `start_workflow(task_id)` 要求【任务域】里存在该 Task（task.workflow → 定义）;
+            而主链的"叶"住在【任务树】里 —— 硬套只会让两套账本双写（违反"只留一套"）。
+          · 本入口只做三件事: 定义存在? → 无既有 run? → 建 run + 状态机推进 + 发事件（语义同 start_workflow）。
+        run_key 用【叶 id】（引擎的 run 本就按字符串键存 —— 无需为叶另建一套存储）。
+        """
+        workflow = self._store.get_workflow(workflow_id)
+        if workflow is None:
+            raise WorkflowNotFoundError(
+                f"workflow not registered: {workflow_id!r} (run_key {run_key}; "
+                f"先 `factory workflow add` 或看内置定义)")
+        if self._store.get_run_by_task(run_key) is not None:
+            raise WorkflowAlreadyStartedError(f"run already exists for: {run_key}")
+        run = WorkflowRun.from_workflow(
+            run_id=self._store.next_run_id(), workflow=workflow, task_id=run_key)
+        self._transition(run, WorkflowStatus.RUNNING)
+        first = run.next_pending_step()
+        if first is not None:
+            self._step_transition(first, StepStatus.RUNNING)
+        self._store.save_run(run)
+        ev = self._emit(
+            EventType.WORKFLOW_STARTED, task_id=run_key, stage="running",
+            action="start workflow (run_key)", result="OK",
+            payload={"workflow_id": run.workflow_id, "run_key": run_key,
+                     "run_id": run.run_id, "step_ids": [s.step_id for s in run.step_states]},
+        )
+        return run, ev
+
+    def run_for(self, run_key: str) -> WorkflowRun | None:
+        """取某个键（叶 id / 任务 id）上的流程运行; 没有 → None。"""
+        return self._store.get_run_by_task(run_key)
+
+    def step_plan(self, run: WorkflowRun) -> dict[str, Any]:
+        """该运行的【步骤进度】（给简报/监控用）: 当前第几步 / 共几步 / 步骤名与要求技能。"""
+        order = {s.step_id: i for i, s in enumerate(run.step_states, start=1)}
+        total = len(run.step_states)
+        cur = run.current_step
+        idx = order.get(cur, 0) if cur else total
+        name = self._step_name(run, cur) if cur else ""
+        skill = ""
+        wf = self._store.get_workflow(run.workflow_id)
+        if wf is not None and cur:
+            skill = next((str(s.required_skill or "") for s in wf.steps if s.id == cur), "")
+        done = sum(1 for s in run.step_states
+                   if getattr(s.status, "value", "") == StepStatus.COMPLETED.value)
+        return {"workflow_id": run.workflow_id, "run_id": run.run_id, "step_id": cur or "",
+                "step_name": name, "step_index": idx, "steps_total": total,
+                "done": done, "required_skill": skill}
+
     def start_workflow(self, task_id: str) -> tuple[WorkflowRun, Event | None]:
         """为任务启动其关联工作流 (task.workflow → 定义), 发 workflow.started。
 

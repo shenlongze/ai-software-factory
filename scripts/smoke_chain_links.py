@@ -1025,6 +1025,106 @@ def test_chain_covers_rings() -> None:
     assert _check_chain_covers_rings() == []
 
 
+def _check_workflow_drives_chain() -> list[str]:
+    """★ 流程接进主链（核心第2条"无固定流程(可编排)"）。
+
+    判据（缺一条就不算接上）:
+      ① 默认不变: 树【不挂流程】⇒ 推进返回 "none"（叶按现状一次派活即完成）
+      ② 挂了流程 ⇒ 叶按步骤顺序推进, **走完全部步骤才 finished**
+      ③ ★ 可编排: 换一个（自定义）流程定义 ⇒ 主链行为跟着变（步数/顺序由定义决定）
+      ④ 派活时把当前步骤写进执行请求（执行体看得到"这是第几步、要求什么技能"）
+    """
+    import tempfile
+
+    from ai_factory_os.bootstrap import scheduler_pump as SP
+    from ai_factory_os.bootstrap.scheduler_wiring import StoreExecution, wire_scheduler, workflow_engine
+    from ai_factory_os.services.execution.runtime.store import open_runtime_store
+    from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionStatus
+    from ai_factory_os.services.work import decomposition as D
+    from ai_factory_os.services.work.workflows.models import Workflow, WorkflowStep
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        plan, leaf, proj = "PLAN-wf", "t-wf-1", "P-wf"
+        d = root / "projects" / proj / "tasks"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{plan}.json").write_text(json.dumps({
+            "plan_id": plan, "project_id": proj, "status": "confirmed",
+            "nodes": [{"id": proj, "kind": "project", "title": "P"},
+                      {"id": "dom", "kind": "domain", "parent_id": proj, "title": "D"},
+                      {"id": leaf, "kind": "task", "parent_id": "dom", "title": "做一件事",
+                       "status": "pending", "acceptance": "一句话验收"}],
+        }, ensure_ascii=False), encoding="utf-8")
+
+        eng = workflow_engine(root)
+        if len(eng.list_workflows()) < 4:
+            bad.append(f"内置流程没注册进 store: {[w.id for w in eng.list_workflows()]}")
+
+        # ① 不挂流程 ⇒ 行为不变
+        if SP._advance_workflow_step(wire_scheduler(root, plan_id=plan), "EXR-none") != "none":
+            bad.append("未挂流程时不该推进流程（默认行为必须不变）")
+
+        def _mk_exec(eid: str) -> None:
+            open_runtime_store(root).save_execution(ExecutionRequest(
+                id=eid, task_id=plan, status=ExecutionStatus.PENDING,
+                input={"node_id": leaf, "resolution_id": "r", "member_id": "m", "identity_id": "i"}))
+
+        # ② 挂 feature-delivery（4 步）⇒ 依次推进, 第 4 步才 finished
+        D.set_tree_workflow(root, plan, "feature-delivery", proj)
+        ports = wire_scheduler(root, plan_id=plan)
+        _mk_exec("EXR-s1")
+        step = StoreExecution(root, plan_id=plan)._workflow_step(leaf) or {}
+        if step.get("step_id") != "architecture" or step.get("step_index") != 1:
+            bad.append(f"派活该在第 1 步(architecture), 实得 {step.get('step_id')}/{step.get('step_index')}")
+        # ④ 执行请求里必须带上步骤（执行体才能只看本步）
+        req = StoreExecution(root, plan_id=plan).create(leaf, resolution_id="r",
+                                                        member_id="m", identity_id="i")
+        if str((req.input or {}).get("workflow_step") or "") != "architecture":
+            bad.append(f"执行请求没带流程步骤: {(req.input or {}).get('workflow_step')!r}")
+        got = [SP._advance_workflow_step(ports, f"EXR-s{i}") for i in (1,)]
+        for i in (2, 3, 4):
+            _mk_exec(f"EXR-s{i}")
+            got.append(SP._advance_workflow_step(ports, f"EXR-s{i}"))
+        if got != ["advanced", "advanced", "advanced", "finished"]:
+            bad.append(f"4 步流程的推进序列不对: {got}")
+
+        # ③ 可编排: 注册一个 2 步的自定义流程并挂上 ⇒ **换一个新叶**（新 run）只推 1 次就 advanced
+        #    （注: 不能复用上面那个叶 —— 它的 run 已完结, run_for 会返回旧 run, 判不出"换定义生效"）
+        leaf2 = "t-wf-2"
+        tree = json.loads((d / f"{plan}.json").read_text(encoding="utf-8"))
+        tree["nodes"].append({"id": leaf2, "kind": "task", "parent_id": "dom",
+                              "title": "第二件事", "status": "pending", "acceptance": "一句话验收"})
+        (d / f"{plan}.json").write_text(json.dumps(tree, ensure_ascii=False), encoding="utf-8")
+        workflow_engine(root).create_workflow(Workflow(
+            id="two-step", name="两步", description="",
+            steps=[WorkflowStep(id="a", name="第一步", order=1),
+                   WorkflowStep(id="b", name="第二步", order=2)]))
+        D.set_tree_workflow(root, plan, "two-step", proj)
+
+        def _mk_exec2(eid: str) -> None:
+            open_runtime_store(root).save_execution(ExecutionRequest(
+                id=eid, task_id=plan, status=ExecutionStatus.PENDING,
+                input={"node_id": leaf2, "resolution_id": "r", "member_id": "m", "identity_id": "i"}))
+
+        store2 = StoreExecution(root, plan_id=plan)
+        if (store2._workflow_step(leaf2) or {}).get("steps_total") != 2:
+            bad.append(f"换成 2 步流程后派活仍按旧定义: {store2._workflow_step(leaf2)}")
+        ports2 = wire_scheduler(root, plan_id=plan)
+        _mk_exec2("EXR-c1")
+        r1 = SP._advance_workflow_step(ports2, "EXR-c1")
+        _mk_exec2("EXR-c2")
+        r2 = SP._advance_workflow_step(ports2, "EXR-c2")
+        if (r1, r2) != ("advanced", "finished"):
+            bad.append(f"换成 2 步自定义流程后主链没跟着变: {(r1, r2)}（可编排未生效）")
+    return bad
+
+
+def test_workflow_drives_chain() -> None:
+    """流程接进主链: 默认不变 · 按步骤推进 · 走完才算完成 · 换定义行为跟着变。"""
+    assert _check_workflow_drives_chain() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -1053,6 +1153,7 @@ def main() -> int:
     results.append(("需求定位读会话（不给文本/归属自动带出）", not _check_locate_reads_conversation(), "；".join(_check_locate_reads_conversation())))
     results.append(("执行收尾契约（提交/未提交分开·指令写清）", not _check_repo_closing_contract(), "；".join(_check_repo_closing_contract())))
     results.append(("会话唯一入口（chain 覆盖到拆解·自动生成三件制品）", not _check_chain_covers_rings(), "；".join(_check_chain_covers_rings())))
+    results.append(("流程接进主链（按步骤推进·走完才算完成·可编排）", not _check_workflow_drives_chain(), "；".join(_check_workflow_drives_chain())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

@@ -528,6 +528,30 @@ def set_node_evidence(
     return False
 
 
+def set_tree_workflow(root: Path | str, plan_id: str, workflow_id: str,
+                      project_id: str = "") -> bool:
+    """★ 把【流程】挂到任务树上（2026-09-21: "无固定流程(可编排)" → 主链的落点）。
+
+    语义: 挂了流程的树, 其叶按该流程的【步骤顺序】推进（走完全部步骤才算完成）;
+          不挂 = 现状（一叶一次派活即完成）—— 默认行为不变。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        return False
+    if workflow_id:
+        tree["workflow_id"] = str(workflow_id)
+    else:
+        tree.pop("workflow_id", None)
+    _save(root, plan_id, tree, project_id)
+    return True
+
+
+def tree_workflow(root: Path | str, plan_id: str, project_id: str = "") -> str:
+    """该树挂的流程 id（未挂 → ""）。"""
+    tree = _read(root, plan_id, project_id) or {}
+    return str(tree.get("workflow_id") or "")
+
+
 def set_node_note(root: Path | str, plan_id: str, node_id: str, *, note: str,
                   project_id: str = "") -> bool:
     """★ 给叶写一句【人能看懂的说明】（不改状态）—— 供监控/进度显示"为什么标待核"。

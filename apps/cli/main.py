@@ -612,6 +612,14 @@ def build_parser() -> Any:
     p_tt_dec.add_argument("--node", default=None, help="只声明这一个模块（短 id 也行）")
     p_tt_dec.add_argument("--dry-run", action="store_true", dest="dry_run",
         help="只算不落盘（先看 LLM 会声明什么）")
+    p_tt_wf = ttsub.add_parser(
+        "workflow", help="★ 流程: 看有哪些流程 / 给任务树挂流程（挂了 ⇒ 叶按步骤推进, 走完才算完成）")
+    json_opt(p_tt_wf)
+    p_tt_wf.add_argument("plan_id", nargs="?", default="", help="计划 id（--list 时可省）")
+    p_tt_wf.add_argument("--project", default=None, help="项目 id")
+    p_tt_wf.add_argument("--id", default=None, dest="workflow_id",
+                         help="要挂的流程 id（如 feature-delivery）; 传空串 \"\" 表示摘掉")
+    p_tt_wf.add_argument("--list", action="store_true", help="列出可用流程（内置 + 已注册）")
     p_tt_pri = ttsub.add_parser(
         "priority", help="★ 优先级: 看分布 / 人工设 / 按关键路径自动导出（人工 > 产线声明 > 自动）")
     json_opt(p_tt_pri)
@@ -3038,6 +3046,43 @@ def _decompose_refs(design: Any) -> tuple[str, dict[str, Any]]:
     return (lineage[0] if lineage else design_id), out
 
 
+def _tasktree_workflow(ctx: FactoryContext, args: Any) -> dict:
+    """★ 流程命令（"无固定流程(可编排)"的入口）。
+
+    做三件事之一（看 args）:
+      · `--list`           列出可用流程（引擎 store 里的定义 = 内置 + 用户注册的）
+      · `--id <流程>`      给这棵树挂流程（挂上后: 叶按该流程步骤推进, 走完全部步骤才算完成）
+      · `--id ""`          摘掉（回到现状: 一叶一次派活即完成）
+      · 都不给             看这棵树当前挂的流程与其步骤
+    """
+    from ai_factory_os.bootstrap.scheduler_wiring import workflow_engine
+    from ai_factory_os.services.work import decomposition as D
+
+    project_id = str(getattr(args, "project", None) or "")
+    plan_id = str(getattr(args, "plan_id", "") or "")
+    eng = workflow_engine(ctx.root)
+    wf_id = getattr(args, "workflow_id", None)
+
+    if getattr(args, "list", False):
+        attached = D.tree_workflow(ctx.root, plan_id, project_id) if plan_id else ""
+        rows = []
+        for w in eng.list_workflows():
+            rows.append({"id": w.id, "name": w.name, "steps_total": len(w.steps),
+                         "steps": [s.name for s in w.steps],
+                         "attached": w.id == attached})
+        return {"ok": True, "action": "tasktree-workflow", "listed": True,
+                "plan_id": plan_id, "workflows": rows}
+
+    if wf_id is not None:
+        D.set_tree_workflow(ctx.root, plan_id, wf_id, project_id)
+    cur = D.tree_workflow(ctx.root, plan_id, project_id)
+    wf = eng.get_workflow(cur) if cur else None
+    return {"ok": True, "action": "tasktree-workflow", "plan_id": plan_id,
+            "attached": cur,
+            "steps": [{"name": s.name, "skill": s.required_skill or ""}
+                      for s in (wf.steps if wf else [])]}
+
+
 def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
     """factory tasktree list|show|decompose|confirm —— 产品环 ⑤「任务拆解」。
 
@@ -3055,6 +3100,8 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
 
     # ★ 用户视图（Founder 设计）: 与 show 同源（同一份树数据）, 只换读法。
     #   走独立实现（_tasktree_todo）—— 它的输出结构面向"给人看", 与 show 不同。
+    if cmd == "workflow":
+        return _tasktree_workflow(ctx, args)
     if cmd == "todo":
         return _tasktree_todo(ctx, args)
     if cmd == "flow":
@@ -3488,6 +3535,27 @@ def _print_tasktree(args: Any, r: dict) -> None:
                 print(f"    {_todo_mark(m['status'])} {m['name']}{idpart}{tail}")
             print()
         print("  （同一批可并行 · 批次之间有前后依赖; 前置 = 必须先做完的模块）")
+    elif cmd == "workflow":
+        # ★ 流程（"无固定流程(可编排)"）: 看有哪些 / 挂到树上 / 摘掉
+        if r.get("listed"):
+            print()
+            print(f"  可用流程（{len(r['workflows'])} 个）")
+            print(f"  {'━' * 60}")
+            for w in r["workflows"]:
+                mark = " ●已挂" if w.get("attached") else ""
+                print(f"  {w['id']:<20} {w['name']:<10} {w['steps_total']} 步{mark}")
+                print(f"      {' → '.join(w['steps'])}")
+            print("\n  挂到树上: factory tasktree workflow <plan> --id <流程 id>")
+            print("  摘掉    : factory tasktree workflow <plan> --id \"\"")
+            return
+        wf = r.get("attached") or ""
+        print()
+        print(f"  任务树 {r['plan_id']} 的流程: {wf or '（未挂 —— 现状: 一叶一次派活即完成）'}")
+        if r.get("steps"):
+            print(f"  {'━' * 60}")
+            for i, s in enumerate(r["steps"], 1):
+                print(f"  {i}. {s['name']}" + (f"   要求技能: {s['skill']}" if s.get("skill") else ""))
+            print("  执行: 叶按上面顺序推进, 走完全部步骤才算完成（每步完成会交回待下一步）")
     elif cmd == "dataflow":
         # ★ 数据流程图（看数据）: 实体 · 谁碰它 · 实体之间怎么连
         if getattr(args, "mermaid", False):

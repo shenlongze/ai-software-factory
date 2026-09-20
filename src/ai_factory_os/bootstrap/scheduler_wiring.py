@@ -402,10 +402,49 @@ class StoreExecution:
                 lines.append("预期产出文件: " + ", ".join(files))
             if pid:
                 lines.append(f"项目: {pid}" + (f"  仓库: {repo}" if repo else ""))
+            # ★ 2026-09-21（"无固定流程(可编排)"接进主链）: 树挂了流程 ⇒ 说明这是第几步、要求什么技能
+            step = self._workflow_step(node_id)
+            if step:
+                lines.append(f"流程步骤 {step['step_index']}/{step['steps_total']}: "
+                             f"{step['step_name']}"
+                             + (f"（本步要求技能: {step['required_skill']}）" if step["required_skill"] else "")
+                             + f"  [流程 {step['workflow_id']}]")
+                lines.append("纪律: 只做【本步骤】的事; 完成后系统会推进到下一步（走完全部步骤才算任务完成）。")
             lines.append("纪律: 只做这一件事; 自检后再收工; 不要改与本任务无关的文件。")
             return title, "\n".join(lines)
         except Exception:  # noqa: BLE001 — 简报失败不阻塞派发（执行体退回旧行为）
             return "", ""
+
+    def _workflow_step(self, node_id: str) -> dict[str, Any] | None:
+        """该叶当前的【流程步骤】（树未挂流程 ⇒ None ⇒ 行为与现状完全一致）。
+
+        挂了流程: 无 run 则先启动（run_key = 叶 id, 不碰任务域账本 —— 见 engine.start_run_for 自述）;
+                  有 run 则取当前步骤。失败安全: 引擎不可用 ⇒ 返回 None 并**不假装有流程**。
+        """
+        try:
+            from ai_factory_os.services.work import decomposition as D
+
+            wf_id = D.tree_workflow(self._root, self._plan_id)
+            if not wf_id:
+                return None
+            eng = workflow_engine(self._root)
+            run = eng.run_for(node_id)
+            if run is None:
+                run, _ = eng.start_run_for(node_id, wf_id)
+            plan = eng.step_plan(run)
+            # ★ 引擎语义: 步骤要 RUNNING 才算"正在做"; 若当前步还是 PENDING（推进后未启/中断恢复）
+            #   ⇒ 这里启动它（重复启动会被引擎拒绝, 忽略即可）。
+            if plan.get("step_id"):
+                try:
+                    eng.start_step(node_id, str(plan["step_id"]))
+                except Exception:  # noqa: BLE001 — 已 RUNNING/状态不符: 不影响取步骤
+                    pass
+            return plan if plan.get("step_id") else None
+        except Exception as exc:  # noqa: BLE001 — 流程不可用 ⇒ 退回单步执行, 但**可见**
+            import sys as _sys
+            print(f"⚠ 流程步骤读取失败（该叶按单步执行）: {type(exc).__name__}: {str(exc)[:80]}",
+                  file=_sys.stderr)
+            return None
 
     def create(self, node_id: str, *, resolution_id: str,
                member_id: str, identity_id: str) -> Any:
@@ -416,6 +455,7 @@ class StoreExecution:
 
         eid = self._store.next_execution_id(prefix="EXR-")
         _task, _instr = self._brief(node_id)          # ★ 把"活"说清楚（见 _brief 自述）
+        _step = self._workflow_step(node_id) or {}
         req = ExecutionRequest(
             id=eid,
             task_id=self._plan_id,                      # ★ 任务树 id（pump 用它定位叶）
@@ -428,10 +468,38 @@ class StoreExecution:
                 # ★ 适配器把它组进 prompt（原来缺这两个键 ⇒ 执行体只收到 "execute execution EXR-x"）
                 "task": _task,
                 "instruction": _instr,
+                # ★ 流程步骤（未挂流程 ⇒ 空 ⇒ 下游行为不变）
+                "workflow_id": str(_step.get("workflow_id") or ""),
+                "workflow_step": str(_step.get("step_id") or ""),
+                "workflow_step_name": str(_step.get("step_name") or ""),
+                "workflow_step_index": int(_step.get("step_index") or 0),
+                "workflow_steps_total": int(_step.get("steps_total") or 0),
             },
         )
         self._store.save_execution(req)
         return req
+
+
+def workflow_engine(root: Path | str) -> Any:
+    """装配【流程引擎】—— 唯一装配点（store 落在 `<root>/workflows/`）。
+
+    ★ 2026-09-21（"无固定流程(可编排)"接进主链）:
+      · 首次使用（store 里一个定义都没有）时把【内置定义】注册进去（幂等, 只做一次）——
+        之后内置定义就是**可编辑的数据**: 用户改/删都由 store 说了算（不会被他改完又"复活"）。
+      · 不注入 task_store: 主链的 run_key 是【叶 id】, 不碰任务域账本（见 engine.start_run_for 自述）。
+    """
+    from ai_factory_os.services.work.workflows.definitions import BUILTIN_WORKFLOWS
+    from ai_factory_os.services.work.workflows.engine import WorkflowEngine
+    from ai_factory_os.services.work.workflows.store import WorkflowStore
+
+    store = WorkflowStore(Path(root) / "workflows")
+    try:
+        if not store.workflow_ids():                      # 空 ⇒ 首次: 注册内置
+            for wf in BUILTIN_WORKFLOWS.values():
+                store.save_workflow(wf)
+    except Exception:  # noqa: BLE001 — 注册失败不阻塞（后续 get_workflow 会响亮报缺失）
+        pass
+    return WorkflowEngine(store)
 
 
 def wire_scheduler(

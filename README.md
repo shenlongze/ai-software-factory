@@ -26,8 +26,10 @@
 
 ## 还没闭环（如实列出，避免误导）
 
-- **流程可编排**：编排引擎与 4 个内置流程（feature-delivery / desktop-feature / bug-fix / release）在，
-  但当前主链走的是"任务树 → 叶"的固定路径，尚未按流程定义驱动。
+- **流程可编排（已接，可选挂载）**：流程引擎与 4 个内置流程（`feature-delivery` / `desktop-feature` /
+  `bug-fix` / `release`）已接进主链 —— `factory tasktree workflow <plan> --id feature-delivery` 挂上后，
+  叶按流程**步骤顺序**推进（走完全部步骤才算完成，每步完成会交回待下一步）；不挂 = 现状（一叶一次派活）。
+  多公司 / 多部门维度的流程分派尚未做。
 - **多公司 / 多部门**：组织账本齐（公司/角色/授权/阶段），但派活尚未按 `company_id / department_id` 区分。
 - **学习自治**：经验库仍为空，尚未回喂决策（项目级记忆已接线）。
 - **前端**：`apps/web` 为空（API 可起，无界面）；`apps/desktop`、`apps/mobile` 为壳。

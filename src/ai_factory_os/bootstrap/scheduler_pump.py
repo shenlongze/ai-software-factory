@@ -260,6 +260,64 @@ def _repo_changed(repo: str, *, window_sec: int = 1800) -> bool | None:
     return st in ("committed", "uncommitted")
 
 
+def _advance_workflow_step(ports: Ports, execution_id: str) -> str:
+    """执行成功的叶: 推进它挂的【流程步骤】。
+
+    返回: "finished"（流程全部步骤走完 ⇒ 叶可以判 completed）/ "advanced"（还有下一步 ⇒ 叶回 pending）/
+          "none"（该叶没挂流程 ⇒ 现状路径, 走 completed）。
+
+    ★ 2026-09-21（"无固定流程(可编排)"接进主链）: 挂了流程的叶, **走完全部步骤才算完成**。
+      失败安全: 引擎/流程读不到 ⇒ 返回 "none"（按现状判完成, 并**不假装流程走完了**）。
+    """
+    try:
+        from ai_factory_os.bootstrap.scheduler_wiring import workflow_engine
+        from ai_factory_os.services.work import decomposition as D
+
+        root = Path(getattr(ports.work, "_root", "."))
+        node_id = plan_id = ""
+        store = open_runtime_store(root)
+        for req in store.list_executions():
+            if str(req.id) == execution_id:
+                inp = req.input or {}
+                node_id = str(inp.get("node_id") or "")
+                plan_id = str(req.task_id or "")
+                break
+        if not node_id or not plan_id:
+            return "none"
+        if not D.tree_workflow(root, plan_id):
+            return "none"                                  # 没挂流程 ⇒ 现状
+        eng = workflow_engine(root)
+        run = eng.run_for(node_id)
+        if run is None:
+            return "none"
+        plan = eng.step_plan(run)
+        cur = str(plan.get("step_id") or "")
+        if not cur:
+            return "finished"
+        run2, _ = eng.complete_step(node_id, cur, result="OK",
+                                    evidence=f"exec:{execution_id}")
+        # 注: WorkflowStatus 的值是**大写**（COMPLETED/RUNNING）—— 我第一版比小写, 结果永远判成"未完成"
+        if str(getattr(run2.status, "value", "")).upper() == "COMPLETED":
+            return "finished"
+        nxt = eng.step_plan(run2)
+        # ★ 引擎语义: 步骤必须 RUNNING 才能 complete（start_workflow 只自动启第一步）
+        #   ⇒ 推进后要把【下一步】显式启动, 否则下一次 complete_step 会 StepNotReadyError（实测踩到）。
+        if nxt.get("step_id"):
+            try:
+                eng.start_step(node_id, str(nxt["step_id"]))
+            except Exception:  # noqa: BLE001 — 已启动/状态不符不阻塞推进
+                pass
+        D.set_node_note(root, plan_id, node_id,
+                        note=(f"流程 {plan.get('workflow_id')} 步骤 {plan.get('step_index')}/"
+                              f"{plan.get('steps_total')}（{plan.get('step_name')}）已完成 ⇒ "
+                              f"下一步: {nxt.get('step_name')}"))
+        return "advanced"
+    except Exception as exc:  # noqa: BLE001 — 流程推进失败 ⇒ 按现状判完成（不阻塞执行）
+        print(f"⚠ 流程推进失败（该叶按单步完成处理）: {type(exc).__name__}: {str(exc)[:80]}",
+              file=__import__("sys").stderr)
+        return "none"
+
+
 def _mark_evidence(ports: Ports, execution_id: str) -> str:
     """★ 记【产出证据】（完成时附加信息）—— 返回证据串（repo-changed / no-change / unknown）。
 
@@ -697,6 +755,19 @@ def drive(
                                              "state": f"停手待裁决({_v}): {_why[:70]}"})
                         continue
                     if _looks_completed(out):
+                        # ★ 2026-09-21: 挂了流程的叶 —— 先推进流程步骤; 没走完全部步骤 ⇒ 回 pending
+                        _adv = _advance_workflow_step(ports, eid)
+                        if _adv == "advanced":
+                            _write_back_node_status(ports, eid, "pending")
+                            # 让适配器的树缓存失效（同完成路径 —— 否则本轮 tick 仍读旧树）
+                            _inv = getattr(ports.work, "invalidate", None)
+                            if callable(_inv):
+                                _inv()
+                            rep.outcomes.append({
+                                "execution_id": eid, "ok": False,
+                                "state": "流程推进中（本步完成 ⇒ 已交回待下一步）",
+                            })
+                            continue
                         if _write_back_node_status(ports, eid, "completed"):
                             # ★ 完成必须留产出证据（实跑踩到: 停手零改动也被记成 completed）
                             _ev = _mark_evidence(ports, eid)

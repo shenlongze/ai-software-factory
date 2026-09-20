@@ -283,6 +283,9 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         if low in ("help", "h", "?", "/help", "/h", "/?"):
             print(render_help(""))
             continue
+        if low in ("clear", "cls", "/clear", "/cls"):
+            print("\033[2J\033[H", end="")     # ANSI 清屏（Founder 在会话里敲过 clear）
+            continue
         if low in ("welcome", "menu", "/welcome", "/menu"):
             print(render_welcome(ctx.root))
             continue

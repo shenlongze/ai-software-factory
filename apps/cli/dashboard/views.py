@@ -100,7 +100,7 @@ def build_header(snapshot: FactorySnapshot) -> Panel:
     )
     body = Group(
         title,  # 标题行 (冒烟/测试断言 "AI Software Factory"); panel 标题仍为 "Overview"
-        _line(Text("Tasks      ", style="bold"), _status_counts_text(t.by_status),
+        _line(Text("Tasks(旧表) ", style="bold"), _status_counts_text(t.by_status),
               _text(f"  (total {t.total}, active {t.active}, done {t.done})", style="dim")),
         _line(Text("Agents     ", style="bold"), _status_counts_text(a.by_status),
               _text(f"  (total {a.total})", style="dim")),
@@ -151,7 +151,9 @@ def build_tasks(snapshot: FactorySnapshot) -> Panel:
         )
     if not snapshot.tasks.items:
         table.add_row(_text("(no tasks)", style="dim"), "", "", "", "", "")
-    return _panel(table, "Tasks", border="green")
+    # ★ 2026-09-21 修（Founder 实测: 这里 Tasks 0 而工厂在干活 ⇒ 数字骗人 ✗）:
+    #   本面板数的是**旧任务表**（空）; 执行的真实账本是【任务树】⇒ 标题里点明, 免得被误读。
+    return _panel(table, "Tasks（旧任务表 —— 执行真账本: factory status 的『开发任务』）", border="green")
 
 
 def build_agents(snapshot: FactorySnapshot) -> Panel:
@@ -359,7 +361,7 @@ def build_metrics(snapshot: FactorySnapshot) -> Panel:
     parts: list[Any] = [header]
 
     tasks = _line(
-        Text("Tasks      ", style="bold"),
+        Text("Tasks(旧表) ", style="bold"),
         _text(f"total {t.total}  completed {t.completed}  failed {t.failed}  "
               f"success_rate {t.success_rate:.1%}", style="dim"),
     )

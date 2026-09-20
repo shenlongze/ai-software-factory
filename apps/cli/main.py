@@ -6017,9 +6017,15 @@ def _print_demo_markpad(r: dict) -> None:
     print(f"    Decisions  {len(decisions)}")
     for d in decisions:
         print(f"      {d.get('id', '-')}  {d.get('type', '-')}  {d.get('status', '-')}")
-    print(f"    Tasks      {len(tasks)}")
+    # ★ 2026-09-21 修（Founder 实测: 这里 Tasks 0 而工厂在干活 ⇒ 数字骗人 ✗）:
+    #   这行数的是**旧任务表**（空的）; 执行的真实账本是【任务树】⇒ 两个都报, 并标清各自口径。
+    print(f"    Tasks      {len(tasks)}  （旧任务表；执行真账本见下面『开发任务（任务树）』）")
     for t in tasks:
         print(f"      {t.get('id', '-')}  {t.get('title', '-')}  {t.get('status', '-')}")
+    _tt = r.get("tasks_tree") or {}
+    if _tt:
+        print(f"    开发任务   {_tt.get('done', 0)}/{_tt.get('leaves', 0)} 叶完成"
+              f"（任务树 = 执行的真实账本）· {_tt.get('plans', 0)} 棵树 · {_tt.get('by_status') or '{}'}")
     print(
         f"    Approvals  {len(approvals)}  "
         f"(pending: {sum(1 for a in approvals if a.get('status') == 'pending')})"

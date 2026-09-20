@@ -12,7 +12,8 @@
   GET /api/trees/{plan_id}      → 任务树原始数据
   GET /api/trees/{plan_id}/todo → ★ 投影 A: 层级待办清单（看进度）
   GET /api/trees/{plan_id}/flow → ★ 投影 B: 功能链路图（看关系）
-  GET /api/trees/{plan_id}/both → 两个投影一起（页面一次拉完）
+  GET /api/trees/{plan_id}/dataflow → ★ 投影 C: 数据流程图（看数据: 实体 + 谁碰它 + 实体间关系）
+  GET /api/trees/{plan_id}/both → 三个投影一起（页面一次拉完）
 
 运行:
   .venv/bin/python -m apps.api.main                    # 默认 127.0.0.1:8787
@@ -28,6 +29,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from ai_factory_os.services.work import data_flow as DF
 from ai_factory_os.services.work import decomposition as D
 from ai_factory_os.services.work import user_view as UV
 
@@ -87,11 +89,25 @@ def get_flow(plan_id: str) -> JSONResponse:
     return JSONResponse(UV.build_flow(_find_tree(plan_id)))
 
 
+@app.get("/api/trees/{plan_id}/dataflow")
+def get_dataflow(plan_id: str) -> JSONResponse:
+    """★ 投影 C: 数据流程图（看数据 —— 只画真实来源, 见 services/work/data_flow.py）。"""
+    tree = _find_tree(plan_id)
+    pid = str(tree.get("project_id") or "")
+    return JSONResponse(DF.build_data_flow(tree, (_ROOT / "projects" / pid) if pid else None))
+
+
 @app.get("/api/trees/{plan_id}/both")
 def get_both(plan_id: str) -> JSONResponse:
-    """两个投影一起 —— 页面一次拉完（★ 它们说的是同一件事, 一起给才不会不一致）。"""
+    """三个投影一起 —— 页面一次拉完（★ 说的是同一件事, 一起给才不会不一致）。"""
     tree = _find_tree(plan_id)
-    return JSONResponse({"plan_id": plan_id, "todo": UV.build_todo(tree), "flow": UV.build_flow(tree)})
+    pid = str(tree.get("project_id") or "")
+    return JSONResponse({
+        "plan_id": plan_id,
+        "todo": UV.build_todo(tree),
+        "flow": UV.build_flow(tree),
+        "dataflow": DF.build_data_flow(tree, (_ROOT / "projects" / pid) if pid else None),
+    })
 
 
 @app.get("/", response_class=HTMLResponse)

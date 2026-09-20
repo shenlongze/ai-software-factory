@@ -64,6 +64,17 @@
   .edge.dim{opacity:.15}
   .edge.hot{stroke:var(--brand);stroke-width:2;marker-end:url(#arB)}
   .edge.hot.up{stroke:var(--warn);marker-end:url(#arO)}
+  /* ★ 数据流程图: 线索=虚线(文案证据), 声明=实线(系统记录), 外键=细实线 */
+  #df svg{display:block;max-width:100%;height:auto;overflow:visible}
+  .edge.dash{stroke-dasharray:5 4}
+  .edge.k-declared{stroke:#0071e3;stroke-width:2;marker-end:url(#arB)}
+  .edge.k-fk{stroke:#00a37a;stroke-width:1.4;marker-end:url(#arG)}
+  .node.dimstatic{opacity:.4}
+  .bi-lb{font-size:11px;fill:var(--ink2)}
+  .srcline{color:var(--ink2);font-size:12.5px;margin:10px 0 0}
+  .srcline b{color:var(--ink);font-weight:600}
+  .gap{background:#fff8e6;border:1px solid #ffe2a8;color:#7a5b00;border-radius:10px;
+       padding:8px 12px;font-size:12.5px;margin-top:12px}
   .legend{display:flex;gap:18px;flex-wrap:wrap;color:var(--ink2);font-size:12px;margin-top:16px}
   .legend b{color:var(--ink);font-weight:600}
   #kids{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
@@ -91,6 +102,13 @@
 </style>
 </head>
 <body>
+<!-- ★ 箭头 marker 全页只定义一次（SVG 里重复定义 id 会互相覆盖） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#c7c7cc"></path></marker>
+  <marker id="arB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#0071e3"></path></marker>
+  <marker id="arO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ff9f0a"></path></marker>
+  <marker id="arG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#00a37a"></path></marker>
+</defs></svg>
 <header>
   <div class="wrap bar">
     <div class="brand">Factory<small>用户视图 · 同一份数据的两种看法</small></div>
@@ -121,7 +139,14 @@
     </section>
   </div>
 
-  <p class="foot">★ 两个视图读的是同一份任务树数据 —— 说的是一件事的两种看法</p>
+  <!-- 投影 C: 数据流程图（看数据 —— 实体 / 谁碰它 / 数据之间怎么连） -->
+  <section class="card" style="margin-top:20px">
+    <h2><span class="dot"></span>数据流程图</h2>
+    <p class="sub">数据长什么样、哪个模块碰它、数据之间怎么连 —— ★ 只画真实来源（DDL / 产线声明），文案线索一律标虚线</p>
+    <div id="df"></div>
+  </section>
+
+  <p class="foot">★ 三个视图读的是同一份任务树数据 —— 说的是一件事的三种看法</p>
 </main>
 
 <script>
@@ -182,57 +207,86 @@ function _closure(id, adj){
   return seen;
 }
 
+// ── 共用: 分层图（第 N 层 = 第 N 行, 自上而下）─────────────────────
+//    功能链路图(模块·前置) 与 数据流程图(实体·外键) 共用同一套布局 —— 一处布局, 两处受益
+const G = {BW: 128, BH: 40, GX: 16, GY: 48, PADY: 30};
+function svgBand(nodes, edges, opts){
+  const o = opts || {}, dashed = o.dashed || [], padx = o.padx || 50;
+  const byLv = {};
+  nodes.forEach(n => { const L = n.level || 1; (byLv[L] = byLv[L] || []).push(n); });
+  const levels = Object.keys(byLv).map(Number).sort((a, b) => a - b);
+  const maxN = Math.max(1, ...levels.map(L => byLv[L].length));
+  const W = padx * 2 + maxN * G.BW + (maxN - 1) * G.GX;
+  const H = G.PADY * 2 + levels.length * G.BH + (levels.length - 1) * G.GY;
+  const pos = {};
+  levels.forEach((L, li) => {
+    const row = byLv[L], w = row.length * G.BW + (row.length - 1) * G.GX;
+    const x0 = padx + (W - padx * 2 - w) / 2;
+    row.forEach((n, i) => { pos[n.id] = {x: x0 + i * (G.BW + G.GX), y: G.PADY + li * (G.BH + G.GY)}; });
+  });
+  const bands = levels.map((L, li) => {
+    const y = G.PADY + li * (G.BH + G.GY) - 10;
+    const lb = (o.bandLabel || (v => `第 ${v} 层`))(L);
+    return `<rect class="band" x="0" y="${y}" width="${W}" height="${G.BH + 20}" rx="10"></rect>
+            <text class="band-lb" x="8" y="${y + G.BH / 2 + 4}">${esc(lb)}</text>`;
+  }).join("");
+  const paths = edges.map(e => {
+    const a = pos[e.from], b = pos[e.to];
+    if(!a || !b) return "";
+    const x1 = a.x + G.BW / 2, y1 = a.y + G.BH, x2 = b.x + G.BW / 2, y2 = b.y, my = (y1 + y2) / 2;
+    return `<path class="edge${dashed.includes(e.kind) ? " dash" : ""}${e.kind ? " k-" + e.kind : ""}"
+      data-f="${esc(e.from)}" data-t="${esc(e.to)}"
+      d="M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}"></path>`;
+  }).join("");
+  const boxes = nodes.map(n => {
+    const p = pos[n.id]; if(!p) return "";
+    const bits = (n.meta || []).join(" · ");
+    return `<g class="node${n.core ? " core" : ""}${n.faded ? " dimstatic" : ""}" data-id="${esc(n.id)}"><title>${esc(n.tip || n.name)}</title>
+      <rect x="${p.x}" y="${p.y}" width="${G.BW}" height="${G.BH}" rx="12"></rect>
+      <text class="nm" x="${p.x + 10}" y="${p.y + 17}">${esc(n.pre || "")}${esc(_trunc(n.name, 9))}</text>
+      ${bits ? `<text class="mt" x="${p.x + 10}" y="${p.y + 31}">${esc(_trunc(bits, 17))}</text>` : ""}</g>`;
+  }).join("");
+  return {svg: `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">${bands}${paths}${boxes}</svg>`,
+          W, H, levels: levels.length};
+}
+
+// 实体分层: 不引用别人的 = 最基础(第 1 层) —— 先后由【真实外键】决定, 不靠猜
+function levelsOf(ids, edges){
+  const out = new Map();
+  ids.forEach(i => out.set(i, []));
+  edges.forEach(e => { if(out.has(e.from)) out.get(e.from).push(e.to); });
+  const lv = new Map(), seen = new Set();
+  const calc = id => {
+    if(lv.has(id)) return lv.get(id);
+    if(seen.has(id)) return 1;                     // 环 ⇒ 不递归爆栈
+    seen.add(id);
+    const ts = out.get(id) || [];
+    const v = ts.length ? 1 + Math.max(...ts.map(calc)) : 1;
+    seen.delete(id); lv.set(id, v);
+    return v;
+  };
+  ids.forEach(calc);
+  return lv;
+}
+
 function renderFlow(d){
   const mods = d.root || [];
   if(!mods.length) return `<div class="empty">暂无模块</div>`;
-  const BW = 128, BH = 40, GX = 16, GY = 48, PADX = 50, PADY = 30;
-  const byLv = {};
-  mods.forEach(m => { const L = m.level || 1; (byLv[L] = byLv[L] || []).push(m); });
-  const levels = Object.keys(byLv).map(Number).sort((a, b) => a - b);
-  const maxN = Math.max(...levels.map(L => byLv[L].length));
-  const W = PADX * 2 + maxN * BW + (maxN - 1) * GX;
-  const H = PADY * 2 + levels.length * BH + (levels.length - 1) * GY;
-  const pos = {};                      // id → {x,y}
-  levels.forEach((L, li) => {
-    const row = byLv[L], w = row.length * BW + (row.length - 1) * GX;
-    const x0 = PADX + (W - PADX * 2 - w) / 2;
-    row.forEach((m, i) => { pos[m.id] = {x: x0 + i * (BW + GX), y: PADY + li * (BH + GY)}; });
-  });
-  // 第 N 批 = 第 N 行（Kahn 分层保证: 箭头只会从上往下, 不会倒流）
-  const bands = levels.map((L, li) => {
-    const y = PADY + li * (BH + GY) - 10;
-    return `<rect class="band" x="0" y="${y}" width="${W}" height="${BH + 20}" rx="10"></rect>
-            <text class="band-lb" x="8" y="${y + BH / 2 + 4}">第 ${L} 批</text>`;
-  }).join("");
-  const edges = (d.edges || []).map(e => {
-    const a = pos[e.from], b = pos[e.to];
-    if(!a || !b) return "";
-    const x1 = a.x + BW / 2, y1 = a.y + BH, x2 = b.x + BW / 2, y2 = b.y, my = (y1 + y2) / 2;
-    return `<path class="edge" data-f="${esc(e.from)}" data-t="${esc(e.to)}"
-             d="M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}"></path>`;
-  }).join("");
   const nodes = mods.map(m => {
-    const p = pos[m.id]; if(!p) return "";
     const bits = [];
     if(m.core) bits.push("★ 核心");
     else if(m.depended_by) bits.push(`被 ${m.depended_by} 个依赖`);
     if(m.kids) bits.push(`${m.kids} 个子模块`);
-    const tip = [m.name, (m.deps || []).length ? "前置: " + m.deps.join(" / ") : "无前置（可先做）",
-                 `第 ${m.level} 批`].join("｜");
-    return `<g class="node${m.core ? " core" : ""}" data-id="${esc(m.id)}"><title>${esc(tip)}</title>
-      <rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="12"></rect>
-      <text class="nm" x="${p.x + 10}" y="${p.y + 17}">${MARK[m.status] || "☐"} ${esc(_trunc(m.name, 9))}</text>
-      <text class="mt" x="${p.x + 10}" y="${p.y + 31}">${esc(bits.join(" · "))}</text></g>`;
-  }).join("");
-  const arw = (id, fill) => `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5"
-      markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${fill}"></path></marker>`;
+    return {id: m.id, name: m.name, level: m.level || 1, core: !!m.core,
+            pre: (MARK[m.status] || "☐") + " ", meta: bits,
+            tip: [m.name, (m.deps || []).length ? "前置: " + m.deps.join(" / ") : "无前置（可先做）",
+                  `第 ${m.level} 批`].join("｜")};
+  });
+  const g = svgBand(nodes, d.edges || [], {bandLabel: L => `第 ${L} 批`});
   const ext = (d.external_deps || []).length
     ? ` · 另有 ${d.external_deps.length} 条依赖指向子模块（点模块展开看）` : "";
-  return `<p class="sub" style="margin:0 0 10px">${d.modules} 个模块 · ${(d.edges || []).length} 条关系 · ${levels.length} 批（自上而下做）${ext}</p>
-    <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="功能链路图: 模块与前置关系">
-      <defs>${arw("ar", "#c7c7cc")}${arw("arB", "#0071e3")}${arw("arO", "#ff9f0a")}</defs>
-      ${bands}${edges}${nodes}
-    </svg>
+  return `<p class="sub" style="margin:0 0 10px">${d.modules} 个模块 · ${(d.edges || []).length} 条关系 · ${g.levels} 批（自上而下做）${ext}</p>
+    ${g.svg}
     <div class="legend">
       <span><b>箭头</b> = 前置关系: 上面先做完, 才能做下面</span>
       <span><b>★</b> = 核心（被最多模块依赖）</span>
@@ -284,6 +338,104 @@ function showKids(id){
                    : `<div class="kt">（还没细拆到子模块）</div>`);
 }
 
+// ── 数据流程图（投影 C）──────────────────────────────────────────
+//    ★ 只画真实来源: 实体与实体关系来自项目 DDL; 模块↔实体 有声明=实线, 只有文案=虚线线索
+let DFLOW = null;
+
+// 二分图（左模块列 / 右实体列）—— 关系用【左右两列 + 曲线】, 不用分层（分层读不出"谁碰谁"）
+function svgBipartite(left, right, links){
+  const BW = 148, BH = 32, GY = 10, PAD = 8, MID = 170;
+  const W = PAD * 2 + BW * 2 + MID;
+  const H = Math.max(left.length, right.length, 1) * (BH + GY) + PAD * 2 - GY;
+  const col = (arr, x) => {
+    const top = PAD + (H - PAD * 2 - (arr.length * (BH + GY) - GY)) / 2;
+    const m = {};
+    arr.forEach((n, i) => { m[n.id] = {x, y: top + i * (BH + GY)}; });
+    return m;
+  };
+  const lp = col(left, PAD), rp = col(right, W - PAD - BW);
+  const paths = links.map(k => {
+    const a = lp[k.from], b = rp[k.to];
+    if(!a || !b) return "";
+    const x1 = a.x + BW, y1 = a.y + BH / 2, x2 = b.x, y2 = b.y + BH / 2;
+    return `<path class="edge${k.kind === "evidence" ? " dash" : ""}${k.kind ? " k-" + k.kind : ""}"
+      data-f="${esc(k.from)}" data-t="${esc(k.to)}"
+      d="M${x1},${y1} C${x1 + MID * .45},${y1} ${x2 - MID * .45},${y2} ${x2},${y2}"></path>`;
+  }).join("");
+  const box = (n, p) => `<g class="node${n.faded ? " dimstatic" : ""}" data-id="${esc(n.id)}"><title>${esc(n.tip || n.name)}</title>
+    <rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="10"></rect>
+    <text class="nm" x="${p.x + 9}" y="${p.y + 20}">${esc(_trunc(n.name + (n.meta ? " · " + n.meta : ""), 18))}</text></g>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">${paths}${left.map(n => box(n, lp[n.id])).join("")}${right.map(n => box(n, rp[n.id])).join("")}</svg>`;
+}
+
+function renderDataFlow(d){
+  if(!d || !d.available){
+    return `<div class="empty">没有数据模型可依据 —— 项目里找不到 *.prisma / *.sql（不编一张图）</div>`;
+  }
+  const ents = d.entities || [], used = new Set(d.entities_used || []);
+  const linked = new Set((d.module_links || []).map(k => k.module_id));
+  const mods = (d.modules || []).map(m => ({id: m.id, name: m.name,
+                                           faded: !linked.has(m.id),
+                                           tip: (linked.has(m.id) ? "" : "没有任何实体线索（不编）｜") + m.name}));
+  const right = ents.map(e => ({id: "E:" + e.name, name: e.name,
+                                meta: e.refs ? `被 ${e.refs} 引用` : "", faded: !used.has(e.name),
+                                tip: `${e.name}｜被 ${e.refs} 张表引用`}));
+  const bi = svgBipartite(mods, right,
+    (d.module_links || []).map(k => ({from: k.module_id, to: "E:" + k.entity, kind: k.kind})));
+
+  const fkIds = ents.map(e => "E:" + e.name);
+  const fk = (d.relations || []).map(r => ({from: "E:" + r.from, to: "E:" + r.to, kind: "fk"}));
+  const lv = levelsOf(fkIds, fk);
+  const er = svgBand(ents.map(e => ({
+      id: "E:" + e.name, name: e.name, level: lv.get("E:" + e.name) || 1,
+      meta: e.refs ? [`被 ${e.refs} 引用`] : [], tip: `${e.name}｜被 ${e.refs} 张表引用`})),
+    fk, {bandLabel: L => `第 ${L} 层`});
+
+  return `<p class="srcline">数据来源: <b>${esc(d.source_file || "（无）")}</b> · 实体 <b>${ents.length}</b> 张
+     · 真实外键 <b>${(d.relations || []).length}</b> 条 · 模块↔实体连线 <b>${(d.module_links || []).length}</b> 条
+     （声明 ${d.declared_count} / 线索 ${d.evidence_count}）· 覆盖 <b>${d.coverage.with_entity}/${d.coverage.modules}</b> 个模块</p>
+    <h3 class="sub" style="margin:16px 0 8px">① 模块 ↔ 数据实体</h3>
+    ${bi}
+    <h3 class="sub" style="margin:20px 0 8px">② 数据实体之间的关系（真实外键 · 来自 DDL）</h3>
+    ${er.svg}
+    <div class="legend">
+      <span><b>虚线</b> = 线索（模块文案里出现过这个实体名, 不是系统记录）</span>
+      <span><b>蓝实线</b> = 产线声明（模块读/写这些实体）</span>
+      <span><b>绿线</b> = 真实外键（DDL 的 @relation）</span>
+      <span><b>灰掉</b> = 没有任何模块碰它</span>
+    </div>
+    ${(d.coverage.missing || []).length ? `<div class="gap">未覆盖的模块（${d.coverage.missing.length} 个）: ${esc(d.coverage.missing.join("、"))} —— 它们的文案里没出现任何实体名 ⇒ 图上没有它们的线（不编）</div>` : ""}
+    ${d.hint ? `<div class="gap">${esc(d.hint)}</div>` : ""}`;
+}
+
+function wireDataflow(){
+  if(!DFLOW) return;
+  document.querySelectorAll("#df svg").forEach(svg => {
+    const nodes = [...svg.querySelectorAll(".node")], edges = [...svg.querySelectorAll(".edge")];
+    const paint = id => {
+      const touch = new Set();
+      if(id) edges.forEach(e => {
+        if(e.dataset.f === id) touch.add(e.dataset.t);
+        if(e.dataset.t === id) touch.add(e.dataset.f);
+      });
+      nodes.forEach(n => {
+        const i = n.dataset.id, on = !id || i === id || touch.has(i);
+        n.classList.toggle("dim", !!id && !on);
+        n.classList.toggle("hot", !!id && on);
+      });
+      edges.forEach(e => {
+        const on = !id || e.dataset.f === id || e.dataset.t === id;
+        e.classList.toggle("dim", !!id && !on);
+        e.classList.toggle("hot", !!id && on);
+      });
+    };
+    nodes.forEach(n => {
+      n.addEventListener("mouseenter", () => paint(n.dataset.id));
+      n.addEventListener("mouseleave", () => paint(null));
+    });
+  });
+}
+
 async function load(planId){
   const both = await api(`/api/trees/${encodeURIComponent(planId)}/both`);
   const t = both.todo || {};
@@ -294,6 +446,9 @@ async function load(planId){
   FLOW = both.flow || {};
   $("flow").innerHTML = renderFlow(FLOW);
   wireFlow();
+  DFLOW = both.dataflow || null;
+  $("df").innerHTML = renderDataFlow(DFLOW);
+  wireDataflow();
   $("msg").innerHTML = `<p class="sub" style="margin:0 0 18px">进度 ${t.done}/${t.total}（${t.percent}%）· 共 ${(both.flow||{}).modules||0} 个模块</p>`;
 }
 

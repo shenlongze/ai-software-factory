@@ -178,6 +178,70 @@ def _fixtures() -> list[tuple[str, dict]]:
     return [("嵌套树", nest), ("有环树", cyc), ("单模块树", single), ("空树", empty)]
 
 
+def _check_dataflow(root: Path) -> list[str]:
+    """★ 数据流程图（投影 C）的判据 —— 返回违规描述（空 = 全过）。
+
+    只验一件事: **图上每条线都必须有真实来源**（DDL / 产线声明）。
+    文案匹配只许作【线索】, 且必须如实报覆盖率与未覆盖模块 —— 不许把线索当事实。
+    """
+    from ai_factory_os.services.work import data_flow as DF
+
+    bad: list[str] = []
+    proj = root / "projects" / "P1"
+    (proj / "server").mkdir(parents=True, exist_ok=True)
+    (proj / "server" / "schema.prisma").write_text(
+        "model User { id Int @id }\n"
+        "model Order { id Int @id\n  user User @relation(fields: [userId], references: [id])\n  userId Int }\n"
+        "model Payment { id Int @id\n  order Order @relation(fields: [orderId], references: [id])\n  orderId Int }\n",
+        encoding="utf-8")
+    tree = _tree("PLAN-df", [
+        _node("p", "project", "", "数据流"),
+        _node("m1", "domain", "p", "模块一"),                       # 有声明
+        _node("m2", "domain", "p", "模块二"),                       # 只有文案线索
+        _node("m3", "domain", "p", "模块三"),                       # 没有任何线索
+    ])
+    tree["nodes"][1]["data_entities"] = [{"name": "Order", "access": "write"}]
+    tree["nodes"][2]["scope"] = "实现 Payment 对账与退款的写库逻辑"
+
+    d = DF.build_data_flow(tree, proj)
+    names = {e["name"] for e in d["entities"]}
+    # ① 真实来源: 实体/关系统统来自 DDL
+    if names != {"User", "Order", "Payment"}:
+        bad.append(f"实体抽取不对: {sorted(names)}")
+    if len(d["relations"]) != 2:
+        bad.append(f"外键条数不对: {len(d['relations'])}")
+    # ② 声明优先于线索
+    m1 = [k for k in d["module_links"] if k["module_id"] == "m1"]
+    if not all(k["kind"] == "declared" for k in m1) or not m1:
+        bad.append("有声明的模块未走 declared")
+    # ③ 线索只作线索 + 名字必须在真实清单里（不许编）
+    m2 = [k for k in d["module_links"] if k["module_id"] == "m2"]
+    if not m2 or not all(k["kind"] == "evidence" for k in m2):
+        bad.append("文案提到的实体未标为 evidence")
+    invented = [k["entity"] for k in d["module_links"] if k["entity"] not in names]
+    if invented:
+        bad.append(f"出现了清单外的实体（编的）: {invented}")
+    # ④ 全部顶层模块都要给（缺线的也要画出来）
+    if {m["id"] for m in d["modules"]} != {"m1", "m2", "m3"}:
+        bad.append("modules 未覆盖全部顶层模块")
+    # ⑤ 覆盖率与未覆盖清单如实
+    if d["coverage"]["missing"] != ["模块三"] or d["coverage"]["with_entity"] != 2:
+        bad.append(f"覆盖率/缺口不对: {d['coverage']}")
+    # ⑥ 没有 DDL 且没有声明 ⇒ 明说没有, 不编图
+    bare = _tree("PLAN-bare", [_node("p", "project", "", "裸"),
+                               _node("x", "domain", "p", "模块X")])
+    d2 = DF.build_data_flow(bare, root / "projects" / "P_none")
+    if d2["available"] or d2["entities"]:
+        bad.append("无 DDL 无声明时仍给出了实体（编的）")
+    # ⑦ 无 DDL 但有声明 ⇒ 实体来自【声明】, 不许因为实体列里没有它就把线静默丢掉
+    d3 = DF.build_data_flow(tree, root / "projects" / "P_none")
+    if [e["name"] for e in d3["entities"]] != ["Order"] or d3["entities"][0]["from"] != "declared":
+        bad.append(f"无 DDL 时声明实体未进实体清单（线会被静默丢）: {d3['entities']}")
+    if not any(k["kind"] == "declared" for k in d3["module_links"]):
+        bad.append("无 DDL 时声明线丢了")
+    return bad
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="用户视图端到端冒烟（不变式门）")
     ap.add_argument("--root", default="", help="额外扫描的真实数据根（诊断用）")
@@ -214,6 +278,9 @@ def main() -> int:
                         f"modules={emp['modules']}"))
         one = UV.build_flow(_must_load(root, "PLAN-single", "P1"))
         results.append(("单模块 ⇒ 仍给 1 个", one["modules"] == 1, f"modules={one['modules']}"))
+        # ⑦ 数据流程图（投影 C）: 每条线都要有真实来源
+        df_bad = _check_dataflow(root)
+        results.append(("数据流程图 判据(真实来源/不编)", not df_bad, "；".join(df_bad)))
 
     if args.root:
         rroot = Path(args.root).expanduser()

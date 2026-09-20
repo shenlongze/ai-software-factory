@@ -971,7 +971,7 @@
       <b>本刀已修</b>: <code>openai.py</code> 的 <code>_parse_content</code> 原先只在
       "内容为空"时检查 <code>finish_reason=length</code>；"非空但截断"会<b>静默返回坏数据</b>
       ⇒ 已改为同样响亮报错（含字符数 + 真因 + 对策）。<br>
-      <b>★ 待做（根治）</b>: <code>deepseek-chat</code> 的 max output 就是 8192 ⇒ 输入一大必然触顶
+      <b>★ 待做（根治）<b style="color:#0a8">【2026-09-21 已由 cr-14 完成】</b></b>: <code>deepseek-chat</code> 的 max output 就是 8192 ⇒ 输入一大必然触顶
       ⇒ 该【分节生成】（7 节拆 2-3 次调用, 如 架构3节 + API/DB + 任务拆分）。<br>
       <b>验收</b>: 输入 ux_ui 摘要 8000 字符（现触顶值）时 arch design 能稳定成功。</span></span><br><b style="color:#0a8">【2026-09-21 已修】</b>由 cr-14 关闭（arch 逐节生成 + api_design 分片, 实测 7 节 7/7）—— 本条与 cr-14 同一根因, 同比关闭</label>
     <label class="item done"><input type="checkbox" id="cr-13" checked><span class="body">

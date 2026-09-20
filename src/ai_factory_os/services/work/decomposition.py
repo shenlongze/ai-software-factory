@@ -625,6 +625,7 @@ def edit_node(
     title: str | None = None,
     acceptance: str | None = None,
     display_name: str | None = None,
+    assignee: str | None = None,
     depends_on: list[str] | None = None,
     drop: bool = False,
 ) -> dict[str, Any]:
@@ -679,6 +680,14 @@ def edit_node(
             target["acceptance"] = str(acceptance)[:300]
         if display_name is not None:
             target["display_name"] = str(display_name)[:60]
+        if assignee is not None:
+            # ★ 谁在做（承接的落地）—— 定位给"建议角色", 这里给"实际指派"。
+            #   空串 ⇒ 清掉指派（回到"待派"）。
+            who = str(assignee).strip()
+            if who:
+                target["assignee"] = who[:80]
+            else:
+                target.pop("assignee", None)
         if depends_on is not None:
             target["depends_on"] = [str(x) for x in depends_on]
         action = "更新节点"

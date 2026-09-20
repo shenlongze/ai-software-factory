@@ -574,6 +574,7 @@ def build_parser() -> Any:
     p_tt_e.add_argument("--title", default=None, help="改标题（专业名）")
     p_tt_e.add_argument("--acceptance", default=None, help="改验收标准")
     p_tt_e.add_argument("--display-name", dest="display_name", default=None, help="改人话名")
+    p_tt_e.add_argument("--assignee", default=None, help="指派谁做（承接落地; 空串=回到待派）")
     p_tt_e.add_argument("--drop", action="store_true", help="删除该节点及其子树")
     p_tt_e.add_argument("--project", default=None, help="项目 id")
     p_tt_d = ttsub.add_parser("decompose", help="从 Design Artifact 生成任务树（候选态）")
@@ -2442,6 +2443,7 @@ def _tasktree_edit(ctx: FactoryContext, args: Any) -> dict:
         title=getattr(args, "title", None),
         acceptance=getattr(args, "acceptance", None),
         display_name=getattr(args, "display_name", None),
+        assignee=getattr(args, "assignee", None),
         drop=bool(getattr(args, "drop", False)),
     )
     return {"ok": True, "action": "tasktree-edit", **r,
@@ -2719,6 +2721,8 @@ def _print_tasktree(args: Any, r: dict) -> None:
         print(f"  节点: {str(n.get('id'))[-8:]}")
         if n.get("acceptance"):
             print(f"  验收: {n['acceptance'][:80]}")
+        if n.get("assignee"):
+            print(f"  指派: {n['assignee']}")
         print(f"  ★ 树已回到【候选态】（{r.get('status')}）—— 需重新确认:")
         print(f"     factory tasktree confirm {r['tree'].get('plan_id')}")
     elif cmd == "decompose":

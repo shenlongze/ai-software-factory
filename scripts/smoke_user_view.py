@@ -242,6 +242,41 @@ def _check_dataflow(root: Path) -> list[str]:
     return bad
 
 
+def _check_declare(root: Path) -> list[str]:
+    """产线声明（投影 C 的数据来源）: 落盘 ⇒ 视图必须变 declared; 空声明 ⇒ 清字段不留空壳。
+
+    ★ 这条链断了就会出现"声明了但图没变"（同族: 写了没效果）—— 必须机器守。
+    """
+    from ai_factory_os.services.work import data_flow as DF
+    from ai_factory_os.services.work import decomposition as D
+
+    bad: list[str] = []
+    tree = _tree("PLAN-dec", [_node("p", "project", "", "声明"),
+                              _node("m1", "domain", "p", "模块一"),
+                              _node("m2", "domain", "p", "模块二")])
+    _write(root, tree)                      # 声明是"读-改-写" ⇒ 必须走真实存储
+    D.declare_node_entities(root, "PLAN-dec", node_id="m1",
+                            entities=[{"name": "Order", "access": "write"}], project_id="P1")
+    t2 = _must_load(root, "PLAN-dec", "P1")
+    if not next(n for n in t2["nodes"] if n["id"] == "m1").get("data_entities"):
+        bad.append("声明没落盘")
+    if t2.get("status") != "candidate":
+        bad.append("声明后没回到候选态")
+    d = DF.build_data_flow(t2, root / "projects" / "P1")
+    if d["declared_count"] != 1 or not any(k["kind"] == "declared" for k in d["module_links"]):
+        bad.append("声明没让视图变 declared（写了没效果）")
+    D.declare_node_entities(root, "PLAN-dec", node_id="m1", entities=[], project_id="P1")
+    t3 = _must_load(root, "PLAN-dec", "P1")
+    if "data_entities" in next(n for n in t3["nodes"] if n["id"] == "m1"):
+        bad.append("空声明没清掉字段（留了空壳）")
+    # LLM 输出里的清单外名字必须被丢弃（不许写进树）
+    from ai_factory_os.services.work.declare import _parse
+    kept, dropped = _parse('[{"name":"Order"},{"name":"编的"}]', {"Order", "User"})
+    if [e["name"] for e in kept] != ["Order"] or dropped != 1:
+        bad.append(f"清单外名字未被丢弃: kept={kept} dropped={dropped}")
+    return bad
+
+
 def _check_mermaid(flow: dict, dataflow: dict) -> list[str]:
     """CLI 的 mermaid 输出必须【结构自洽】—— 否则贴进渲染器就是一堆报错（设计 §4.3）。"""
     import re
@@ -310,6 +345,9 @@ def main() -> int:
         from ai_factory_os.services.work import data_flow as _DF
         m_bad = _check_mermaid(UV.build_flow(nest), _DF.build_data_flow(nest, root / "projects" / "P1"))
         results.append(("CLI mermaid 结构自洽", not m_bad, "；".join(m_bad)))
+        # ⑨ 产线声明 → 视图（写了必须有效果; 空声明不留空壳）
+        dec_bad = _check_declare(root)
+        results.append(("声明落盘⇒视图变实线", not dec_bad, "；".join(dec_bad)))
 
     if args.root:
         rroot = Path(args.root).expanduser()

@@ -583,6 +583,14 @@ def build_parser() -> Any:
     p_tt_df.add_argument("--project", default=None, help="项目 id")
     p_tt_df.add_argument("--mermaid", action="store_true",
         help="输出 mermaid 源码（模块↔实体 与 实体↔实体 两张关系图）")
+    p_tt_dec = ttsub.add_parser(
+        "declare", help="★ 产线声明: 让 LLM 声明每个模块读/写哪些数据实体（数据流程图据此把线索变实线）")
+    json_opt(p_tt_dec)
+    p_tt_dec.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
+    p_tt_dec.add_argument("--project", default=None, help="项目 id")
+    p_tt_dec.add_argument("--node", default=None, help="只声明这一个模块（短 id 也行）")
+    p_tt_dec.add_argument("--dry-run", action="store_true", dest="dry_run",
+        help="只算不落盘（先看 LLM 会声明什么）")
     p_tt_e = ttsub.add_parser(
         "edit", help="★ 逐节点编辑（改标题/验收/人话名/依赖, 或删节点）—— 改完回到候选态")
     json_opt(p_tt_e)
@@ -2501,6 +2509,67 @@ def _tasktree_dataflow(ctx: FactoryContext, args: Any) -> dict:
             "dataflow": _DF.build_data_flow(tree, proj_dir)}
 
 
+def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
+    """`factory tasktree declare <plan>` —— ★ 产线声明「模块 ↔ 数据实体」。
+
+    【为什么】数据流程图上模块↔实体的线默认只是【线索】（文案里碰巧出现实体名, 覆盖 7/13）。
+    Founder 要的是"数据流程"成真 ⇒ 由产线**声明**每个模块读/写哪些实体, 落 `data_entities`,
+    视图随之把虚线画成实线。
+
+    ★ 不许编: LLM 只许从【项目真实数据模型】的清单里选; 清单外的丢弃并计数上报;
+      拿不准 ⇒ 空数组（宁可没有, 不要瞎标）。
+    """
+    from pathlib import Path as _Path
+
+    from ai_factory_os.services.work import data_flow as _DF
+    from ai_factory_os.services.work import decomposition as _D
+    from ai_factory_os.services.work.declare import declare_module_entities
+
+    plan_id = str(getattr(args, "plan_id", "") or "")
+    project = str(getattr(args, "project", "") or "")
+    tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+    if not tree:
+        raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
+    pid = str(tree.get("project_id") or "")
+    proj_dir = (_Path(ctx.root) / "projects" / pid) if pid else None
+    names = list(_DF.extract_entities(proj_dir)["entities"].keys())
+    if not names:
+        raise CliError("项目里没有数据模型（*.prisma / *.sql）⇒ 无法声明（不编）", exit_code=1)
+
+    nodes = tree.get("nodes") or []
+    dom_ids = {str(n.get("id") or "") for n in nodes if n.get("kind") == "domain"}
+    targets = [n for n in nodes if n.get("kind") == "domain"
+               and str(n.get("parent_id") or "") not in dom_ids]
+    only = str(getattr(args, "node", "") or "")
+    if only:
+        targets = [n for n in nodes
+                   if str(n.get("id") or "") == only or str(n.get("id") or "").endswith(only)]
+        if not targets:
+            raise CliError(f"找不到节点: {only}", exit_code=1)
+    todo = [n for n in targets if not n.get("data_entities")]     # ★ 幂等: 已声明的跳过
+    dry = bool(getattr(args, "dry_run", False))
+
+    prov = _arch_provider()
+    rows: list[dict[str, Any]] = []
+    dropped_total = 0
+    for n in todo:
+        got, dropped = declare_module_entities(
+            str(n.get("display_name") or n.get("title") or ""),
+            desc=str(n.get("scope") or ""),
+            acceptance=str(n.get("acceptance") or ""),
+            entities=names, provider=prov)
+        dropped_total += dropped
+        if not dry:
+            _D.declare_node_entities(ctx.root, plan_id, node_id=str(n.get("id") or ""),
+                                     entities=got, project_id=project)
+        rows.append({"node": str(n.get("display_name") or n.get("title") or ""),
+                     "entities": got, "dropped": dropped})
+    return {"ok": True, "action": "tasktree-declare", "tree": tree,
+            "entities_available": names, "declared": rows,
+            "skipped": len(targets) - len(todo), "dropped_total": dropped_total,
+            "dry_run": dry, "exit_code": 0, "args": args}
+
+
 def _tasktree_edit(ctx: FactoryContext, args: Any) -> dict:
     """`factory tasktree edit <plan> --node <id> [--title/--acceptance/--display-name] [--drop]`
     —— ★ 逐节点编辑（Founder: "每一个子节点, 用户都有可能做修改"）。
@@ -2704,6 +2773,8 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
         return _tasktree_flow(ctx, args)
     if cmd == "dataflow":
         return _tasktree_dataflow(ctx, args)
+    if cmd == "declare":
+        return _tasktree_declare(ctx, args)
     if cmd == "edit":
         return _tasktree_edit(ctx, args)
     if cmd == "translate":
@@ -3083,6 +3154,28 @@ def _print_tasktree(args: Any, r: dict) -> None:
             print()
             return
         _print_dataflow(r["dataflow"])
+    elif cmd == "declare":
+        # ★ 产线声明: 模块 → 读/写的数据实体（清单外的一律丢弃并计数）
+        rows = r.get("declared") or []
+        print()
+        print(f"  产线声明    {r['tree'].get('plan_id')}    "
+              f"实体清单 {len(r.get('entities_available') or [])} 个（来自项目真实数据模型）"
+              + ("    【--dry-run 不落盘】" if r.get("dry_run") else ""))
+        print(f"  {'━' * 52}")
+        print()
+        if r.get("skipped"):
+            print(f"  （{r['skipped']} 个模块已有声明 ⇒ 跳过 —— 幂等, 不重复烧 token）")
+        for row in rows:
+            got = ("  ".join(f"{e['name']}({e['access']})" for e in row["entities"])
+                   if row["entities"] else "（拿不准 ⇒ 空数组, 不瞎标）")
+            extra = f"    ⚠ 丢弃清单外名字 {row['dropped']} 个" if row["dropped"] else ""
+            print(f"    {row['node']:<14} → {got}{extra}")
+        print()
+        if r.get("dropped_total"):
+            print(f"  ⚠ 共丢弃清单外的名字 {r['dropped_total']} 个（LLM 编的, 没写进树）")
+        if not rows:
+            print("  （没有需要声明的模块）")
+        print("  （声明后 `tasktree dataflow <plan>` 看数据流程图 —— 线会从虚线变实线）")
     elif cmd == "edit":
         n = r.get("node") or {}
         print(f"✔ {r.get('action')}: {_todo_display_name(n.get('title'))}")

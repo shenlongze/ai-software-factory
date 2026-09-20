@@ -960,6 +960,42 @@ def expand_domain(
             "action": f"展开成 {len(new_ids)} 个子任务"}
 
 
+def declare_node_entities(
+    root: Path | str,
+    plan_id: str,
+    *,
+    node_id: str,
+    entities: list[dict[str, Any]],
+    project_id: str = "",
+) -> dict[str, Any]:
+    """★ 给模块节点写【数据实体声明】—— 产线产出, 数据流程图据此把"线索"变"实线"。
+
+    与 `edit_node` 同一纪律: 改的是同一份树文件（一数据一权威源）, 改完回 `candidate`。
+    ★ 字段名固定 `data_entities`（`services/work/data_flow.py` 读的就是它）;
+      空声明 ⇒ **清掉字段**（回落"线索"路径, 不留空壳、不留假数据）。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        raise FileNotFoundError(f"任务树不存在: {plan_id}")
+    nodes: list[dict[str, Any]] = tree.get("nodes") or []
+    node = next((n for n in nodes if str(n.get("id") or "") == node_id
+                 or str(n.get("id") or "").endswith(node_id)), None)
+    if node is None:
+        raise ValueError(f"找不到节点: {node_id}")
+    clean = [{"name": str(e.get("name") or "").strip(),
+              "access": str(e.get("access") or "both")} for e in entities
+             if isinstance(e, dict) and str(e.get("name") or "").strip()]
+    if clean:
+        node["data_entities"] = clean
+    else:
+        node.pop("data_entities", None)
+    tree["status"] = "candidate"
+    tree["edited_at"] = _now_iso()
+    tree.pop("_saved_to", None)
+    tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
+    return {"tree": tree, "node": node, "entities": clean}
+
+
 def tree_leaves(tree: dict[str, Any]) -> list[dict[str, Any]]:
     return [n for n in (tree.get("nodes") or []) if n.get("kind") == "task"]
 

@@ -528,6 +528,35 @@ def set_node_evidence(
     return False
 
 
+def mark_needs_decision(
+    root: Path | str,
+    plan_id: str,
+    node_id: str,
+    *,
+    verdict: str,
+    reason: str,
+    project_id: str = "",
+) -> bool:
+    """★ 记【执行体停手待裁决】（第 3 项）—— 写在叶上, 供监控/人看。
+
+    为什么需要: 执行体"核验+停手、零改动"时, 从外面只看到"进程退出 0" ⇒ 曾被记成 completed
+    （进度是假的）。现在执行体用 `EXEC-VERDICT: {...}` 显式表态, 调度器据此把叶终止并留下原因。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        return False
+    for n in tree.get("nodes") or []:
+        if str(n.get("id") or "") != node_id:
+            continue
+        n["needs_decision"] = True
+        n["decision_kind"] = str(verdict)[:40]
+        if reason:
+            n["decision_reason"] = str(reason)[:300]
+        _save(root, plan_id, tree, project_id)
+        return True
+    return False
+
+
 def get_leaf(root: Path | str, plan_id: str, node_id: str, *, project_id: str = "") -> dict[str, Any] | None:
     """读一个节点（只读, 给调度器判"重试了几次"用）。"""
     tree = _read(root, plan_id, project_id)

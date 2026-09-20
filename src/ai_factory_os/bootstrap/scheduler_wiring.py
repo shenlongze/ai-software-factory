@@ -360,6 +360,53 @@ class StoreExecution:
             return None
         return None
 
+    def _brief(self, node_id: str) -> tuple[str, str]:
+        """★ 给执行体的【任务简报】（标题 + 验收 + 该动哪些文件 + 项目仓库）。
+
+        为什么必须有它（真跑踩到）: 原来 input 里只有路由键（node_id/member_id…）⇒ 适配器组出的
+        prompt 只有 "execute execution EXR-001" —— **执行体不知道要干什么**, 只能自己翻树猜
+        （EXR-005 那次就是这么"猜对"的, 不可靠）。派活就得把活说清楚。
+        失败安全: 读不到叶 ⇒ ("", "")（退回旧行为, 不编）。
+        """
+        try:
+            import json as _json
+
+            from ai_factory_os.services.work import decomposition as D
+
+            tree = D.load_tree(self._root, self._plan_id)
+            if not tree:
+                return "", ""
+            leaf = next((n for n in (tree.get("nodes") or [])
+                         if str(n.get("id") or "") == node_id), None)
+            if not leaf:
+                return "", ""
+            title = str(leaf.get("display_name") or leaf.get("title") or "").strip()
+            acc = str(leaf.get("acceptance") or "").strip()
+            files = [str(x) for x in (leaf.get("expected_files") or [])]
+            pid = str(tree.get("project_id") or "")
+            repo = ""
+            try:
+                data = _json.loads((self._root / "org" / "projects.json").read_text(encoding="utf-8"))
+                rows = data.get("projects") if isinstance(data, dict) else data
+                if isinstance(rows, dict):
+                    repo = str((rows.get(pid) or {}).get("repo_path") or "")
+                elif isinstance(rows, list):
+                    repo = next((str(r.get("repo_path") or "") for r in rows
+                                 if isinstance(r, dict) and str(r.get("id")) == pid), "")
+            except Exception:  # noqa: BLE001
+                repo = ""
+            lines = [f"任务: {title}"]
+            if acc:
+                lines.append(f"验收标准: {acc}")
+            if files:
+                lines.append("预期产出文件: " + ", ".join(files))
+            if pid:
+                lines.append(f"项目: {pid}" + (f"  仓库: {repo}" if repo else ""))
+            lines.append("纪律: 只做这一件事; 自检后再收工; 不要改与本任务无关的文件。")
+            return title, "\n".join(lines)
+        except Exception:  # noqa: BLE001 — 简报失败不阻塞派发（执行体退回旧行为）
+            return "", ""
+
     def create(self, node_id: str, *, resolution_id: str,
                member_id: str, identity_id: str) -> Any:
         """建一个 PENDING 执行请求（**不**真跑 —— 跑是 drive 的事, 与 ADR-0006 决策 2 一致）。"""
@@ -368,6 +415,7 @@ class StoreExecution:
         )
 
         eid = self._store.next_execution_id(prefix="EXR-")
+        _task, _instr = self._brief(node_id)          # ★ 把"活"说清楚（见 _brief 自述）
         req = ExecutionRequest(
             id=eid,
             task_id=self._plan_id,                      # ★ 任务树 id（pump 用它定位叶）
@@ -377,6 +425,9 @@ class StoreExecution:
                 "resolution_id": resolution_id,
                 "member_id": member_id,
                 "identity_id": identity_id,
+                # ★ 适配器把它组进 prompt（原来缺这两个键 ⇒ 执行体只收到 "execute execution EXR-x"）
+                "task": _task,
+                "instruction": _instr,
             },
         )
         self._store.save_execution(req)

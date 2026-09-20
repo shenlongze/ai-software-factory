@@ -4388,6 +4388,9 @@ def _print_status(r: dict) -> None:
         if dt.get("needs_split"):
             _extra.append(f"⚠ {dt['needs_split']} 个叶可能没拆到位"
                           "（判据: 一句话写不出验收）⇒ tasktree expand --deep")
+        if dt.get("needs_decision"):
+            _extra.append(f"⚠ {dt['needs_decision']} 条执行体停手待你裁决 ⇒ 看 status --json 里的 "
+                          "decision_reason（这些不算完成）")
         if dt.get("verify_needed"):
             _extra.append(f"⚠ {dt['verify_needed']} 个'完成'没有产出证据 ⇒ 待核")
         if dt.get("retrying"):

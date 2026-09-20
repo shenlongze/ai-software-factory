@@ -25,16 +25,35 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import subprocess
 
 from ai_factory_os.services.execution.runtime.adapter import RuntimeAdapter
 from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionResult, ExecutionStatus
 
 DEFAULT_COMMAND = "hermes"          # 默认 CLI 命令名 (走 PATH 解析)
-DEFAULT_TIMEOUT = 300               # 默认超时 (秒): Hermes 一次 one-shot 调用可达分钟级
+DEFAULT_TIMEOUT = 900               # 默认超时 (秒): 真实 agent 干完一个叶常要几分钟 —— 300s 实测不够
+                                    # （真跑踩到: "hermes command timed out after 300s" ⇒ 叶被判失败重试）
 ENV_COMMAND = "FACTORY_HERMES_CMD"  # 环境变量: 覆盖 hermes 命令 (可给绝对路径)
 ENV_TIMEOUT = "FACTORY_HERMES_TIMEOUT"  # 环境变量: 覆盖超时秒数
+
+#: ★ 裁定契约（第 3 项）—— 追加到 prompt 末尾, 让执行体**显式**说自己干成了什么。
+#: 为什么需要: 原来只有 stdout, 调度器从外面只看到"进程退出 0" ⇒ **"停手"被当成"完成"**
+#: （实测事故 EXR-005: 执行体自述"核验+停手、零改动", 叶却被记成 completed ⇒ 进度是假的）。
+_VERDICT_CONTRACT = (
+    "\n\n★ 结束时必须输出一行机器可读的裁定（供调度器判定, 不要改写格式）:\n"
+    "EXEC-VERDICT: {\"verdict\": \"done|needs_decision|blocked\", \"reason\": \"一句话\"}\n"
+    "  · done           = 本次验收已达成\n"
+    "  · needs_decision = 需要人裁决（例如验收与现状冲突、口径不清）—— reason 必须写清【要裁决什么】\n"
+    "  · blocked        = 被外部条件挡住（缺依赖/环境/凭据）\n"
+    "  没有这行 ⇒ 调度器按【没表态】处理（保守：不当作完成）"
+)
+
+#: 裁定标记（解析用; 取最后一行, 容忍前后文）
+_VERDICT_RE = re.compile(r"EXEC-VERDICT:\s*(\{.*?\})", re.S)
+_VERDICTS = ("done", "needs_decision", "blocked")
 
 # 失败错误消息前缀 (稳定, 供测试/审计断言)
 _ERR_CMD_NOT_FOUND = "hermes command not found: {}"
@@ -42,6 +61,27 @@ _ERR_TIMEOUT = "hermes command timed out after {:g}s"
 _ERR_EXIT = "hermes command exited with code {}: {}"
 _ERR_NO_OUTPUT = "hermes command produced no output (stdout empty){}"
 _ERR_OS = "hermes command failed: {}: {}"
+
+
+def _parse_verdict(stdout: str) -> dict[str, str]:
+    """从执行体输出里取【裁定】（第 3 项）—— 取最后一个 `EXEC-VERDICT: {...}`。
+
+    返回 {"verdict": "done|needs_decision|blocked|", "verdict_reason": "..."}。
+    ★ 解析不出/非法值 ⇒ verdict=""（**没表态**）—— 由调度器保守处理, 绝不当作"完成"。
+      真跑踩过: 执行体没表态却被记成完成。
+    """
+    out = {"verdict": "", "verdict_reason": ""}
+    for m in _VERDICT_RE.finditer(stdout or ""):
+        try:
+            data = json.loads(m.group(1))
+        except Exception:  # noqa: BLE001 — 坏 JSON 不算表态
+            continue
+        if not isinstance(data, dict):
+            continue
+        v = str(data.get("verdict") or "").strip().lower()
+        if v in _VERDICTS:
+            out = {"verdict": v, "verdict_reason": str(data.get("reason") or "")[:300]}
+    return out
 
 
 class HermesRuntimeAdapter(RuntimeAdapter):
@@ -123,6 +163,8 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 "instruction": prompt,
                 "runtime_id": self.RUNTIME_ID,
                 "exit_code": completed.returncode,
+                # ★ 裁定（第 3 项）: 执行体显式说自己干成了什么; 没这行 ⇒ verdict="" （没表态）
+                **_parse_verdict(stdout),
             },
         )
 
@@ -147,6 +189,7 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             parts.append(str(instruction))
         if not parts:
             parts.append(f"execute execution {request.id}")
+        parts.append(_VERDICT_CONTRACT)          # ★ 每次都要求显式裁定（第 3 项）
         return "\n".join(parts)
 
     # ------------------------------------------------------------------ 结果

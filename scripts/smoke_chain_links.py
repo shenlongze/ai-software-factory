@@ -600,6 +600,112 @@ def test_entity_catalog() -> None:
     assert _check_entity_catalog() == []
 
 
+def _check_executor_verdict() -> list[str]:
+    """★ 执行体裁定（第 3 项）: "停手"必须能显式表达, 且绝不记成完成。
+
+    实测事故: 执行体自述"核验+停手、零改动", 叶却被记成 completed（进度 1/199 是假的）。
+    """
+    import tempfile
+    from types import SimpleNamespace
+
+    from ai_factory_os.bootstrap import scheduler_pump as SP
+    from ai_factory_os.services.execution.runtime.adapters.hermes import (
+        HermesRuntimeAdapter, _parse_verdict,
+    )
+    from ai_factory_os.services.execution.runtime.types import ExecutionRequest
+    from ai_factory_os.services.work import decomposition as D
+    from ai_factory_os.services.work import progress as P
+
+    bad: list[str] = []
+
+    # ① 解析: 三种裁定都认; 没表态/坏 JSON/未知值 ⇒ ""（保守, 不当作完成）
+    m = '干活了\nEXEC-VERDICT: {"verdict": "done", "reason": "验收达成"}\n'
+    if _parse_verdict(m)["verdict"] != "done":
+        bad.append("done 裁定没解析出来")
+    m2 = 'EXEC-VERDICT: {"verdict": "needs_decision", "reason": "验收与现状冲突"}'
+    got2 = _parse_verdict(m2)
+    if got2["verdict"] != "needs_decision" or not got2["verdict_reason"]:
+        bad.append(f"needs_decision 没解析出来: {got2}")
+    if _parse_verdict('EXEC-VERDICT: {"verdict": "maybe"}')["verdict"]:
+        bad.append("未知裁定值应算【没表态】")
+    if _parse_verdict("EXEC-VERDICT: {坏 json")["verdict"]:
+        bad.append("坏 JSON 应算【没表态】")
+    if _parse_verdict("什么都没说")["verdict"]:
+        bad.append("没有标记时应算【没表态】")
+    # 多个标记 ⇒ 取最后（执行体可能先写一版后改口）
+    multi = 'EXEC-VERDICT: {"verdict": "done"}\n…\nEXEC-VERDICT: {"verdict": "blocked", "reason": "缺凭据"}'
+    if _parse_verdict(multi)["verdict"] != "blocked":
+        bad.append("多个裁定应取最后一个")
+
+    # ② 从执行结果里取（dict 形态 / 对象形态）
+    if SP._verdict_of({"output": {"verdict": "blocked", "verdict_reason": "缺凭据"}})[0] != "blocked":
+        bad.append("dict 形态取不到裁定")
+    if SP._verdict_of(SimpleNamespace(output={"verdict": "needs_decision"}))[0] != "needs_decision":
+        bad.append("对象形态取不到裁定")
+    if SP._verdict_of({"stdout": "x"})[0]:
+        bad.append("没有裁定时应给空（没表态）")
+
+    # ③ 指令里必须带契约（否则执行体不知道要表态）
+    req = ExecutionRequest(id="EXR-v", task_id="PLAN-v", input={"instruction": "做点事"})
+    prompt = HermesRuntimeAdapter._build_prompt(req)
+    if "EXEC-VERDICT" not in prompt or "needs_decision" not in prompt:
+        bad.append("指令里没有裁定契约（执行体无从表态）")
+
+    # ④ 落到叶上 + 进度里算"待裁决"（不是完成）
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        d = root / "projects" / "P-v" / "tasks"
+        d.mkdir(parents=True)
+        (d / "PLAN-v.json").write_text(json.dumps(
+            {"plan_id": "PLAN-v", "project_id": "P-v", "status": "confirmed", "nodes": [
+                {"id": "p", "kind": "project", "parent_id": "", "title": "项目"},
+                {"id": "M", "kind": "domain", "parent_id": "p", "title": "模块"},
+                {"id": "L", "kind": "task", "parent_id": "M", "title": "叶", "status": "cancelled"}]},
+            ensure_ascii=False), encoding="utf-8")
+        D.mark_needs_decision(root, "PLAN-v", "L", verdict="needs_decision",
+                              reason="验收与现状冲突", project_id="P-v")
+        leaf = D.get_leaf(root, "PLAN-v", "L", project_id="P-v") or {}
+        if not leaf.get("needs_decision") or leaf.get("decision_kind") != "needs_decision":
+            bad.append(f"待裁决标记没写进叶: {leaf.get('needs_decision')}/{leaf.get('decision_kind')}")
+        if "冲突" not in str(leaf.get("decision_reason") or ""):
+            bad.append("裁决原因没落盘（人看不到要裁什么）")
+        if (P.summary(root).get("needs_decision") or 0) != 1:
+            bad.append("进度里没把'待裁决'单列（会被当成没这回事）")
+        if (P.summary(root).get("done") or 0) != 0:
+            bad.append("待裁决的叶不许算进完成")
+
+        # ⑤ ★ 派活要给足上下文: 派发出来的执行请求里必须带【任务名 + 验收】,
+        #    且适配器组出的 prompt 里能看到它们（真跑踩到: 执行体只收到 "execute execution EXR-x"）
+        from ai_factory_os.bootstrap.scheduler_wiring import StoreExecution
+
+        (d / "PLAN-v.json").write_text(json.dumps(
+            {"plan_id": "PLAN-v", "project_id": "P-v", "status": "confirmed", "nodes": [
+                {"id": "p", "kind": "project", "parent_id": "", "title": "项目"},
+                {"id": "M", "kind": "domain", "parent_id": "p", "title": "模块"},
+                {"id": "L", "kind": "task", "parent_id": "M", "status": "pending",
+                 "title": "初始化工程脚手架", "acceptance": "仓库根有 package.json，且 scripts 里有 test",
+                 "expected_files": ["package.json"]}]},
+            ensure_ascii=False), encoding="utf-8")
+        port = StoreExecution(root, plan_id="PLAN-v")
+        req = port.create("L", resolution_id="R-1", member_id="m-1", identity_id="i-1")
+        inp = dict(getattr(req, "input", {}) or {})
+        if "初始化工程脚手架" not in str(inp.get("task") or ""):
+            bad.append(f"派发没带任务名（执行体不知道干啥）: task={inp.get('task')!r}")
+        if "package.json" not in str(inp.get("instruction") or ""):
+            bad.append(f"派发没带验收/产出文件: instruction={str(inp.get('instruction'))[:60]!r}")
+        prompt = HermesRuntimeAdapter._build_prompt(req)
+        if "初始化工程脚手架" not in prompt or "验收标准" not in prompt:
+            bad.append("适配器组出的 prompt 里看不到任务与验收（等于没派活）")
+        if "EXEC-VERDICT" not in prompt:
+            bad.append("prompt 里缺裁定契约")
+    return bad
+
+
+def test_executor_verdict() -> None:
+    """执行体裁定: 停手可表达 · 没表态不当作完成 · 待裁决要在进度里单列。"""
+    assert _check_executor_verdict() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -623,6 +729,7 @@ def main() -> int:
     results.append(("产出证据判定（不猜）", not _check_evidence_judgement(), "；".join(_check_evidence_judgement())))
     results.append(("陈旧认领交回（不抢活跃执行）", not _check_stale_claim_sweep(), "；".join(_check_stale_claim_sweep())))
     results.append(("实体清单来源（设计优先/DDL 兜底/空则不编）", not _check_entity_catalog(), "；".join(_check_entity_catalog())))
+    results.append(("执行体裁定（停手可表达·待裁决≠完成）", not _check_executor_verdict(), "；".join(_check_executor_verdict())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

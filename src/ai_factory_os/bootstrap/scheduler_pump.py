@@ -75,6 +75,22 @@ def _cap_batch(batch: list[str], *, limit: int, done: int) -> tuple[list[str], s
     return batch[:budget], (f"★ 限量: 本轮只跑 {budget} 个（其余 {len(batch) - budget} 个留待下次驱动）")
 
 
+def _verdict_of(out: Any) -> tuple[str, str]:
+    """从执行结果里取【裁定】（第 3 项）—— 返回 (verdict, reason)。
+
+    形态兼容: `ExecutionRunOutcome`（终态在 .request.status, 载荷在 .output/.result）或普通 dict。
+    取不到 ⇒ ("", "") = **没表态**（调度器按"有没有产出证据"保守复核, 不直接算完成）。
+    """
+    o: Any = getattr(out, "output", None)
+    if o is None:
+        o = getattr(out, "result", None)
+    if o is None and isinstance(out, dict):
+        o = out.get("output") or out
+    if isinstance(o, dict):
+        return str(o.get("verdict") or ""), str(o.get("verdict_reason") or "")
+    return "", ""
+
+
 def _on_failure(tries: int) -> tuple[str, str]:
     """★ 失败后的状态决策（纯函数, 便于守）—— 返回 (新状态, 说明)。
 
@@ -141,6 +157,26 @@ def sweep_stale_claims(root: Path, ports: Ports) -> list[dict[str, str]]:
     return out
 
 
+def _mark_needs_decision(ports: Ports, execution_id: str, verdict: str, reason: str) -> None:
+    """把"执行体停手待裁决"写进叶（第 3 项）—— 失败安全（写不上不影响执行结果）。"""
+    try:
+        from ai_factory_os.services.work import decomposition as D
+
+        root = Path(getattr(ports.work, "_root", "."))
+        store = open_runtime_store(root)
+        for req in store.list_executions():
+            if str(req.id) != execution_id:
+                continue
+            inp = req.input or {}
+            D.mark_needs_decision(root, str(req.task_id or ""),
+                                 str(inp.get("node_id") or ""), verdict=verdict,
+                                 reason=reason,
+                                 project_id=str(getattr(req, "project_id", "") or ""))
+            return
+    except Exception:  # noqa: BLE001
+        return
+
+
 def _repo_changed(repo: str, *, window_sec: int = 1800) -> bool | None:
     """项目仓库有没有【产出迹象】⇒ True/False; 判不出来 ⇒ None（调用方标"待核"）。
 
@@ -202,6 +238,12 @@ def _mark_evidence(ports: Ports, execution_id: str) -> None:
                 break
         if not (node_id and plan_id):
             return
+        # ★ 执行请求里没有 project_id（契约只有 task_id/input）⇒ 从树上取
+        #   （真跑踩到: 没有它 ⇒ 找不到仓库 ⇒ evidence=unknown, 白标一条"待核"）
+        if not project_id:
+            _t = D.load_tree(root, plan_id)
+            if _t:
+                project_id = str(_t.get("project_id") or "")
         # 项目仓库路径（org/projects.json 里 adopt 时写的 repo_path）
         repo = ""
         pj = root / "org" / "projects.json"
@@ -572,6 +614,17 @@ def drive(
                     #   不回写的话, 依赖它的下游叶永远 blocked（实测: 3 叶跑完后第 4 叶仍卡）。
                     #   判据: 执行结果视为通过（COMPLETED/True）⇒ 叶 status = "completed"
                     #   （has_accepted_outcome 认 completed/accepted/done）。
+                    # ★ 第 3 项: 执行体显式【停手待裁决】⇒ 叶终止 + 留原因, **绝不记成完成**
+                    _v, _why = _verdict_of(out)
+                    if _v in ("needs_decision", "blocked"):
+                        if _write_back_node_status(ports, eid, "cancelled"):
+                            _mark_needs_decision(ports, eid, _v, _why)
+                            inv = getattr(ports.work, "invalidate", None)
+                            if callable(inv):
+                                inv()
+                        rep.outcomes.append({"execution_id": eid, "ok": False,
+                                             "state": f"停手待裁决({_v}): {_why[:70]}"})
+                        continue
                     if _looks_completed(out):
                         if _write_back_node_status(ports, eid, "completed"):
                             # ★ 完成必须留产出证据（实跑踩到: 停手零改动也被记成 completed）

@@ -74,6 +74,9 @@ def leaf_rows(root: Path | str, *, plan_id: str = "") -> list[dict[str, Any]]:
                 # ★ 可能没拆到位（判据: 能不能一句话写出验收 —— 见 granularity.py）
                 "needs_split": bool(_why),
                 "split_reasons": _why,
+                # ★ 执行体【停手待裁决】（第 3 项）—— 不是"完成", 要人看一眼
+                "needs_decision": bool(n.get("needs_decision")),
+                "decision_reason": str(n.get("decision_reason") or ""),
                 "source": "tasktree",
             })
     return rows
@@ -101,6 +104,8 @@ def summary(root: Path | str, *, project_id: str = "", plan_id: str = "") -> dic
         "verify_needed": sum(1 for r in rows if r.get("verify_needed")),
         # ★ 粒度: 可能没拆到位的叶（人该用 `tasktree expand --node … --deep` 再拆一层）
         "needs_split": sum(1 for r in rows if r.get("needs_split")),
+        # ★ 执行体停手待裁决（第 3 项）—— 这些叶不是"完成", 在等人
+        "needs_decision": sum(1 for r in rows if r.get("needs_decision")),
         "retrying": sum(1 for r in rows if int(r.get("retry_count") or 0) > 0
                         and r["raw_status"] not in ("completed", "cancelled")),
         "percent": (done * 100 // len(rows)) if rows else 0,

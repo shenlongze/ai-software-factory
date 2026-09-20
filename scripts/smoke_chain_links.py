@@ -2066,6 +2066,72 @@ def test_cli_welcome() -> None:
     assert _check_cli_welcome() == []
 
 
+def _check_cli_shell() -> list[str]:
+    """★ 启动 AI Factory OS（Founder: "我要的是启动 factory os, 使用 cli 命令"）。
+
+    判据:
+      ① `factory start` 命令存在, 且分发里真的调了 run_shell（调用点断言）
+      ② 进去后敲命令**真执行**（非终端喂 'status' ⇒ 输出里有工厂状态）
+      ③ 退出词（exit/q）能离开, 且打印"已退出"
+      ④ 敲错命令**不把 shell 带走**（后面还能继续跑）
+      ⑤ 空参 + 非终端 ⇒ 仍然只打印首屏、退出码 0（不挂住）
+    """
+    import contextlib as _ctx
+    import inspect as _insp
+    import io as _io
+
+    from apps.cli import main as _cli_main
+    from apps.cli.domains import welcome as W
+
+    bad: list[str] = []
+    if not hasattr(W, "run_shell"):
+        return ["缺 run_shell（没有「进入交互式 CLI」这条路）"]
+    src = _insp.getsource(_cli_main)
+    if "run_shell" not in src:
+        bad.append("main 里没接 run_shell（start 命令/空参进不去）")
+    if "run_shell(ctx.root)" not in src:
+        bad.append("`factory start` 没有把 root 传给 run_shell")
+
+    def _feed(text: str) -> str:
+        buf = _io.StringIO()
+        old_stdin = __import__("sys").stdin
+        __import__("sys").stdin = _io.StringIO(text)
+        try:
+            with _ctx.redirect_stdout(buf):
+                _cli_main(["start"])
+        except SystemExit:
+            pass
+        finally:
+            __import__("sys").stdin = old_stdin
+        return buf.getvalue()
+
+    out = _feed("status\nexit\n")
+    if "工厂状态" not in out:
+        bad.append("进去后敲 status 没真执行（交互式 CLI 没通）")
+    if "已退出" not in out:
+        bad.append("exit 没退出（或没提示已退出）")
+    out2 = _feed("nosuchcmd\nstatus\nexit\n")
+    if "工厂状态" not in out2:
+        bad.append("敲错一条命令就把 shell 带走了（后面跑不动）")
+    out3 = _feed("help\nexit\n")
+    if "帮助中心" not in out3:
+        bad.append("shell 里 help 打不开帮助中心")
+    # ⑤ 空参 + 非终端
+    buf = _io.StringIO()
+    old_stdin = __import__("sys").stdin
+    __import__("sys").stdin = _io.StringIO("")
+    try:
+        with _ctx.redirect_stdout(buf):
+            rc = _cli_main([])
+    except SystemExit:
+        rc = 0
+    finally:
+        __import__("sys").stdin = old_stdin
+    if rc != 0 or "AI Factory OS" not in buf.getvalue():
+        bad.append("空参 + 非终端该只打印首屏并返回 0")
+    return bad
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2101,6 +2167,7 @@ def main() -> int:
     results.append(("provider 域经验（用量⇒经验⇒推荐引擎读得到）", not _check_provider_experience_learning(), "；".join(_check_provider_experience_learning())))
     results.append(("拆解一次到位（原子任务·契约要验收·同模块归一域）", not _check_decompose_is_atomic(), "；".join(_check_decompose_is_atomic())))
     results.append(("CLI 友好首屏（空参不甩英文报错·帮助中心四角色）", not _check_cli_welcome(), "；".join(_check_cli_welcome())))
+    results.append(("启动 AI Factory OS（factory start 进交互式 CLI·敲命令真跑·exit 退出）", not _check_cli_shell(), "；".join(_check_cli_shell())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
@@ -2113,3 +2180,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def test_cli_shell() -> None:
+    """factory start ⇒ 进去能敲命令真跑 · exit 能退 · 敲错不带走 shell · 非终端不挂。"""
+    assert _check_cli_shell() == []

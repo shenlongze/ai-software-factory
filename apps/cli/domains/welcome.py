@@ -180,6 +180,110 @@ def run_welcome(root: Path | str, *, interactive: bool | None = None) -> int:
         print()
 
 
+def _top_commands() -> set[str]:
+    """全部顶层命令名（从解析器里读, 不写死 —— 命令表变了它跟着变）。"""
+    try:
+        from apps.cli.main import build_parser
+
+        for a in build_parser()._actions:
+            if hasattr(a, "choices") and isinstance(a.choices, dict) and "status" in a.choices:
+                return {str(k) for k in a.choices}
+    except Exception:  # noqa: BLE001 — 读不到就不预校验（照旧交给 argparse）
+        pass
+    return set()
+
+
+def run_shell(root: Path | str, *, banner: bool = True) -> int:
+    """★ 启动 AI Factory OS —— 进入交互式 CLI（Founder: "我要的是启动 factory os, 使用 cli 命令"）。
+
+    和"敲一条命令做一件事"的区别: 这里是**进去**, 然后在里面**连续敲**命令, 直到 exit/q/Ctrl-D。
+    行为:
+      · 提示符 `factory> `; 任意命令直接执行（与外面 `factory …` 完全同一套, 结果一致）
+      · 支持 ↑↓ 历史（readline, 历史存 <root>/.cli_history）· Tab 不做补全（没实现就不假装）
+      · `help`/`h`/`?` ⇒ 中文帮助中心 · `exit`/`quit`/`q`/Ctrl-D ⇒ 离开 · 空行忽略
+      · Ctrl-C ⇒ 只取消当前这一行, **不退出**
+      · `--root` 从启动这里继承（每条命令自动带上, 不会中途换数据目录）
+    非终端输入（管道/脚本）⇒ 逐行读, EOF 结束（可测、不挂）。
+    """
+    import shlex
+
+    from apps.cli.context import FactoryContext
+
+    ctx = FactoryContext(root)
+    ctx.ensure_dirs()
+    _hist = ""
+    try:
+        import readline
+
+        hp = Path(ctx.root) / ".cli_history"
+        if hp.exists():
+            readline.read_history_file(str(hp))
+        readline.set_history_length(500)
+        _hist = str(hp)
+    except Exception:  # noqa: BLE001 — 历史是"锦上添花", 没有 readline 也能用
+        pass
+
+    if banner:
+        print(render_welcome(ctx.root))
+        print("  ★ 已进入交互式 CLI: 直接敲命令（例: status）· help 帮助 · exit 离开")
+        print()
+
+    while True:
+        try:
+            line = input("factory> ").strip()
+        except EOFError:
+            print()
+            break
+        except KeyboardInterrupt:
+            print("  （Ctrl-C: 当前行取消, 没退出; 要离开输入 exit）")
+            continue
+        if not line:
+            continue
+        low = line.lower()
+        if low in ("exit", "quit", "q", ":q"):
+            break
+        if low in ("help", "h", "?", "help center"):
+            print(render_help(""))
+            continue
+        if low in ("welcome", "menu"):
+            print(render_welcome(ctx.root))
+            continue
+        try:
+            argv = shlex.split(line)
+        except ValueError as exc:
+            print(f"  （命令解析失败: {exc}）")
+            continue
+        if argv[0] == "factory":          # 允许照抄文档里的 `factory xxx`
+            argv = argv[1:]
+        if not argv:
+            continue
+        # 敲错命令 ⇒ 一句短提示（不再是 argparse 整屏 usage + 长报错 ✗）
+        _cmds = _top_commands()
+        if _cmds and argv[0] not in _cmds:
+            print(f"  （没有这个命令: {argv[0]} —— 输入 help 看命令表, 或 <命令> -h 查用法）")
+            continue
+        from apps.cli.main import main as _main  # 局部导入: 避免模块环
+
+        try:
+            _main(["--root", str(ctx.root), *argv])
+        except SystemExit as exc:          # 命令自己退出(如 --help) ⇒ 留在 shell 里
+            if exc.code not in (0, None):
+                print(f"  （命令退出码 {exc.code}）")
+        except KeyboardInterrupt:
+            print("  （已取消）")
+        except Exception as exc:  # noqa: BLE001 — 一条命令炸了不该把 shell 带走
+            print(f"  ⚠ 这条命令出错: {type(exc).__name__}: {str(exc)[:120]}")
+    if _hist:
+        try:
+            import readline
+
+            readline.write_history_file(_hist)
+        except Exception:  # noqa: BLE001
+            pass
+    print("  已退出 AI Factory OS。")
+    return 0
+
+
 def render_help(role: str) -> str:
     """中文帮助中心（按角色; 命令全部真实存在）。"""
     want = str(role or "").strip()

@@ -233,6 +233,14 @@ def build_parser() -> Any:
                     "首次安装后确认环境、或想显式留一条 init 事件时。")
     json_opt(p_init)
 
+    # factory start —— 启动 AI Factory OS（进入交互式 CLI）
+    p_start = sub.add_parser(
+        "start", help="启动 AI Factory OS: 进入交互式 CLI（连续敲命令, exit 离开）",
+        description="启动并进入交互式 CLI: 提示符 `factory>` 下直接敲任何 factory 命令; "
+                    "help 看帮助中心 · exit/q 离开 · ↑↓ 翻历史。"
+                    "非终端输入（管道/脚本）⇒ 逐行执行后退出。")
+    json_opt(p_start)
+
     # factory help —— 中文帮助中心（按角色: 老板/产品/开发/运维）
     p_help = sub.add_parser("help", help="中文帮助中心（按角色: 老板/产品/开发/运维）",
                             description="按角色列出常用命令与一句话说明（命令全部真实存在）。")
@@ -1287,6 +1295,11 @@ def main(argv: list[str] | None = None) -> int:
             from .context import DEFAULT_ROOT
 
             _root = str(DEFAULT_ROOT)
+        # 在终端里 ⇒ **启动并进入**交互式 CLI; 非终端（管道/脚本/CI）⇒ 只打印首屏, 不挂
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            from .domains.welcome import run_shell
+
+            return run_shell(_root)
         return run_welcome(_root)
 
     parser = build_parser()
@@ -1308,6 +1321,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "init":
             result = cmd_init(ctx)
+        elif args.command == "start":
+            from .domains.welcome import run_shell
+
+            return run_shell(ctx.root)
         elif args.command == "help":
             from .domains.welcome import render_help
 

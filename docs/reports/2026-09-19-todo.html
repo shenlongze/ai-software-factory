@@ -1027,13 +1027,23 @@
       ① 清单里改人话名 ⇒ 写 <code>display_name</code> ② 清单里改"做不做/怎么做" ⇒ 写
       <code>title/acceptance/parent_id</code>（拆分/合并）③ 链路图里改功能关系 ⇒ 写 <code>depends_on</code><br>
       ⇒ 任一处写回 ⇒ 两个投影同时更新 ✓</span></span></label>
-    <label class="item"><input type="checkbox" id="rf-6"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>⬜ 待实现（按差距清单）</span>
-      <span class="meta">
-      ① 定位: 类型 + 承接（现在完全没有）② 分析层补"需求拆解"（业务模块拆分）<br>
-      ③ 两个投影的生成（功能链路图 + 层级待办清单）④ 逐节点可看/可改/可确认
-      （现只有整树 confirm）⑤ 3 个新字段落地<br>
-      <b>★ 本次范围不含执行</b>（Founder: "执行等这部分完成后再说"）</span></span></label>
+    <label class="item done"><input type="checkbox" id="rf-6" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 用户视图第一步: <code>tasktree todo</code> 层级待办清单</span>
+      <span class="meta"><b>与 show 同源</b>（同一个树文件、同一份数据）, 只换读法 ⇒ 不会不一致<br>
+      <b>实测对比</b>:<br>
+      &nbsp;show（专业）: <code>role=unassigned hint=devops change=NEW_FILE files=[] 依赖:1个</code><br>
+      &nbsp;todo（人话）: <code>☐ auth / ☐ 实现微信登录    待派（需要: 开发）</code><br>
+      <b>实现</b>: <code>_todo_display_name</code>（规则派生人话名: 去"模块 N: "前缀 + 括号优先切分句 + 限 24 字）
+      · <code>_cap_word</code>（developer→开发…）· <code>_todo_mark</code>（☐/🚧/✅/⛔）<br>
+      <b>★ 踩坑</b>: parser 注册到错误组 · dispatch 分流加到重复锚点（报 unknown action）·
+      递归时根节点未递归进去 ⇒ 三条都是"锚点多处出现"类问题<br>
+      <b>诚实</b>: 人话名目前是【派生】（不落库）; 将来 LLM 翻译后写进 <code>display_name</code> 字段</span></span></label>
+    <label class="item"><input type="checkbox" id="rf-7"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>⬜ 用户视图余项 + 流程前四步</span>
+      <span class="meta">① 功能链路图（看关系: 脑图/流程图/表格）② 逐节点可看/可改/可确认<br>
+      ③ 定位（类型 + 承接 —— 现在完全没有）④ 分析层补"需求拆解"（业务模块拆分）<br>
+      ⑤ 3 个新字段落地（display_name / assignee / progress）+ display_name 由 LLM 翻译<br>
+      <b>★ 范围</b>: 不含执行</span></span></label>
   <h2><span class="n">16</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">

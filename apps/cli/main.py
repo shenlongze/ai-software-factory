@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import json
+import re
 import sys
 from typing import Any
 
@@ -192,6 +193,7 @@ def build_parser() -> Any:
     t_list.add_argument("--stage", default="", help="按阶段过滤: 设计/开发/测试/部署/运维")
     t_list.add_argument("--status", default="", help="按状态过滤: implemented/planned")
     t_show = p_tool_sub.add_parser("show", help="查看一个工具的完整定义")
+
     json_opt(t_show)
     t_show.add_argument("tool_id", help="工具 id (如 code_search)")
     t_run = p_tool_sub.add_parser("run", help="调用一个工具 (真执行)")
@@ -554,6 +556,11 @@ def build_parser() -> Any:
     json_opt(p_tt_s)
     p_tt_s.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
     p_tt_s.add_argument("--project", default=None, help="项目 id")
+    p_tt_todo = ttsub.add_parser(
+        "todo", help="用户视图: 层级待办清单（人话名/状态/谁在做 —— 给普通人看）")
+    json_opt(p_tt_todo)
+    p_tt_todo.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
+    p_tt_todo.add_argument("--project", default=None, help="项目 id")
     p_tt_d = ttsub.add_parser("decompose", help="从 Design Artifact 生成任务树（候选态）")
     json_opt(p_tt_d)
     p_tt_d.add_argument("--project", required=True, help="项目 id")
@@ -2315,6 +2322,37 @@ def cmd_product_ux(ctx: FactoryContext, args: Any) -> dict:
 
 # ------------------------------------------------------------------ 任务拆解（产品环 ⑤）
 
+
+def _tasktree_todo(ctx: FactoryContext, args: Any) -> dict:
+    """`factory tasktree todo <plan>` —— ★ 用户视图（层级待办清单）。
+
+    与 `show` 同源（同一个树文件, 同一份数据）, 只是**换了读法** ——
+    这正是 Founder 定的"两种呈现说的是同一件事":
+      · show: 专业视角（role/change/files/依赖数）—— 给做的人看
+      · todo: 人话视角（人话名/状态/谁在做 + 进度）—— 给普通人看
+    ⇒ 同一份数据, 两个投影 ⇒ 不会不一致。
+    """
+    from ai_factory_os.services.work import decomposition as _D
+
+    plan_id = str(getattr(args, "plan_id", "") or "")
+    project = str(getattr(args, "project", "") or "")
+    tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+    if not tree:
+        raise CliError(f"任务树不存在: {plan_id}（factory tasktree list 看有哪些）", exit_code=1)
+    nodes = tree.get("nodes") or []
+    leaves = [n for n in nodes if n.get("kind") == "task"]
+    done = sum(1 for n in leaves if str(n.get("status") or "").lower() in ("completed", "done", "accepted"))
+    total = len(leaves) or 1
+    return {
+        "ok": True, "action": "tasktree-todo", "tree": tree,
+        "summary": {
+            "kinds": {},
+            "leaves": len(leaves),
+            "done": done,
+            "percent": f"{done * 100 // total}",
+        },
+    }
+
 def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
     """factory tasktree list|show|decompose|confirm —— 产品环 ⑤「任务拆解」。
 
@@ -2329,6 +2367,11 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
 
     cmd = args.tasktree_command
     project_id = str(getattr(args, "project", None) or "")
+
+    # ★ 用户视图（Founder 设计）: 与 show 同源（同一份树数据）, 只换读法。
+    #   走独立实现（_tasktree_todo）—— 它的输出结构面向"给人看", 与 show 不同。
+    if cmd == "todo":
+        return _tasktree_todo(ctx, args)
 
     if cmd == "list":
         trees = D.list_trees(ctx.root, project_id)
@@ -2392,6 +2435,51 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown tasktree action: {cmd}", exit_code=2)
 
 
+
+#: 用户视图（Todo Tree）辅助 —— ★ 人话名由【规则派生】, 不调 LLM（先能看见效果）。
+def _todo_display_name(title: str) -> str:
+    """把专业 title 派生成人话名（用户视图用）。
+
+    规则（实测现有树种子的形态）:
+      · 去掉 "模块 N: " 前缀（decompose 给 domain 的格式）
+      · 取第一个分句（，、；前的部分）—— 专业 title 常是"动宾, 动宾, 动宾"堆叠
+      · 限 24 字（超出加省略号）
+    ★ 诚实: 这是**派生**（不落库）; 将来若让 LLM 翻译, 结果写进 display_name 字段。
+    """
+    s = str(title or "").strip()
+    s = re.sub(r"^模块\s*\d+\s*[:：]\s*", "", s)
+    # ★ 括号优先: "初始化 monorepo（consumer、admin…" ⇒ "初始化 monorepo"
+    for sep in ("（", "(", "，", "、", "；", ";", ",", "。"):
+        if sep in s:
+            s = s.split(sep)[0]
+            break
+    return s[:24] + ("…" if len(s) > 24 else "")
+
+
+#: 能力名 → 人话（用户视图里不出现 developer/architect 这种词）
+_CAP_WORDS = {
+    "developer": "开发", "architect": "架构", "tester": "测试", "devops": "部署",
+    "reviewer": "评审", "security": "安全", "ux_ui": "设计", "pm": "产品",
+}
+
+
+def _cap_word(cap: Any) -> str:
+    """能力名 → 人话（认不出就原样, 不瞎译）。"""
+    s = str(cap or "").strip()
+    return _CAP_WORDS.get(s, s)
+
+
+def _todo_mark(status: Any) -> str:
+    """状态 → 人话标记（待办/进行中/完成）。"""
+    st = str(getattr(status, "value", status) or "").strip().lower()
+    if st in ("completed", "done", "accepted"):
+        return "✅"
+    if st in ("claimed", "running", "in_progress"):
+        return "🚧"
+    if st in ("cancelled", "failed"):
+        return "⛔"
+    return "☐"
+
 def _print_tasktree(args: Any, r: dict) -> None:
     cmd = getattr(args, "tasktree_command", None) or "list"
     if cmd == "list":
@@ -2420,6 +2508,47 @@ def _print_tasktree(args: Any, r: dict) -> None:
                       f"  files={lf['expected_files'] or '[]'}")
                 print(f"          验收: {lf['acceptance'][:88]}")
                 print(f"          依赖: {len(lf.get('depends_on') or [])} 个")
+    elif cmd == "todo":
+        # ★ 用户视图（Founder 设计）: 层级待办清单 —— 给**普通人**看的那一面。
+        #   与 `show` 的区别: show 是专业视角（role/change/files/依赖数）;
+        #   todo 只显示三样人能懂的: 人话名 · 状态 · 谁在做（+ 进度）。
+        t = r["tree"]
+        s = r["summary"]
+        nodes = t.get("nodes", [])
+        sid = str(t.get("project_id") or "")
+        title = _todo_display_name(str(sid or t.get("plan_id") or "任务"))
+        print()
+        print(f"  {title}    {t.get('status')}")
+        print(f"  {'━' * 46}  进度 {s['done']}/{s['leaves']} ({s['percent']}%)")
+        if t.get("status") == "candidate":
+            print("  ⚠ 还没确认（候选态）—— 确认后才会开始做")
+        print()
+        by_parent: dict[str, list] = {}
+        for n in nodes:
+            by_parent.setdefault(str(n.get("parent_id") or ""), []).append(n)
+
+        def _walk(parent: str, depth: int) -> None:
+            for n in by_parent.get(parent, []):
+                if n.get("kind") == "project":
+                    # 根节点不显示（它的名字就是标题那行）, 但要继续往下走
+                    _walk(str(n.get("id") or ""), depth)
+                    continue
+                mark = _todo_mark(n.get("status"))
+                who = str(n.get("assignee") or "").strip()
+                if not who and n.get("kind") == "task":
+                    caps = n.get("required_capabilities") or []
+                    who = f"待派（需要: {_cap_word(caps[0])}）" if caps else "待派"
+                indent = "  " * (depth + 2)
+                name = _todo_display_name(n.get("title"))
+                line = f"{indent}{mark} {name}"
+                if depth > 0 and who:
+                    line += f"    {who}"
+                print(line)
+                _walk(str(n.get("id") or ""), depth + 1)
+
+        _walk("", 0)
+        print()
+        print("  （☐ 待办 · 🚧 进行中 · ✅ 完成 · ⛔ 已终止）")
     elif cmd == "decompose":
         t = r["tree"]
         s = r["summary"]

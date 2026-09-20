@@ -131,6 +131,11 @@ def _check_real(root: Path, plan_file: Path) -> list[str]:
     return bad
 
 
+def test_critical_path_rules() -> None:
+    """关键路径: 单链/分叉/汇聚/环(拒绝不伪造)/无依赖/归属先决/模块链。"""
+    assert _check_fixtures() == []
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="关键路径判据冒烟")
     ap.add_argument("--root", default="", help="额外扫描的真实数据根")

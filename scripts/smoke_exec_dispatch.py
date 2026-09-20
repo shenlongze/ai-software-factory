@@ -135,6 +135,13 @@ def _check(root: Path, plan_id: str, project_id: str, *, label: str,
     return bad
 
 
+def test_flattened_deps_acyclic(tmp_path: Path) -> None:
+    """执行面: 归属不算先决 · 跨域摊成叶 · 摊平后无环 · 无自依赖。"""
+    tree = _fixture()
+    _write(tmp_path, tree)
+    assert _check(tmp_path, tree["plan_id"], tree["project_id"], label="两模块四叶", fixture=True) == []
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="执行面冒烟: 调度器摊平依赖的判据")
     ap.add_argument("--root", default="", help="额外扫描的真实数据根（诊断用）")

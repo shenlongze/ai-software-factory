@@ -136,6 +136,11 @@ def _check(root: Path) -> list[str]:
     return bad
 
 
+def test_priority_sources_and_arbitration(tmp_path: Path) -> None:
+    """优先级: ABC 三来源判据 · 人工最高 · 同级可刷新 · 值域拒收 · 落到调度器端口。"""
+    assert _check(tmp_path) == []
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="优先级判据冒烟")
     ap.add_argument("--root", default="", help="额外扫描的真实数据根")

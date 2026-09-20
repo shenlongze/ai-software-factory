@@ -1086,14 +1086,24 @@
       &nbsp;"随便看看" → 未定（不猜）+ 还缺类型/承接<br>
       <b>还缺什么</b>: 归属缺 ⇒ "属于哪个项目"; 类型未定 ⇒ "问用户"; 承接缺 ⇒ "谁提的"<br>
       <b>承接建议角色</b>: 新项目→PM · 改现有→架构师 · 问答→直接答 · 一次性→开发</span></span></label>
-    <label class="item"><input type="checkbox" id="rf-11"><span class="body">
-      <span class="t"><span class="tag p0">P0</span>⬜ 定位的 CLI 接入（现在能力已实现但用户够不着）</span>
-      <span class="meta"><b>★ 诚实状态</b>: <code>intake.locate()</code> 已实现并单元实测通过, 但
-      <b>还没接 CLI</b> ⇒ 按 R24（新码须有入口 + 消费者 + 实测可达）<b>尚未满足</b>。<br>
-      <b>要做</b>: ① 加 <code>factory conversation locate &lt;conv&gt; "&lt;需求&gt;" [--type] [--project]</code>
-      ② 定位结果<b>落盘到会话</b>（会话 JSON 加 <code>intent</code> 字段 —— 已有 project_id/created_by）
-      ③ 后续步骤（理解/分析/拆解）读它: 承接信息要传进④拆解（决定粒度）<br>
-      <b>或</b>: 在 <code>conversation say</code> 首次输入时自动定位 + 显示 + 允许 --type 覆盖</span></span></label>
+    <label class="item done"><input type="checkbox" id="rf-11" checked><span class="body">
+      <span class="t"><span class="tag p0">P0</span>✅ 定位接入 CLI + 落盘会话（R24 补齐）</span>
+      <span class="meta">
+      <b>命令</b>: <code>factory conversation locate &lt;conv&gt; "&lt;需求&gt;" [--type] [--project] [--proposer]</code><br>
+      <b>★ 落盘</b>: 服务层新增 <code>understanding.set_location()</code> ⇒ 会话加 <code>location</code> 字段
+      （判据/建议角色/还缺什么/时间）—— R26 状态必须落盘: 承接是④拆解粒度的输入, 不落盘则下一步读不到<br>
+      <b>输出</b>: 归属 / 类型 / <b>判据</b> / 承接 + "⚠ 还缺（不确认很可能做错）"<br>
+      <b>★ 实测</b>: <code>locate conv-x "做一个电商系统，支持微信支付和后台管理" --proposer founder</code>
+      ⇒ 归属=（未指定）· 类型=新项目 · 判据="命中 '做一个'" · 承接=founder/pm · ⚠还缺归属 ✓<br>
+      <b>落盘核实</b>: 会话键出现 <code>location</code> ✓<br>
+      <b>★ 踩坑</b>: 第一版在 main.py 找 <code>conversation_command</code> 没找到 ——
+      该域用的是 <code>registry.py</code> + <code>apps/cli/domains/conversation.py</code>（按域拆文件）</span></span></label>
+    <label class="item"><input type="checkbox" id="rf-13"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>⬜ 余项: 需求拆解 · assignee · LLM 翻译 · 拆分合并 · 承接传进拆解</span>
+      <span class="meta">① 分析层补"需求拆解"（业务模块拆分）② <code>assignee</code> 字段（谁在做）<br>
+      ③ display_name 改由 LLM 翻译 ④ 拆分/合并子任务<br>
+      ⑤ ★ <b>承接传进④拆解</b>（定位已落盘, 但拆解还没读它 ⇒ 设计里"承接决定拆解粒度"尚未生效）<br>
+      <b>★ 范围</b>: 不含执行</span></span></label>
     <label class="item"><input type="checkbox" id="rf-12"><span class="body">
       <span class="t"><span class="tag p1">P1</span>⬜ 余项: 需求拆解 · assignee · LLM 翻译 · 拆分合并</span>
       <span class="meta">① 分析层补"需求拆解"（业务模块拆分）② <code>assignee</code> 字段（谁在做）<br>

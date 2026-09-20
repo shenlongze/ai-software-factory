@@ -81,10 +81,16 @@ def _tree_file(root: Path | str, plan_id: str, project_id: str = "") -> Path:
 
 
 def _read(root: Path | str, plan_id: str, project_id: str = "") -> dict[str, Any] | None:
-    """读树: 指定项目 → 项目内; 否则【全局搜】（projects/*/tasks/ + task_trees/）。
+    """读树: 指定项目 → 项目内; 否则【全局搜】（task_trees/ + projects/*/tasks/）。
 
     全局搜索是必要的 —— 调用方（如 `tasktree show PLAN-x`）通常只有 plan_id,
-    而树按 Founder 铁律落在 projects/<P>/tasks/ 下。
+    而树可以落在两处**合法**位置: 有项目的落 `projects/<P>/tasks/`（Founder 铁律）,
+    无项目的落 `task_trees/`（实测真数据: 6 棵树其中 4 棵 project_id 为空 ⇒ 该回落是合法场景）。
+
+    ★ R27（同一数据的读写路径必须一致）: **同一个 plan 只应存在一处**。
+      多处同时存在 ⇒ 响亮报错（`TreeDuplicatedError`），**绝不静默取一份** ——
+      否则就会出现"回写写 A 处、驱动读 B 处 ⇒ 回写看不见 ⇒ 无限重建执行"
+      （实测: run --plan 空转 50 轮）。报错信息里给出全部路径与修法。
     """
     base = Path(root)
     cands: list[Path] = []
@@ -94,16 +100,29 @@ def _read(root: Path | str, plan_id: str, project_id: str = "") -> dict[str, Any
     pj = base / "projects"
     if pj.is_dir():
         cands += [d / "tasks" / f"{plan_id}.json" for d in pj.iterdir() if d.is_dir()]
+
+    found: list[tuple[Path, dict[str, Any]]] = []
+    seen: set[str] = set()
     for p in cands:
-        if not p.is_file():
+        if not p.is_file() or str(p) in seen:
             continue
+        seen.add(str(p))
         try:
             d = json.loads(p.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001 — 损坏 → 跳过（继续找下一个）
             continue
         if isinstance(d, dict) and d.get("plan_id") == plan_id:
-            return d
-    return None
+            found.append((p, d))
+
+    if len(found) > 1:
+        where = "\n".join(f"  · {p}" for p, _ in found)
+        raise TreeDuplicatedError(
+            f"同一个 plan 存在多处树文件（plan_id={plan_id}）—— 违反 R27"
+            f"（同一数据的读写路径必须一致）:\n{where}\n"
+            f"修法: 只保留**权威位置**那一份（有项目的在 projects/<P>/tasks/;"
+            f" 无项目的在 task_trees/），删除其余副本后重试。"
+        )
+    return found[0][1] if found else None
 
 
 def _save(root: Path | str, plan_id: str, tree: dict[str, Any], project_id: str = "") -> Path:
@@ -159,6 +178,15 @@ def _files_for(module: str, text: str, stack: str = "") -> list[str]:
 
 
 # ------------------------------------------------------------------ 核心: 种子 → 多级树
+
+
+class TreeDuplicatedError(Exception):
+    """同一个 plan 存在**多处**树文件（违反 R27: 同一数据的读写路径必须一致）。
+
+    为什么响亮报错而不是"取一份": 实测过后果 —— 回写写 A 处、驱动读 B 处 ⇒
+    回写"看不见" ⇒ 每轮 tick 又建新执行 ⇒ **空转 50 轮 / 52 个执行**。
+    静默取一份只会把这种 bug 藏起来。
+    """
 
 
 class DecomposeLimitError(Exception):

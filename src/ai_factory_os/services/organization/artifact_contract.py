@@ -296,7 +296,6 @@ def scan_project(root: Path | str, project_id: str) -> dict[str, Any]:
 def validate_project(root: Path | str, project_id: str) -> dict[str, Any]:
     """单项目校验: 缺失 / 格式 / 历史缺失 / 无版本 → 问题清单。"""
     scan = scan_project(root, project_id)
-    manifest = read_manifest(root, project_id)
     problems: list[dict[str, str]] = []
     for item in scan["items"]:
         if not item["exists"]:

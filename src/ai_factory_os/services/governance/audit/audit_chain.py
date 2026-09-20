@@ -89,8 +89,6 @@ class AuditDecisionChain:
         if root is None:
             root = events[0]
 
-        by_id = {e.audit_id: e for e in events}
-
         def _tree(node: AuditEvent, depth: int = 0) -> dict[str, Any]:
             kids = [
                 e for e in events

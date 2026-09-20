@@ -523,7 +523,7 @@ def commit_artifact(
             raise ArtifactError("无 workspace — 无法 commit")
 
         def _default_commit(ws_dir: str) -> tuple[bool, str]:
-            proc = subprocess.run(
+            subprocess.run(
                 ["git", "-C", ws_dir, "add", "-A"], capture_output=True, text=True, timeout=60,
             )
             proc2 = subprocess.run(

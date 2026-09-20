@@ -170,7 +170,6 @@ class ProviderCarrierAdapter(RuntimeAdapter):
             )
             self._record_usage(request, success=False, error=error, started=started)
             raise
-        elapsed_ms = _elapsed_ms(started)
         if result.status is ExecutionStatus.SUCCESS:
             record_provider_execution_completed(
                 self._logger, provider_id=provider_id, model=model,

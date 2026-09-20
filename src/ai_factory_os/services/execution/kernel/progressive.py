@@ -822,7 +822,6 @@ class ProgressiveLoader:
         trace.requested_budget = min(sum(allocated.values()), self._hard_cap)
         trace.actual_usage = result.total_chars
 
-        reasons = {e.reason for e in trace.entries}
         decision_reasons = {e.decision_reason for e in trace.entries}
         trace.unable_to_locate = "unable_to_locate" in decision_reasons
         if (

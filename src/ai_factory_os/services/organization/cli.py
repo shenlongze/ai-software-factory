@@ -717,7 +717,7 @@ def cmd_department_create(root: Path, args: Any) -> dict:
 
     渐进式: 前期项目 Solo（无部门），后期建公司+部门 → 项目挂部门（无损升级）。
     """
-    with _logger_scope(root) as logger:
+    with _logger_scope(root):
         store = _org_store(root)
         lifecycle = OrgLifecycle(store)
         try:

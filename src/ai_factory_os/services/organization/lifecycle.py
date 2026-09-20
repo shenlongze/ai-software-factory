@@ -249,7 +249,7 @@ class OrgLifecycle:
     def _resolve_exec_role_id(self, role_ref: str) -> str | None:
         """把角色引用解析为 exec 注册表 role_id (惰性; 未安装 → None)。"""
         try:
-            import ai_factory_os.plugins.agents.roles  # type: ignore[import-not-found]
+            import ai_factory_os.plugins.agents.roles  # noqa: F401 — 故意导入以探测可用性（下面 except ImportError ⇒ 未安装时返回 None）
 
             try:
                 return exec.roles.resolve_role(role_ref).role_id

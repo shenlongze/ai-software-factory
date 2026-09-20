@@ -6,26 +6,25 @@
 """
 
 # ── 原 factory-core/intelligence/__init__.py（刀45 迁入）──
-"""src/legacy/factory-core/intelligence — Intelligence Layer (Phase 10A-1/10A-2/10A-3, ADR-0030/0031/0032)。
-
-认知层: 模型 (Decision/DecisionOption/DecisionContext/DecisionAnalysis/
-DecisionResult/RiskAssessment/Recommendation/ExperienceRecord/Evidence +
-Candidate/CandidateEvaluation/RecommendationContext/RecommendationResult/
-ReasoningItem) + 独立数据空间三 Store (decisions/recommendations/experiences,
-原子写) + DecisionIntelligence 引擎 (10A-2: Context→Analysis→Options→
-Evaluation→Recommendation→Risk→Decision Artifact, 规则评分四因素, 禁无证据,
-9c Approval 复用) + RecommendationEngine 引擎 (10A-3: 多因素加权评分 +
-Reasoning 解释 + Risk + Experience 集成冷启动中性 + Decision 集成) + 事件
-(intelligence.*)。
-
-边界铁律 (phase10a1-status.md / phase10a2-status.md / phase10a3-status.md):
-- 只分析 + 推荐 + 解释, **不自动执行** (无 LLM/学习算法 — 10A-3 只评分推荐,
-  10A-4 才做经验学习)。
-- Core 零感知: 删除本包 Factory 照常运行; 本包零顶层 imports product/providers/
-  runtime (store.py 零顶层 imports events, decision.py 经 duck-typed
-  approval_service 复用 9c — Removal Isolation)。
-- 事件经 EventLogger (唯一事实源); 智能输出全部支持 Evidence/Confidence/Lineage。
-"""
+# src/legacy/factory-core/intelligence — Intelligence Layer (Phase 10A-1/10A-2/10A-3, ADR-0030/0031/0032)。
+#
+# 认知层: 模型 (Decision/DecisionOption/DecisionContext/DecisionAnalysis/
+# DecisionResult/RiskAssessment/Recommendation/ExperienceRecord/Evidence +
+# Candidate/CandidateEvaluation/RecommendationContext/RecommendationResult/
+# ReasoningItem) + 独立数据空间三 Store (decisions/recommendations/experiences,
+# 原子写) + DecisionIntelligence 引擎 (10A-2: Context→Analysis→Options→
+# Evaluation→Recommendation→Risk→Decision Artifact, 规则评分四因素, 禁无证据,
+# 9c Approval 复用) + RecommendationEngine 引擎 (10A-3: 多因素加权评分 +
+# Reasoning 解释 + Risk + Experience 集成冷启动中性 + Decision 集成) + 事件
+# (intelligence.*)。
+#
+# 边界铁律 (phase10a1-status.md / phase10a2-status.md / phase10a3-status.md):
+# - 只分析 + 推荐 + 解释, **不自动执行** (无 LLM/学习算法 — 10A-3 只评分推荐,
+#   10A-4 才做经验学习)。
+# - Core 零感知: 删除本包 Factory 照常运行; 本包零顶层 imports product/providers/
+#   runtime (store.py 零顶层 imports events, decision.py 经 duck-typed
+#   approval_service 复用 9c — Removal Isolation)。
+# - 事件经 EventLogger (唯一事实源); 智能输出全部支持 Evidence/Confidence/Lineage。
 
 from .decision import (
     CLOSE_COMPETITION_GAP,

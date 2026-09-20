@@ -107,7 +107,6 @@ def patch_stats(diff_text: str) -> dict[str, int]:
     解析 `diff --git a/... b/...` 头与 +/- 行 (不依赖 git 命令)。
     """
     files, insertions, deletions = 0, 0, 0
-    seen: set[str] = set()
     for line in diff_text.splitlines():
         if line.startswith("diff --git "):
             files += 1

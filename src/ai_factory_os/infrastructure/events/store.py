@@ -106,24 +106,33 @@ class EventStore:
         where: list[str] = []
         params: list[Any] = []
         if project_id is not None:
-            where.append("project_id = ?"); params.append(project_id)
+            where.append("project_id = ?")
+            params.append(project_id)
         if task_id is not None:
-            where.append("task_id = ?"); params.append(task_id)
+            where.append("task_id = ?")
+            params.append(task_id)
         if agent_id is not None:
-            where.append("agent_id = ?"); params.append(agent_id)
+            where.append("agent_id = ?")
+            params.append(agent_id)
         if event_type is not None:
             t = event_type.value if isinstance(event_type, EventType) else event_type
-            where.append("type = ?"); params.append(t)
+            where.append("type = ?")
+            params.append(t)
         if stage is not None:
-            where.append("stage = ?"); params.append(stage)
+            where.append("stage = ?")
+            params.append(stage)
         if result is not None:
-            where.append("result = ?"); params.append(result)
+            where.append("result = ?")
+            params.append(result)
         if after is not None:
-            where.append("timestamp >= ?"); params.append(format_timestamp(after))
+            where.append("timestamp >= ?")
+            params.append(format_timestamp(after))
         if before is not None:
-            where.append("timestamp <= ?"); params.append(format_timestamp(before))
+            where.append("timestamp <= ?")
+            params.append(format_timestamp(before))
         if since_seq > 0:
-            where.append("seq > ?"); params.append(since_seq)
+            where.append("seq > ?")
+            params.append(since_seq)
 
         sql = "SELECT * FROM events"
         if where:

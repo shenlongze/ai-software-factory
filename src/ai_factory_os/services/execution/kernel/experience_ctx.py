@@ -830,7 +830,6 @@ class ExperienceExtractor:
         """Ranking 产物 → context_used (candidates: {id,type,source,level})。"""
         candidates: list[dict[str, Any]] = []
         content_refs: list[str] = []
-        selection = getattr(ranking, "selection", None)
         budget = getattr(ranking, "budget", None)
         levels: dict[str, str] = {}
         if budget is not None:

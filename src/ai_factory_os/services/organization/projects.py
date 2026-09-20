@@ -654,10 +654,10 @@ class ProjectStore:
         return self._links.list_all()
 
     def list_task_links_by_project(self, project_id: str) -> list[ProjectTaskLink]:
-        return [l for l in self.list_task_links() if l.project_id == project_id]
+        return [link for link in self.list_task_links() if link.project_id == project_id]
 
     def list_task_links_by_task(self, task_id: str) -> list[ProjectTaskLink]:
-        return [l for l in self.list_task_links() if l.task_id == task_id]
+        return [link for link in self.list_task_links() if link.task_id == task_id]
 
     # -------------------------------------------------------------- 数据空间
     def files(self) -> list[Path]:
@@ -852,7 +852,7 @@ class ProjectLifecycle:
     def list_project_tasks(self, project_id: str) -> list[str]:
         """项目已关联任务 id 列表 (按关联记录 id 排序, 审计友好)。"""
         return [
-            l.task_id for l in self._store.list_task_links_by_project(project_id)
+            link.task_id for link in self._store.list_task_links_by_project(project_id)
         ]
 
     # ------------------------------------------------------------------ Sprint
@@ -886,8 +886,8 @@ class ProjectLifecycle:
         if task_id in sprint.tasks:
             raise DuplicateError(f"task already in sprint: {task_id}")
         linked = {
-            l.task_id
-            for l in self._store.list_task_links_by_project(sprint.project_id)
+            link.task_id
+            for link in self._store.list_task_links_by_project(sprint.project_id)
         }
         if task_id not in linked:
             raise NotFoundError(

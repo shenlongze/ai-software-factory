@@ -48,7 +48,6 @@ class ProjectAnalyzer:
 
     def analyze(self, root: Path, files: list[Path] | None = None) -> ProjectBasicInfo:
         paths = files if files is not None else collect_files(root)
-        basenames = {p.name.lower() for p in paths}
         dirs = {part.lower() for p in paths for part in p.parts[:-1]}
 
         file_count = len(paths)

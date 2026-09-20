@@ -415,8 +415,8 @@ class ArtifactRegistry:
             if not project_id:
                 raise ValueError("task_id requires project_id (task 须关联项目)")
             if not any(
-                l.task_id == task_id and l.project_id == project_id
-                for l in self._store.list_task_links()
+                link.task_id == task_id and link.project_id == project_id
+                for link in self._store.list_task_links()
             ):
                 raise NotFoundError(
                     f"task {task_id} not linked to project {project_id} "

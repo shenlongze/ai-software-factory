@@ -593,6 +593,17 @@ def build_parser() -> Any:
     p_tt_dec.add_argument("--node", default=None, help="只声明这一个模块（短 id 也行）")
     p_tt_dec.add_argument("--dry-run", action="store_true", dest="dry_run",
         help="只算不落盘（先看 LLM 会声明什么）")
+    p_tt_pri = ttsub.add_parser(
+        "priority", help="★ 优先级: 看分布 / 人工设 / 按关键路径自动导出（人工 > 产线声明 > 自动）")
+    json_opt(p_tt_pri)
+    p_tt_pri.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
+    p_tt_pri.add_argument("--project", default=None, help="项目 id")
+    p_tt_pri.add_argument("--auto", action="store_true",
+        help="按关键路径自动导出（链上=P0 · 有人等它=P1 · 旁支=P2）—— ★ 不覆盖人工与产线声明")
+    p_tt_pri.add_argument("--set-node", dest="set_node", default=None,
+        help="人工设某节点（短 id 也行）—— 人工最高, 自动不再覆盖它")
+    p_tt_pri.add_argument("--value", default=None, help="P0/P1/P2/P3（配 --set-node）")
+    p_tt_pri.add_argument("--why", default="", help="人工排的理由（可选, 落盘）")
     p_tt_dec.add_argument("--set", nargs="+", default=None, dest="set_spec",
         help="★ 手动改声明（须配 --node）: 写法 Order:write User:read（省略 access = both）")
     p_tt_dec.add_argument("--clear", action="store_true",
@@ -2607,6 +2618,57 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
             "dry_run": dry, "exit_code": 0, "args": args}
 
 
+def _tasktree_priority(ctx: FactoryContext, args: Any) -> dict:
+    """`factory tasktree priority <plan> [--auto | --set-node X --value P1]` —— ★ 优先级。
+
+    Founder 定: **ABC 都要 + 支持人为干预** ⇒
+      A 人工（--set-node/--value, 页面点改）· B 关键路径自动（--auto）· C 产线声明（declare 时给）
+    仲裁: **人工 > 产线声明 > 关键路径自动** —— 自动导出绝不覆盖人工/声明。
+    取值只有 P0..P3（调度器 `rank.py` 原文: 先到期 → 优先级 → 便宜的先做 → 声明序）。
+    """
+    from ai_factory_os.services.work import decomposition as _D
+    from ai_factory_os.services.work import priority as _pri
+
+    plan_id = str(getattr(args, "plan_id", "") or "")
+    project = str(getattr(args, "project", "") or "")
+    tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+    if not tree:
+        raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
+    nodes = tree.get("nodes") or []
+    did, written = "查看现状", 0
+    skipped: list[str] = []
+    missing: list[str] = []
+    invalid: list[str] = []
+    node_arg = str(getattr(args, "set_node", "") or "")
+    value = str(getattr(args, "value", "") or "")
+    if node_arg:
+        if not value:
+            raise CliError("--set-node 要配 --value P0/P1/P2/P3", exit_code=2)
+        r = _D.set_node_priority(ctx.root, plan_id, node_id=node_arg, priority=value,
+                                 source="manual", reason=str(getattr(args, "why", "") or ""),
+                                 project_id=project)
+        tree, did, written = r["tree"], "人工设置", 1
+    elif bool(getattr(args, "auto", False)):
+        auto = _pri.auto_from_keypath(nodes)
+        by_id = {str(n.get("id") or ""): n for n in nodes}
+        items = {nid: spec for nid, spec in auto.items()
+                 if _pri.can_apply(by_id.get(nid) or {}, "keypath")}
+        skipped = [nid for nid in auto if nid not in items]
+        r2 = _D.set_priorities(ctx.root, plan_id, items=items, project_id=project)
+        tree, written = r2["tree"], r2["written"]
+        missing, invalid = r2["missing"], r2["invalid"]
+        did = "按关键路径自动导出"
+    eff = _pri.effective(tree.get("nodes") or [])
+    sources: dict[str, int] = {}
+    for v in eff.values():
+        sources[v["source"]] = sources.get(v["source"], 0) + 1
+    return {"ok": True, "action": "tasktree-priority", "tree": tree, "priority": eff,
+            "distribution": _pri.distribution(eff), "sources": sources, "did": did,
+            "stored": _pri.stored_stats(tree.get("nodes") or []),
+            "written": written, "skipped": skipped, "missing": missing, "invalid": invalid,
+            "exit_code": 0, "args": args}
+
+
 def _tasktree_edit(ctx: FactoryContext, args: Any) -> dict:
     """`factory tasktree edit <plan> --node <id> [--title/--acceptance/--display-name] [--drop]`
     —— ★ 逐节点编辑（Founder: "每一个子节点, 用户都有可能做修改"）。
@@ -2812,6 +2874,8 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
         return _tasktree_dataflow(ctx, args)
     if cmd == "declare":
         return _tasktree_declare(ctx, args)
+    if cmd == "priority":
+        return _tasktree_priority(ctx, args)
     if cmd == "edit":
         return _tasktree_edit(ctx, args)
     if cmd == "translate":
@@ -3245,6 +3309,35 @@ def _print_tasktree(args: Any, r: dict) -> None:
         if not rows:
             print("  （没有需要声明的模块）")
         print("  （声明后 `tasktree dataflow <plan>` 看数据流程图 —— 线会从虚线变实线）")
+    elif cmd == "priority":
+        # ★ 优先级: 看分布 / 人工设 / 自动导出（仲裁: 人工 > 产线声明 > 关键路径自动）
+        dist = r.get("distribution") or {}
+        src = r.get("sources") or {}
+        print()
+        print(f"  优先级    {r['tree'].get('plan_id')}    {r.get('did')}"
+              + (f" · 写入 {r.get('written')} 条" if r.get("written") else ""))
+        print(f"  {'━' * 52}")
+        print()
+        print("  生效分布: " + " · ".join(f"{k} {dist.get(k, 0)}" for k in ("P0", "P1", "P2", "P3")))
+        st = r.get("stored") or {}
+        if st:
+            print(f"    已落盘 {st.get('stored', 0)} 条 · 自动兜底 {st.get('fallback', 0)} 条"
+                  + ("（★ 兜底只是【临时算给你看】，未写进树 ⇒ 跑 --auto 固化）" if st.get("fallback") else ""))
+        print("  来源分布: " + " · ".join(f"{k} {v}" for k, v in sorted(src.items())))
+        if r.get("skipped"):
+            print(f"  ★ 跳过 {len(r['skipped'])} 条 —— 已由人工/产线声明定过（人工最高, 自动不许覆盖）")
+        if r.get("missing"):
+            print(f"  ⚠ 找不到的节点 {len(r['missing'])} 个（未静默）")
+        if r.get("invalid"):
+            print(f"  ⚠ 非法值被拒 {len(r['invalid'])} 个（只收 P0~P3）")
+        p0 = [(nid, v) for nid, v in (r.get("priority") or {}).items() if v["priority"] == "P0"][:5]
+        if p0:
+            print("  P0 举例:")
+            for nid, v in p0:
+                print(f"    · [{v['source']}] {v.get('reason', '')[:46]}")
+        print()
+        print("  （取值 P0~P3; 调度器排序原文: 先到期 → 优先级 → 便宜的先做 → 声明序）")
+        print("  （人工改: --set-node <id> --value P1 [--why 理由]; 页面点徽标亦可）")
     elif cmd == "edit":
         n = r.get("node") or {}
         print(f"✔ {r.get('action')}: {_todo_display_name(n.get('title'))}")

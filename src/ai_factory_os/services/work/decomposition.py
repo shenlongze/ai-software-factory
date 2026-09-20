@@ -996,6 +996,94 @@ def declare_node_entities(
     return {"tree": tree, "node": node, "entities": clean}
 
 
+def set_node_priority(
+    root: Path | str,
+    plan_id: str,
+    *,
+    node_id: str,
+    priority: str,
+    source: str,
+    reason: str = "",
+    project_id: str = "",
+) -> dict[str, Any]:
+    """★ 给节点写优先级（三个来源共用这一处落盘: 人工 / 产线声明 / 关键路径自动）。
+
+    ★ 仲裁铁律（Founder: "ABC都要, 支持人为干预"）: **人工最高, 自动不许覆盖人工**——
+      调用方用 `services/work/priority.would_override` 先问一句; 本函数只负责写。
+    值域 = P0..P3（别的值抛错, 不静默接受）。
+    """
+    from ai_factory_os.services.work import priority as _pri
+
+    val = _pri.normalize(priority)
+    src = str(source or "").strip()
+    if src not in _pri.SOURCE_RANK:
+        raise ValueError(f"来源只能是 {'/'.join(_pri.SOURCE_RANK)} 之一, 收到: {source!r}")
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        raise FileNotFoundError(f"任务树不存在: {plan_id}")
+    nodes: list[dict[str, Any]] = tree.get("nodes") or []
+    node = next((n for n in nodes if str(n.get("id") or "") == node_id
+                 or str(n.get("id") or "").endswith(node_id)), None)
+    if node is None:
+        raise ValueError(f"找不到节点: {node_id}")
+    node["priority"] = val
+    node["priority_source"] = src
+    if reason:
+        node["priority_reason"] = str(reason)[:200]
+    elif src != "manual":
+        node.pop("priority_reason", None)      # 自动来源不带理由 ⇒ 不留旧理由（免得张冠李戴）
+    tree["status"] = "candidate"               # 与 edit_node 同纪律: 改完回候选态
+    tree["edited_at"] = _now_iso()
+    tree.pop("_saved_to", None)
+    tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
+    return {"tree": tree, "node": node, "priority": val, "source": src}
+
+
+def set_priorities(
+    root: Path | str,
+    plan_id: str,
+    *,
+    items: dict[str, dict[str, str]],
+    project_id: str = "",
+) -> dict[str, Any]:
+    """★ 批量写优先级（一次落盘 —— 199 个叶逐个存盘太慢, 但**写入口仍然只有这一处**）。
+
+    `items`: {节点 id: {priority, source, reason?}}。
+    ★ 仲裁由调用方先做（`priority.would_override`）: 人工已定的不会进 items。
+    返回 {written, missing, skipped_invalid}（★ 不静默: 找不到的/值非法的都要报数）。
+    """
+    from ai_factory_os.services.work import priority as _pri
+
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        raise FileNotFoundError(f"任务树不存在: {plan_id}")
+    nodes: list[dict[str, Any]] = tree.get("nodes") or []
+    by_id = {str(n.get("id") or ""): n for n in nodes}
+    written, missing, invalid = 0, [], []
+    for nid, spec in items.items():
+        node = by_id.get(str(nid)) if str(nid) in by_id else next(
+            (n for n in nodes if str(n.get("id") or "").endswith(str(nid))), None)
+        if node is None:
+            missing.append(str(nid))
+            continue
+        try:
+            val = _pri.normalize(str(spec.get("priority") or ""))
+        except ValueError:
+            invalid.append(str(nid))
+            continue
+        node["priority"] = val
+        node["priority_source"] = str(spec.get("source") or "keypath")
+        if spec.get("reason"):
+            node["priority_reason"] = str(spec["reason"])[:200]
+        written += 1
+    if written:
+        tree["status"] = "candidate"
+        tree["edited_at"] = _now_iso()
+        tree.pop("_saved_to", None)
+        tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
+    return {"tree": tree, "written": written, "missing": missing, "invalid": invalid}
+
+
 def tree_leaves(tree: dict[str, Any]) -> list[dict[str, Any]]:
     return [n for n in (tree.get("nodes") or []) if n.get("kind") == "task"]
 

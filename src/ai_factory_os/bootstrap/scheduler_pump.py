@@ -157,6 +157,26 @@ def _exec_node_map(root: Path, batch: list[str]) -> dict[str, str]:
     return out
 
 
+def _void_execution(root: Path, execution_id: str) -> None:
+    """把一个执行**作废**（标 FAILED, 落盘）—— 用于 CAS 认领失败等"本次执行不该继续"。
+
+    ★ 为什么必须落盘（实测）: 只返回 SKIPPED 不改存储 ⇒ 它仍是 PENDING ⇒
+    `_pending_leftovers` 下一轮又捡起 ⇒ 再认领失败 ⇒ 死循环（打满 max_ticks）。
+    ★ 用 FAILED 而非新增状态: `ExecutionStatus` 只有 PENDING/RUNNING/SUCCESS/FAILED
+    （作废语义 = "这次没成功", 且它**失败后不再被捡**, 正是所需）。
+    """
+    try:
+        from ai_factory_os.services.execution.runtime.types import ExecutionStatus
+
+        store = open_runtime_store(root)
+        req = store.get_execution(execution_id)
+        if req is not None:
+            req.status = ExecutionStatus.FAILED
+            store.save_execution(req)
+    except Exception:  # noqa: BLE001 — 作废失败不该炸掉驱动
+        pass
+
+
 def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str], Any]) -> Any:
     """★ CAS 认领 → 执行 → 归还（吸收自 amux: "两个 agent 永不会拿同一张卡"）。
 
@@ -190,6 +210,11 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
         got = D.claim_leaf(root, task_id, node_id, member_id=who or f"exec:{execution_id}")
         if not got.get("ok"):
             # 已被别人领 ⇒ 本执行作废（不跑）—— 这正是 CAS 的意义
+            # ★ 2026-09-19（实测修正）: 作废必须【落盘成终态】+【不动叶】——
+            #   否则该执行仍是 PENDING ⇒ 下一轮又被 _pending_leftovers 捡起 ⇒
+            #   再认领失败 ⇒ SKIPPED ⇒ 再捡 …… **打满 max_ticks 空转**
+            #   （实测: 同一棵 13 叶的树创建 52 个执行、打满 50 轮）。
+            _void_execution(root, execution_id)
             return {"status": "SKIPPED", "reason": f"CAS 认领失败: {got.get('reason')}"}
     try:
         result = run_execution(execution_id)

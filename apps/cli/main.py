@@ -2018,6 +2018,17 @@ def _dispatch_plugin(ctx: FactoryContext, args: Any) -> dict:
     target = getattr(args, "target", None)
     out, err, code = [], [], 0
 
+    # ★ 放下即用（产品定义第 3 条）: list/status 前先扫投放目录 —— 丢个清单进去就能看到
+    if action in ("list", "status"):
+        from ai_factory_os.infrastructure.plugins.kernel import scan_manifests as _scan
+
+        _sc = _scan(root)
+        for e in _sc.get("errors") or []:
+            err.append(f"[E4160] 插件清单有问题: {e}")
+            code = code or 1
+        if _sc.get("registered"):
+            out.append(f"  （扫描投放目录: 新注册 {len(_sc['registered'])} 个 "
+                       f"{', '.join(_sc['registered'])}）")
     if action == "list":
         for x in _list(root):
             out.append(f"  {x['plugin_id']} | {x['type']} | {x['status']} | caps: {x['capabilities']}")

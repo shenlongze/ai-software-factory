@@ -154,6 +154,67 @@ def bootstrap(root: Path | str) -> None:
     _save(root, "plugins", data)
 
 
+#: ★ 投放目录（放下即用）: `<root>/ops/plugins/manifests/*.json` —— 每个文件一个插件清单。
+MANIFEST_DIRNAME = "manifests"
+
+
+def manifest_dir(root: Path | str) -> Path:
+    """插件清单投放目录（不存在就创建 —— 运维往里丢文件即可, 不用改代码）。"""
+    d = Path(root) / "ops" / "plugins" / MANIFEST_DIRNAME
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def scan_manifests(root: Path | str) -> dict[str, Any]:
+    """★ 放下即用: 扫投放目录里的清单 ⇒ 自动注册（DISCOVERED → REGISTERED）。
+
+    为什么需要它（产品定义第 3 条「基座 + 一切插件」）: 原来插件注册表**硬编码在代码里**
+      （BUILTIN_PROVIDER_PLUGINS）⇒ 加一个插件必须改核心代码 ⇒ "一切插件"只是口号。
+    约定（放进去就生效）: 每个 `.json` 一个清单, **必填** `plugin_id` / `type`;
+      可选 name/version/vendor/description/capabilities/dependencies/permissions/implementation。
+      已注册的跳过（幂等）; 坏清单/坏 JSON **收进 errors 报出去**（绝不静默跳过）。
+    返回: {"registered": [id...], "skipped": [id...], "errors": ["文件: 原因", ...]}
+    """
+    registered: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []
+    d = manifest_dir(root)
+    for f in sorted(d.glob("*.json")):
+        try:
+            spec = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            errors.append(f"{f.name}: JSON 读不了（{type(exc).__name__}）")
+            continue
+        if not isinstance(spec, dict):
+            errors.append(f"{f.name}: 清单必须是对象（一个插件一个文件）")
+            continue
+        pid = str(spec.get("plugin_id") or "").strip()
+        ptype = str(spec.get("type") or "").strip()
+        if not pid or not ptype:
+            errors.append(f"{f.name}: 缺必填字段（plugin_id / type 都要）")
+            continue
+        if ptype not in PLUGIN_TYPES:
+            errors.append(f"{f.name}: 未知 type {ptype!r}（合法: {', '.join(PLUGIN_TYPES)}）")
+            continue
+        existing = {p["plugin_id"] for p in _load(root, "plugins")}
+        if pid in existing:
+            skipped.append(pid)
+            continue
+        try:
+            register_plugin(root, plugin_id=pid, name=str(spec.get("name") or pid),
+                            version=str(spec.get("version") or "0.0.0"), type=ptype,
+                            vendor=str(spec.get("vendor") or ""),
+                            description=str(spec.get("description") or ""),
+                            capabilities=[str(x) for x in (spec.get("capabilities") or [])],
+                            dependencies=[str(x) for x in (spec.get("dependencies") or [])],
+                            permissions=[str(x) for x in (spec.get("permissions") or [])],
+                            configuration_schema=spec.get("configuration_schema") or {})
+            registered.append(pid)
+        except Exception as exc:  # noqa: BLE001 — 单个坏清单不影响其它
+            errors.append(f"{f.name}: 注册失败 {type(exc).__name__}: {str(exc)[:60]}")
+    return {"registered": registered, "skipped": skipped, "errors": errors}
+
+
 def register_plugin(root: Path | str, *, plugin_id: str, name: str, version: str,
                     type: str, vendor: str = "", description: str = "",
                     capabilities: list[str] | None = None,

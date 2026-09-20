@@ -1663,6 +1663,75 @@ def test_analysis_persist_fresh() -> None:
     assert _check_analysis_persist_fresh() == []
 
 
+def _check_plugin_drop_in() -> list[str]:
+    """★ 基座 + 一切插件（产品定义第 3 条）: **放下即用** —— 丢个清单进投放目录就生效。
+
+    实测病: 插件注册表**硬编码在代码里**（kernel.BUILTIN_PROVIDER_PLUGINS）⇒ 加一个插件
+      必须改核心代码 ⇒ "一切插件"只是口号。
+    判据:
+      ① 丢一个合法清单 ⇒ 扫描后出现在插件表里（不改一行代码）
+      ② 重复扫 ⇒ 幂等（不重复注册）
+      ③ 坏清单/坏 type ⇒ 收进 errors（**响亮**, 不静默跳过）
+      ④ 启用 ⇒ ENABLED; 能力可被 resolve 到
+      ⑤ 停用 → 注销 ⇒ 干净移除（状态机不允许"启用中直接注销"）
+    """
+    import tempfile
+
+    from ai_factory_os.infrastructure.plugins import kernel as K
+
+    bad: list[str] = []
+    # ★ 调用点断言（教训: 只测函数不测接线 ⇒ 删掉 CLI 里的扫描也发现不了）
+    import inspect as _insp2
+
+    import importlib as _il
+
+    _M = _il.import_module("apps.cli.main")      # 注: `from apps.cli import main` 拿到的是函数, 不是模块
+
+    if "scan_manifests" not in _insp2.getsource(_M._dispatch_plugin):
+        bad.append("factory plugin list 里没接扫描 ⇒ 丢清单不会自动注册（放下即用没接上）")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        d = K.manifest_dir(root)
+        (d / "good.json").write_text(json.dumps({
+            "plugin_id": "provider.t-demo", "type": "provider", "name": "演示",
+            "version": "0.1.0", "capabilities": ["llm.complete"]}, ensure_ascii=False),
+            encoding="utf-8")
+        r1 = K.scan_manifests(root)
+        if r1.get("registered") != ["provider.t-demo"]:
+            bad.append(f"丢清单后没注册: {r1}")
+        ids = [p["plugin_id"] for p in K.list_plugins(root)]
+        if "provider.t-demo" not in ids:
+            bad.append(f"插件表里看不到它: {ids}")
+        r2 = K.scan_manifests(root)
+        if r2.get("registered") or r2.get("skipped") != ["provider.t-demo"]:
+            bad.append(f"重复扫不幂等: {r2}")
+        # ③ 坏清单
+        (d / "bad.json").write_text('{"type":"provider"}', encoding="utf-8")
+        (d / "bad2.json").write_text('{"plugin_id":"x.y","type":"不存在"}', encoding="utf-8")
+        (d / "broken.json").write_text("{不是 JSON", encoding="utf-8")
+        r3 = K.scan_manifests(root)
+        if len(r3.get("errors") or []) != 3:
+            bad.append(f"三个坏清单该报三条错（响亮不静默）: {r3.get('errors')}")
+        # ④ 启用 + 能力可解析
+        K.plugin_status(root, "provider.t-demo", target="ENABLED")
+        st = {p["plugin_id"]: p["status"] for p in K.list_plugins(root)}
+        if st.get("provider.t-demo") != "ENABLED":
+            bad.append(f"启用没生效: {st}")
+        if not K.resolve_plugin(root, required_capability="llm.complete"):
+            bad.append("启用后能力解析不到（放下即用只做了一半）")
+        # ⑤ 停用 → 注销
+        K.plugin_status(root, "provider.t-demo", target="DISABLED")
+        K.unregister_plugin(root, "provider.t-demo")
+        if "provider.t-demo" in [p["plugin_id"] for p in K.list_plugins(root)]:
+            bad.append("注销后仍在表里")
+    return bad
+
+
+def test_plugin_drop_in() -> None:
+    """插件放下即用: 丢清单⇒注册 · 幂等 · 坏清单响亮报错 · 启用⇒能力可解析 · 停用注销⇒干净。"""
+    assert _check_plugin_drop_in() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -1698,6 +1767,7 @@ def main() -> int:
     results.append(("失败恢复接树（检查点+recover --plan·幂等）", not _check_recover_plan_from_checkpoint(), "；".join(_check_recover_plan_from_checkpoint())))
     results.append(("监控不装样子（Agents/Validation 接真事件）", not _check_metrics_not_empty_shells(), "；".join(_check_metrics_not_empty_shells())))
     results.append(("理解产物落盘不过期（实时报告进档案）", not _check_analysis_persist_fresh(), "；".join(_check_analysis_persist_fresh())))
+    results.append(("插件放下即用（丢清单即生效·坏清单响亮报错）", not _check_plugin_drop_in(), "；".join(_check_plugin_drop_in())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

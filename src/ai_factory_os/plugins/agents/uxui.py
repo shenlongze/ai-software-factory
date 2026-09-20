@@ -346,7 +346,9 @@ def _gen_sections_individually(*, prompt: str, provider: Any, max_tokens: int) -
     任一节失败 ⇒ 返回 None（由调用方响亮报错, 不产半成品）。
     """
     merged: dict[str, Any] = {}
-    for sec in _PRODUCT_UX_SECTIONS:
+    # ★ 逐节的节名 = **制品契约要的 7 节**（UXUI_FIELDS）—— 我第一次写错用了 `_PRODUCT_UX_SECTIONS`
+    #   （那是"product 里 UX 消费的 5 节"）⇒ 凑出来的键名不对 ⇒ 契约校验报"7 节全缺"（实测踩到）
+    for sec in UXUI_FIELDS:
         ask = (prompt + f"\n\n★ 只输出这一节的 JSON: {{\"{sec}\": ...}}\n"
                "  （不要输出其它节; 内容要实质可用, 不要占位符）")
         resp = provider.generate(ProviderRequest(task_context=ask, max_tokens=max_tokens))
@@ -362,10 +364,15 @@ def _gen_sections_individually(*, prompt: str, provider: Any, max_tokens: int) -
     return merged or None
 
 
-def _is_truncated(resp: Any) -> bool:
-    """判定"输出被截断"（provider 已自述: truncated / finish_reason=length）。"""
-    err = str(getattr(resp, "error", "") or "").lower()
-    return "truncated" in err or "finish_reason=length" in err
+def _is_truncated(x: Any) -> bool:
+    """判定"输出被截断"（provider 自述: truncated / finish_reason=length）。
+
+    ★ 两种来法都要认（我第一版只认第二种 ⇒ 兜底根本没跑, 真跑时又踩一次）:
+      · **抛异常**: `providers/openai.py` 检测到 finish_reason=length 会 raise ProviderError
+      · 返回的 ProviderResponse.error 里带同样的话
+    """
+    s = x.lower() if isinstance(x, str) else str(getattr(x, "error", "") or "").lower()
+    return "truncated" in s or "finish_reason=length" in s
 
 
 def _build_retry_prompt(original_prompt: str, error: UXUIDesignerError) -> str:
@@ -455,11 +462,20 @@ class UXUIDesignerAgent:
         prompt = _UXUI_AGENT_PROMPT.format(product=_product_summary(payload))
         last_error: UXUIDesignerError | None = None
         for attempt in range(self._max_retries + 1):
-            response = self._provider.generate(
-                ProviderRequest(task_context=prompt, max_tokens=self._max_tokens)
-            )
+            try:
+                response = self._provider.generate(
+                    ProviderRequest(task_context=prompt, max_tokens=self._max_tokens)
+                )
+            except Exception as exc:  # noqa: BLE001
+                # ★ 截断是**抛异常**来的（provider 自述 finish_reason=length）⇒ 逐节兜底
+                if _is_truncated(str(exc)):
+                    sliced = _gen_sections_individually(
+                        prompt=prompt, provider=self._provider, max_tokens=self._max_tokens)
+                    if sliced:
+                        return UXUIArtifact.from_dict(sliced)
+                raise
             if not response.ok or not (response.content or "").strip():
-                # ★ 截断 ≠ 失败: 单次太长 ⇒ 逐节生成兜底（实测踩到: 7 节内容 23357 字符写不完）
+                # ★ 截断 ≠ 失败: 单次太长 ⇒ 逐节生成兜底（实测踩到: 7 节内容两万多字符写不完）
                 if _is_truncated(response):
                     sliced = _gen_sections_individually(
                         prompt=prompt, provider=self._provider, max_tokens=self._max_tokens)

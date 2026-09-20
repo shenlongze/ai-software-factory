@@ -2624,9 +2624,15 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
         raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
     pid = str(tree.get("project_id") or "")
     proj_dir = (_Path(ctx.root) / "projects" / pid) if pid else None
-    names = list(_DF.extract_entities(proj_dir)["entities"].keys())
+    # ★ 实体清单来源: ① 架构设计制品的 database_design 节（从零场景也在）→ ② 项目里的 DDL
+    #   （实跑踩到: 只认 DDL ⇒ 从零跑真实场景时这一环必然空着, 只能拒绝）
+    _cat = _DF.entity_catalog(ctx.root, pid, workspace_dir=proj_dir if pid else None)
+    names = list(_cat["names"])
     if not names:
-        raise CliError("项目里没有数据模型（*.prisma / *.sql）⇒ 无法声明（不编）", exit_code=1)
+        raise CliError("没有实体清单（架构设计制品里没有 database_design, 项目里也没 *.prisma / *.sql）"
+                       "⇒ 无法声明（不编）", exit_code=1)
+    if not getattr(args, "json", False):
+        print(f"  实体清单来源: {_cat['detail']}")
 
     nodes = tree.get("nodes") or []
     # ★★ 手动改（人来纠产线的声明）: `--set "Order:write User:read"` / `--clear`
@@ -3268,7 +3274,8 @@ def _print_dataflow(d: dict) -> None:
     """数据流程图（终端文字版）—— 来源/覆盖率必须写清楚, 线索不许说成事实。"""
     if not d.get("available"):
         print()
-        print("  数据流程图    没有数据模型可依据 —— 项目里找不到 *.prisma / *.sql（不编一张图）")
+        print("  数据流程图    没有可依据的实体清单 —— 架构设计制品里没有 database_design,"
+              " 项目里也找不到 *.prisma / *.sql（不编一张图）")
         return
     cov = d.get("coverage") or {}
     print()
@@ -3278,7 +3285,12 @@ def _print_dataflow(d: dict) -> None:
           f"（声明 {d.get('declared_count', 0)} / 线索 {d.get('evidence_count', 0)}）")
     print(f"  {'━' * 52}")
     print()
-    print(f"  数据来源: {d.get('source_file') or '（无）'}（真实 DDL）")
+    sf = d.get("source_file") or ""
+    if sf:
+        print(f"  数据来源: {sf}（真实 DDL: 实体清单 + 实体间外键）")
+    else:
+        print("  数据来源: 产线声明（依据【架构设计制品的 database_design 节】—— 从零场景下 DDL 还没做出来）")
+        print("            实体之间的外键关系需要 DDL ⇒ 暂无（不画假线）")
     ents = d.get("entities") or []
     print("  实体（被引用次数）: " + " · ".join(
         f"{e['name']} {e['refs']}" for e in ents))

@@ -27,6 +27,135 @@ from typing import Any
 _SCHEMA_GLOBS = ("**/*.prisma", "**/migrations/**/*.sql")
 _SKIP_DIRS = {"node_modules", ".git", "dist", "build", ".next"}
 
+#: 一节里可能装"表/实体"的键名（LLM 产出形状不定, 契约只要求"非空对象"）
+_ENT_KEYS = ("tables", "models", "entities", "collections", "schemas", "table", "model")
+#: 这些键下面是【字段/结构】而不是实体名（防止把 "fields" 当实体; 守卫抓过我漏这条）
+_NON_ENT_KEYS = ("fields", "columns", "indexes", "indices", "relations", "keys", "primary",
+                 "foreign", "constraints", "attributes", "props", "properties", "description",
+                 "note", "notes", "type", "types", "options", "config", "meta")
+_MAX_ENTS = 80          #: 防一次倒几百个（设计制品里塞全库）
+
+
+def _clean_name(x: Any) -> str:
+    s = str(x or "").strip().strip("\"'`,;")
+    if "." in s:                      # "public.users" / "db.users" ⇒ 取尾段
+        s = s.split(".")[-1]
+    return s
+
+
+def entities_from_design(section: Any) -> list[str]:
+    """从架构设计制品的 `database_design` 节里取【实体/表名】—— ★ 从零场景的第一来源。
+
+    为什么需要它（本轮实跑踩到）: DDL 是**任务要做出来的东西**, 从零跑真实场景时还不存在
+    ⇒ 只认 DDL 就等于"数据流程图在这一环必然空着"（`declare` 只能诚实拒绝）。
+    而架构设计制品里本来就有 `database_design` 这一节（契约: "对象, 模型/表结构"）。
+
+    形状不定（LLM 产出）⇒ 容忍多种写法（按可信度从高到低）:
+      ① {"tables": [{"name": "User", ...}, ...]} / {"models": {...}} …
+      ② {"User": {字段…}, "Order": {…}}   ← 以实体名为键
+      ③ [{"name": "User"}, "Order", ...]  ← 直接列表
+      ④ 兜底: 文本里形如 `CREATE TABLE x` / `表名: users` / `"name": "User"` 也捞
+    去重保序; 太短的名字（<2）丢掉（防把 "id"/"a" 当实体）。
+    """
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def _add(v: Any) -> None:
+        s = _clean_name(v)
+        if len(s) >= 2 and s.lower() not in ("table", "model", "entity", "name", "true", "false") \
+                and s not in seen:
+            seen.add(s)
+            names.append(s)
+
+    def _walk(o: Any, depth: int = 0, in_container: bool = False, top: bool = False) -> None:
+        """★ 只在【容器里】和【顶层】取实体名 —— 绝不下探进实体的字段描述。
+
+        真跑踩到（第一版）: 下探时把字符串一律当实体 ⇒ 53 个"实体"里混进散文
+        （"本设计包含…"）和字段类型（"BIGINT UNSIGNED AUTO_INCREMENT"）✗
+        """
+        if depth > 3 or len(names) >= _MAX_ENTS:
+            return
+        if isinstance(o, str):
+            if top:                                     # 顶层裸字符串才算（列表里见下）
+                _add(o)
+            return
+        if isinstance(o, list):
+            for it in o:
+                if isinstance(it, str) and (top or in_container):
+                    _add(it)                            # 容器里/顶层: 字符串 = 实体名
+                else:
+                    _walk(it, depth + 1, in_container, False)
+            return
+        if isinstance(o, dict):
+            # 这一层有"表/模型"容器 ⇒ 其它同级键（overview/conventions/…）是结构性说明, 不是实体
+            has_container = any(str(k).lower() in _ENT_KEYS for k in o)
+            for k, v in o.items():
+                kl = str(k).lower()
+                if kl in _ENT_KEYS:                      # ① 键名就是"表/模型"
+                    if isinstance(v, str):
+                        _add(v)                          # {"table": "users"} / {"model": "User"}
+                    else:
+                        _walk(v, depth + 1, True, False)
+                elif kl in _NON_ENT_KEYS:
+                    continue                             # 字段/索引/关系…: 不是实体
+                elif isinstance(v, str) and in_container and kl in ("name", "table", "entity", "model"):
+                    _add(v)                              # ② 容器里 {"name": "User"}
+                elif isinstance(v, (dict, list)) and (in_container or not has_container):
+                    _add(k)                              # ③ 容器里/整节以实体名为键
+                    _walk(v, depth + 1, True, False)
+                # 其余一律不下探（散文/字段说明 ⇒ 不取）
+            return
+
+    _walk(section, top=True)
+    if not names and section:                            # ④ 兜底: 当文本捞
+        text = str(section)
+        for pat in (r"CREATE\s+TABLE\s+\"?(\w+)\"?", r"表名?\s*[:：]\s*(\w+)",
+                    r"\"name\"\s*:\s*\"(\w+)\""):
+            for m in re.findall(pat, text, re.I):
+                _add(m)
+    return names[:_MAX_ENTS]
+
+
+def entity_catalog(root: Path | str, project_id: str,
+                   workspace_dir: Path | str | None = None) -> dict[str, Any]:
+    """★ 实体清单的**唯一解析处**（declare / 数据流程图 都走这里, 免得两处各认一套）。
+
+    来源优先级（★ 本轮实跑踩到后改的）:
+      ① **架构设计制品的 `database_design` 节** —— 从零场景的权威依据（DDL 还没被做出来时也在）
+      ② 项目工作区里的 DDL（`*.prisma` / `*.sql`）—— 真做出来之后可用（还能给实体关系）
+      ③ 都没有 ⇒ names 为空（调用方据此诚实拒绝, 绝不编）
+
+    返回 {names:[...], source:"design:<id>"|"ddl:<file>"|"", detail:"人话", relations:[...]}
+    """
+    out: dict[str, Any] = {"names": [], "source": "", "detail": "", "relations": []}
+    # ① 设计制品
+    try:
+        from ai_factory_os.services.organization.projects import ProjectStore
+
+        store = ProjectStore(Path(root) / "org")
+        cands = [a for a in store.list_artifacts()
+                 if str(getattr(a, "project_id", "") or "") == str(project_id or "")
+                 and "design" in str(getattr(a, "type", "") or "").lower()]
+        for art in reversed(cands):                      # 取最新的那份
+            meta = dict(getattr(art, "metadata", {}) or {})
+            names = entities_from_design(meta.get("database_design"))
+            if names:
+                out.update(names=names, source=f"design:{getattr(art, 'id', '')}",
+                           detail=f"架构设计制品的 database_design 节（{len(names)} 个实体）")
+                return out
+    except Exception:  # noqa: BLE001 — 拿不到设计制品 ⇒ 往下走（DDL）
+        pass
+    # ② DDL
+    base = Path(workspace_dir) if workspace_dir else (Path(root) / "projects" / str(project_id or ""))
+    if project_id or workspace_dir:
+        got = extract_entities(base)
+        if got.get("entities"):
+            out.update(names=list(got["entities"].keys()),
+                       source=f"ddl:{got.get('source_file') or ''}",
+                       detail=f"项目里的数据模型文件（{got.get('source_file') or ''}）",
+                       relations=list(got.get("relations") or []))
+    return out
+
 
 def _iter_files(project_dir: Path) -> list[Path]:
     out: list[Path] = []

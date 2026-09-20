@@ -318,7 +318,7 @@ def _check_ux_truncation_fallback() -> list[str]:
     import re as _re
 
     from ai_factory_os.plugins.agents.uxui import (
-        _PRODUCT_UX_SECTIONS, _gen_sections_individually, _is_truncated,
+        UXUI_FIELDS, _gen_sections_individually, _is_truncated,
     )
 
     bad: list[str] = []
@@ -346,13 +346,18 @@ def _check_ux_truncation_fallback() -> list[str]:
         bad.append("截断判定失灵（会把可自愈的截断当硬失败）")
     if _is_truncated(_Resp(False, "", "network timeout")):
         bad.append("网络错误被误判成截断")
+    # ★ 真实 provider 是【抛异常】报截断的（providers/openai.py:192）——
+    #   我第一版只认 response.error ⇒ 兜底根本没跑（真跑时又踩一次）⇒ 这条专门守它
+    if not _is_truncated("ProviderError: openai response truncated: finish_reason=length (…)"):
+        bad.append("★ 异常路径的截断没被认出来（兜底不会触发 —— 实际踩过）")
 
     prov = _FakeProv()
     merged = _gen_sections_individually(prompt="原始提示", provider=prov, max_tokens=128)
-    if not merged or set(merged) != set(_PRODUCT_UX_SECTIONS):
-        bad.append(f"逐节兜底没凑齐 7 节: {sorted(merged or {})}")
-    if len(prov.calls) != len(_PRODUCT_UX_SECTIONS):
-        bad.append(f"逐节调用次数不对: {len(prov.calls)}（应为 {len(_PRODUCT_UX_SECTIONS)}）")
+    # ★ 节名必须是【制品契约要的 7 节】—— 我第一次用了 product 的 5 节常量 ⇒ 契约报"7 节全缺"
+    if not merged or set(merged) != set(UXUI_FIELDS):
+        bad.append(f"逐节兜底没凑齐契约 7 节: {sorted(merged or {})}（要 {sorted(UXUI_FIELDS)}）")
+    if len(prov.calls) != len(UXUI_FIELDS):
+        bad.append(f"逐节调用次数不对: {len(prov.calls)}（应为 {len(UXUI_FIELDS)}）")
 
     class _BadProv:
         def generate(self, req):
@@ -530,6 +535,71 @@ def test_stale_claim_sweep() -> None:
     assert _check_stale_claim_sweep() == []
 
 
+def _check_entity_catalog() -> list[str]:
+    """★ 实体清单来源（第 4 项）: 设计制品的 database_design 优先, DDL 兜底, 都没有 ⇒ 空（不编）。
+
+    为什么这条要守: DDL 是**任务要做出来的东西**, 从零场景还不存在 ⇒ 只认 DDL 就等于
+    "数据流程图在这一环必然空着"（实测: declare 只能诚实拒绝）。而设计制品里本来就有那一节。
+    """
+    import tempfile
+
+    from ai_factory_os.services.work import data_flow as DF
+
+    bad: list[str] = []
+
+    # ① 形状容错（LLM 产出不定, 契约只要求"非空对象"）
+    cases = [
+        ({"tables": [{"name": "User"}, {"name": "Order"}]}, {"User", "Order"}),
+        ({"models": {"User": {"fields": ["id"]}, "Invoice": {}}}, {"User", "Invoice"}),
+        ({"entities": ["User", "Order"]}, {"User", "Order"}),
+        (["User", "Order"], {"User", "Order"}),
+        ({"table": "public.users"}, {"users"}),                       # 带 schema 前缀 ⇒ 取尾段
+        ({"tables": [{"name": "User"}, {"name": "User"}]}, {"User"}),  # 去重
+    ]
+    for section, want in cases:
+        got = set(DF.entities_from_design(section))
+        if not want <= got:
+            bad.append(f"设计节解析漏了实体: {section} ⇒ {sorted(got)}（要 {sorted(want)}）")
+    if DF.entities_from_design(None) or DF.entities_from_design({}):
+        bad.append("空节应给空清单（不编）")
+    if DF.entities_from_design({"tables": [{"name": "x"}]}):
+        bad.append("太短的名字（<2）不该当实体")
+    # ★ 真跑踩到: database_design 里除 tables 还有 overview/conventions/relationships_summary…
+    #   这些**结构性说明的键**不许被当成实体
+    mixed = {"overview": "本设计包含…", "conventions": {"naming": "snake_case"},
+             "tables": [{"name": "User"}, {"name": "Order"}],
+             "relationships_summary": ["User 1-N Order"], "key_queries_and_index_rationale": {"q": 1}}
+    got_mixed = DF.entities_from_design(mixed)
+    if set(got_mixed) != {"User", "Order"}:
+        bad.append(f"结构性键被当成实体了: {got_mixed}（只要 User/Order）")
+    # 文本兜底
+    txt = DF.entities_from_design({"note": "CREATE TABLE users (id int); 表名: invoices"})
+    if not {"users", "invoices"} <= set(txt):
+        bad.append(f"文本兜底没捞到表名: {txt}")
+
+    # ② 优先级: 无设计制品 + 有 DDL ⇒ 用 DDL; 两者都没有 ⇒ 空（调用方据此拒绝）
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        proj = root / "projects" / "P-x"
+        (proj / "prisma").mkdir(parents=True)
+        (proj / "prisma" / "schema.prisma").write_text(
+            "model User {\n  id Int @id\n}\nmodel Order {\n  id Int @id\n}\n", encoding="utf-8")
+        cat = DF.entity_catalog(root, "P-x", workspace_dir=proj)
+        if cat["source"] != "ddl" and not str(cat["source"]).startswith("ddl:"):
+            bad.append(f"有 DDL 时该走 DDL 来源, 实得 {cat['source']!r}")
+        if not {"User", "Order"} <= set(cat["names"]):
+            bad.append(f"DDL 兜底没拿到实体: {cat['names']}")
+        cat2 = DF.entity_catalog(root, "P-none", workspace_dir=root / "projects" / "P-none")
+        if cat2["names"] or cat2["source"]:
+            bad.append(f"两者都没有时应给空（调用方据此诚实拒绝）: {cat2}")
+    return bad
+
+
+def test_entity_catalog() -> None:
+    """实体清单: 设计节解析（多形状）· DDL 兜底 · 都没有 ⇒ 空（不编）。"""
+    assert _check_entity_catalog() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -552,6 +622,7 @@ def main() -> int:
     results.append(("写树位置唯一（漏传 project_id 也不造副本）", not _check_tree_write_path(), "；".join(_check_tree_write_path())))
     results.append(("产出证据判定（不猜）", not _check_evidence_judgement(), "；".join(_check_evidence_judgement())))
     results.append(("陈旧认领交回（不抢活跃执行）", not _check_stale_claim_sweep(), "；".join(_check_stale_claim_sweep())))
+    results.append(("实体清单来源（设计优先/DDL 兜底/空则不编）", not _check_entity_catalog(), "；".join(_check_entity_catalog())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

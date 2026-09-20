@@ -1301,6 +1301,21 @@ def cmd_run_plan(ctx: FactoryContext, args: Any) -> dict:
     if not plan_id:
         raise CliError("--plan 必填（任务树 id, 见 factory tasktree list）", exit_code=2)
     project_id = str(getattr(args, "project", "") or "")
+
+    # ★ 2026-09-19（实测修正）: 缺 project_id 时**从树里取**。
+    #   为什么必须: `decomposition._tree_file` 按"项目优先"落盘（Founder 铁律: 树在
+    #   projects/<P>/tasks/）, 而 `_read` 在**无 project_id 时**会先看全局 `task_trees/`
+    #   ⇒ 若两处都有同名树, 驱动读到的与回写写的**不是同一份** ⇒ 回写"看不见" ⇒
+    #   无限重建执行（实测: 50 轮 / 50 个执行）。
+    #   取到 project_id 后, 读写都锁定项目内那一份（权威位置）。
+    if not project_id:
+        try:
+            from ai_factory_os.services.work import decomposition as _D
+
+            _t = _D.load_tree(ctx.root, plan_id) or {}
+            project_id = str(_t.get("project_id") or "")
+        except Exception:  # noqa: BLE001 — 取不到就按原样（全局搜索）
+            pass
     max_parallel = int(getattr(args, "parallel", 3) or 3)
 
     ports = wire_scheduler(ctx.root, plan_id=plan_id, project_id=project_id)

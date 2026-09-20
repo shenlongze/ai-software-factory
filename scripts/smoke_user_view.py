@@ -315,6 +315,30 @@ def _check_mermaid(flow: dict, dataflow: dict) -> list[str]:
     return bad
 
 
+def _check_linkage_wiring() -> list[str]:
+    """页面层的联动【接线】必须齐全 —— 少一处, 联动就静默失效（就是当初的 bug 类型）。
+
+    ★ 这是【结构检查】, 不是行为检查: 真正的联动已由浏览器 DOM 断言验过（点一处三张图都亮）;
+      这里只保证接线不被误删 / 不被重构吃掉。行为验证需要浏览器, 不进 verify.sh。
+    """
+    page_file = _REPO_ROOT / "apps" / "api" / "index.html"
+    if not page_file.is_file():
+        return [f"找不到页面文件: {page_file}"]
+    page = page_file.read_text(encoding="utf-8")
+    probes = [
+        ('data-id="${esc(l.id)}"', "待办清单行没挂 data-id ⇒ 联动没有键"),
+        ("data-depth=", "待办清单行没挂 data-depth ⇒ 算不出子树范围"),
+        ("let SELECTED = null", "没有页面级共享选中状态"),
+        ("function paintFlow(id)", "功能链路图缺『按 id 上色』函数"),
+        ("function paintDf(id)", "数据流程图缺『按 id 上色』函数"),
+        ("function paintTodo(id)", "待办清单缺『按 id 定位』函数"),
+        ("function selectModule(id)", "没有共享的选中入口"),
+        ("#todo .row[data-kind=\"domain\"]", "待办清单的模块行没接点击"),
+        ("keydown", "没有 Esc 取消选中"),
+    ]
+    return [why for probe, why in probes if probe not in page]
+
+
 def _pytest_root(tmp: Path) -> Path:
     """pytest 用: 把 fixture 树 + 数据模型落进 tmp_path（与冒烟共用同一批 fixture）。"""
     for _, tree in _fixtures():
@@ -355,6 +379,11 @@ def test_mermaid_is_wellformed(tmp_path: Path) -> None:
     root = _pytest_root(tmp_path)
     nest = _must_load(root, "PLAN-nest", "P1")
     assert _check_mermaid(UV.build_flow(nest), DF.build_data_flow(nest, root / "projects" / "P1")) == []
+
+
+def test_linkage_wiring_present(tmp_path: Path) -> None:
+    """跨视图联动的接线必须齐全（键/共享选中/三张图的定位函数/点击/Esc）。"""
+    assert _check_linkage_wiring() == []
 
 
 def main() -> int:
@@ -403,6 +432,9 @@ def main() -> int:
         # ⑨ 产线声明 → 视图（写了必须有效果; 空声明不留空壳）
         dec_bad = _check_declare(root)
         results.append(("声明落盘⇒视图变实线", not dec_bad, "；".join(dec_bad)))
+        # ⑩ 页面联动【接线】齐全（结构检查 —— 少一处联动会静默失效）
+        lk_bad = _check_linkage_wiring()
+        results.append(("页面联动接线齐全", not lk_bad, "；".join(lk_bad)))
 
     if args.root:
         rroot = Path(args.root).expanduser()

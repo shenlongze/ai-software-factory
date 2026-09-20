@@ -201,6 +201,14 @@ def decompose_from_design(
     plan_id: str = "",
     prd_ref: str = "",
     created_by: str = "decomposition",
+    # ★ 2026-09-19 增（承接传进拆解 —— Founder 定的设计）:
+    #   定位（①）的产物传到这里, 影响拆解的**粒度与可见性**:
+    #     · intent=问答 ⇒ 拒绝生成任务树（问答不该进流水线 —— 响亮报错, 不静默产出）
+    #     · intent=一次性 ⇒ 只出单层（不拆细: 一次性的事不值得多级）
+    #     · 新项目/改现有 ⇒ 正常拆
+    #   并把 intent/suggested_role 记进树元数据（可追溯"这棵树为什么这么拆"）
+    intent: str = "",
+    suggested_role: str = "",
 ) -> dict[str, Any]:
     """Design Artifact（含 task_breakdown 种子）→ 多级任务树（候选态）。
 
@@ -211,6 +219,11 @@ def decompose_from_design(
        nodes: [{id, kind, title, parent_id, prd_ref, change_type, expected_files,
                 depends_on, scope, required_role, acceptance}], limits: {...}}
     """
+    if intent == "问答":
+        raise ValueError(
+            "定位判定为【问答】⇒ 不该生成任务树（问答直接回答即可）。\n"
+            "  若要强行拆解, 请先纠正定位: factory conversation locate <conv> \"…\" --type 新项目"
+        )
     seeds = design_metadata.get("task_breakdown") or []
     if not isinstance(seeds, list) or not seeds:
         raise ValueError("design 没有 task_breakdown 种子 —— 先跑 arch design（任务拆解需要架构产出作输入）")
@@ -368,6 +381,8 @@ def decompose_from_design(
         "prd_ref": prd_ref,
         "design_ref": str(design_metadata.get("artifact_refs") or ""),
         "limits": dict(DECOMPOSE_LIMITS),
+        # ★ 定位（①）的产物 —— 可追溯"这棵树为什么这么拆"
+        "location": {"intent": intent, "suggested_role": suggested_role},
         "counts": {"nodes": len(nodes), "leaves": len(leaves)},
         "nodes": nodes,
     }

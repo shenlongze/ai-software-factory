@@ -278,6 +278,10 @@ def _public_conv(doc: dict[str, Any]) -> dict[str, Any]:
         "messages_count": len(doc.get("messages") or []),
         "understanding_version": int((doc.get("understanding") or {}).get("version") or 0),
         "fact_count": len((doc.get("understanding") or {}).get("facts") or {}),
+        # ★ 2026-09-19（承接传进拆解）: 公开形态必须带 location ——
+        #   否则 `tasktree decompose --conversation` 读不到定位 ⇒ 定位白做
+        #   （实测踩到: 问答定位没被拒绝, 因为这里把它过滤掉了）。
+        "location": doc.get("location") or {},
     }
 
 

@@ -589,6 +589,8 @@ def build_parser() -> Any:
     p_tt_d = ttsub.add_parser("decompose", help="从 Design Artifact 生成任务树（候选态）")
     json_opt(p_tt_d)
     p_tt_d.add_argument("--project", required=True, help="项目 id")
+    p_tt_d.add_argument("--conversation", default=None,
+                        help="会话 id（★ 读①定位结果: 类型/承接 —— 影响拆解粒度）")
     p_tt_d.add_argument("--plan", default=None, help="指定 plan_id（缺省自动生成）")
     p_tt_c = ttsub.add_parser("confirm", help="人工确认（候选 → 已确认, 进入执行的前置门）")
     json_opt(p_tt_c)
@@ -2569,12 +2571,27 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
                 f"项目 {project_id} 内无 design 产物 —— 先跑 arch design（任务拆解需要架构产出作输入）",
                 exit_code=2)
         design = cands[-1]
+        # ★ 读①定位结果（若给了 --conversation）—— 传给 decompose, 影响拆解
+        #   （设计: 承接决定拆解粒度; intent=问答 ⇒ decompose 会拒绝生成树）
+        _loc_intent = _loc_role = ""
+        _cid = str(getattr(args, "conversation", None) or "")
+        if _cid:
+            from ai_factory_os.services.conversation import understanding as _U
+            _loc = (_U.get_conversation(ctx.root, _cid) or {}).get("location") or {}
+            _loc_intent = str(_loc.get("intent") or "")
+            _loc_role = str(_loc.get("suggested_role") or "")
         try:
             tree = D.decompose_from_design(
                 ctx.root, project_id=project_id,
                 design_metadata=dict(design.metadata or {}),
                 plan_id=str(getattr(args, "plan", None) or ""),
                 prd_ref=str(getattr(design, "id", "")),
+                # ★ 承接传进拆解（设计: 承接决定拆解粒度）——
+                #   从会话读①定位结果（intent/suggested_role）, 传给 decompose。
+                #   · intent=问答 ⇒ decompose 拒绝生成树（问答不该进流水线）
+                #   · 并把定位记进树元数据（可追溯"这棵树为什么这么拆"）
+                intent=_loc_intent,
+                suggested_role=_loc_role,
             )
         except D.DecomposeLimitError as exc:
             raise CliError(f"拆解超边界: {exc}", exit_code=1) from exc

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>requirement-flow-and-user-view</title>
+<style>
+  :root{--bg:#f5f5f7;--fg:#1d1d1f;--sub:#6e6e73;--line:#d2d2d7;--blue:#0071e3;--code-bg:#f0f0f2}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.7 -apple-system,"SF Pro SC","PingFang SC",system-ui,sans-serif}
+  main{max-width:960px;margin:0 auto;padding:44px 22px 90px}
+  h1{font-size:30px;letter-spacing:-.4px;margin:0 0 8px}
+  h2{font-size:21px;margin:38px 0 12px;padding-top:16px;border-top:1px solid var(--line)}
+  h3{font-size:17px;margin:26px 0 10px}
+  h4{font-size:15px;margin:20px 0 8px;color:var(--sub)}
+  p{margin:10px 0}
+  blockquote{margin:12px 0;padding:10px 14px;background:#fff;border-left:3px solid var(--blue);
+    border-radius:0 8px 8px 0;color:var(--sub)}
+  pre{background:#1d1d1f;color:#f5f5f7;padding:14px 16px;border-radius:10px;overflow:auto;
+    font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+  code{background:var(--code-bg);padding:1.5px 5px;border-radius:5px;
+    font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre code{background:none;padding:0;color:inherit}
+  table{width:100%;border-collapse:collapse;margin:14px 0;background:#fff;
+    border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05);font-size:14px}
+  th{background:#fafafa;text-align:left;font-weight:600;padding:9px 12px;border-bottom:1px solid var(--line)}
+  td{padding:9px 12px;border-bottom:1px solid #f0f0f2;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  ul{margin:8px 0 8px 4px;padding-left:20px}
+  li{margin:5px 0}
+  strong,b{font-weight:600}
+  .foot{margin-top:44px;color:var(--sub);font-size:12.5px;text-align:center}
+</style></head><body><main>
+<h1>需求流程与用户视图设计</h1>
+<blockquote>状态: 设计（Founder 认可）| 日期: 2026-09-19</blockquote>
+<blockquote>范围: <b>本次不含执行</b> —— 定位 → 理解 → 分析 → 拆解 → 用户视图 → 确认/修改</blockquote>
+<blockquote>一句话: <b>专业层是唯一数据源; 用户视图是它的两种投影; 用户在投影上改, 写回同一份数据。</b></blockquote>
+<p>---</p>
+<h2>0. 范围（这次不做什么）</h2>
+<pre> ❌ 执行（调度 / run --plan / claim 释放 / 文件冲突 / 空转修复）—— 已通, 但本次不涉及
+ ❌ 分节生成 / max_tokens 上限 —— 属"生成产物"层面的问题（另记 cr-12）
+ ❌ "让 LLM 一次拆出完美多级树" —— 已证伪的错误方向（质量由人机协作保证）</pre>
+<p>---</p>
+<h2>1. 流程（Founder 定的四步 + 用户视图）</h2>
+<pre> 需求进来
+   │
+   ├─→ ① 定位    归属（公司/部门/项目）+ 类型（新项目/改现有/问答/一次性）+ 承接（谁提的/谁做）
+   ├─→ ② 理解    结构化事实: IDEA / REQ / CONSTRAINT / DECISION …（+ 产品理解快照）
+   ├─→ ③ 分析    见 §2（含需求分析 / 需求拆解 / UX 设计 / 架构设计）
+   ├─→ ④ 拆解    任务树: 任务 → 子任务 → 子子任务（每叶带承接 / 验收 / 依赖 / 改哪些文件）
+   ├─→ ⑤ 用户视图 见 §4（两种呈现: 功能链路图 · 层级待办清单）
+   └─→ ⑥ 确认/修改 用户看 → 改 → 确认（★ 不确认很可能做错）
+ 执行 ⇒ 本次范围之外</pre>
+<p><b>为什么"定位"必须在最前</b>（Founder 明确: "需求进来先定位"）:</p>
+<pre> · 归属决定: 记忆存哪（全局/项目/部门）· 权限谁能看（跨公司默认拒绝）· 上下文带哪些
+ · 类型决定: 走哪条链（要 PRD? 要架构? 还是直接答）
+ · 承接决定: ★ 用哪个角色 + **拆到多深**（一个 agent 一次能做多少 ⇒ 决定叶子粒度）
+ ⇒ 没有定位, 后面每一步都"不知道站在哪"; 尤其④拆解的粒度**依赖承接信息**。
+ ★ 现状差距: 归属靠 `conversation new --project` 手动传（隐式）; 类型/承接**完全没有**。</pre>
+<p>---</p>
+<h2>2. ③分析包含什么（Founder: "包含架构设计, UX设计, 需求分析, 需求拆解等"）</h2>
+<pre> ┌────────────────────┬──────────────────────────────────────────────────────┐
+ │ 子项               │ 产出                                                  │
+ ├────────────────────┼──────────────────────────────────────────────────────┤
+ │ · 需求分析          │ PRD: 功能列表 / 约束 / 决策 / 非功能需求                │
+ │ · ★需求拆解        │ 业务层拆分: 需求由哪些【业务模块 / 功能点】组成          │
+ │ · UX 设计          │ 交互设计: 屏幕 / 组件 / 用户流程                        │
+ │ · 架构设计          │ 技术设计: 技术栈 / 数据模型 / API / 模块划分            │
+ └────────────────────┴──────────────────────────────────────────────────────┘
+ ★ "分析"是一组分析产物的统称, 不是单一步骤。</pre>
+<p>---</p>
+<h2>3. 两层拆解（Founder: "两层" —— 业务层 vs 执行层）</h2>
+<pre> 第一层: 需求拆解（在③分析里）
+   · 视角: 业务 —— "这个需求由哪些模块/功能组成"
+   · 承接人: 架构师/产品 → 产出业务结构与技术结构
+
+ 第二层: 任务拆解（④）
+   · 视角: 执行 —— "这些模块/功能要做哪些活、谁做、怎么验收"
+   · 产出: 任务树（任务→子任务→子子任务）
+   · ★ 输入: PRD + 需求拆解结果 + UX + 架构 + **①的承接信息**（决定粒度）
+
+ ★ 为什么必须分两层: 普通人看不懂"需求拆解"和"架构设计"（Founder 明确）
+   ⇒ 所以内部用专业表达, 给用户的是【翻译后的人话表达】（见 §4）。</pre>
+<p>---</p>
+<h2>4. 用户视图（★ Founder: "还有一个设计, 你没有体现到, 就是用户视图"）</h2>
+<h3>4.1 两种呈现, <b>说的是同一件事</b>（Founder 强调）</h3>
+<pre> ┌──────────────┬────────────────────────────┬────────────────────────────────────┐
+ │ 面向         │ 回答什么问题                │ 形态（能说明白即可）                 │
+ ├──────────────┼────────────────────────────┼────────────────────────────────────┤
+ │ ① 功能链路图 │ "这个需求包含什么、         │ 脑图 / 流程图 / 表格 —— 只要能把      │
+ │   （看关系） │  它们怎么串起来"            │ 【功能 + 关系】说清楚                │
+ ├──────────────┼────────────────────────────┼────────────────────────────────────┤
+ │ ② 层级待办  │ "具体要做哪些活、           │ 层级清单: 可勾 / 带状态与进度 / 有层级 │
+ │   （看进度） │  谁做、做到哪了"            │ （Todo Tree 形态）                   │
+ └──────────────┴────────────────────────────┴────────────────────────────────────┘
+ ★★ 两者是【同一件事的两种看法】—— 链路图里的"商品管理"点,
+    就是清单里的"商品管理"块 ⇒ 必须能互相点过去、互相对得上。</pre>
+<h3>4.2 由此定下的硬要求</h3>
+<pre> ① 数据源只有一份（专业层）—— 两个呈现是它的两个**投影**, 不是两份数据
+ ② 两视图必须能【互相对上】: 链路图的节点 ⇄ 清单的任务块可互相定位
+ ③ 改任一处 ⇒ 写回同一份数据 ⇒ **两个投影同时更新**（不需要"回译"）
+ ④ 专业层（title 等）与用户视图（display_name）是【翻译关系】:
+    专业层是源; 人话层是给用户看的表达; 两处都可改, 改的都是同一份字段</pre>
+<h3>4.3 呈现形式（Founder 认可: 形式不强求）</h3>
+<pre> · 功能链路图: 现阶段用**表格 / mermaid 流程图**（CLI 可渲染）, 将来 Web 换脑图
+ · 层级待办清单: 层级清单（缩进 + 状态图标 + 百分比）
+ ★ 关键: 生成规则固定 ⇒ 换载体不改数据, 也不会让两个视图不一致</pre>
+<p>---</p>
+<h2>5. 同一份数据（任务节点）—— 只加 3 个字段</h2>
+<pre> ┌──────────────┬──────────┬────────────────────────────────────────────────┐
+ │ 字段          │ 现状      │ 说明                                            │
+ ├──────────────┼──────────┼────────────────────────────────────────────────┤
+ │ id            │ ✅ 有     │ 节点标识                                        │
+ │ kind          │ ✅ 有     │ project / domain / task                         │
+ │ parent_id     │ ✅ 有     │ ★ 层级: 任务→子任务→子子任务靠它                  │
+ │ title         │ ✅ 有     │ 专业名（"实现分类树、SPU/SKU 查询与详情…"）       │
+ │ ★ display_name│ ✗ 缺     │ ★ 人话名（"商品管理"）—— 用户视图就靠它           │
+ │ depends_on    │ ✅ 有     │ 依赖 ⇒ 链路图的**边**就靠它画                     │
+ │ acceptance    │ ✅ 有     │ 验收标准 ⇒ ★ "能不能一句话写出来"决定该不该再拆     │
+ │ required_caps │ ✅ 有     │ 需要什么能力（= 谁能做）                         │
+ │ ★ assignee    │ ✗ 缺     │ ★ 明确"谁在做"（现只有"需要什么能力"）             │
+ │ status        │ ✅ 有     │ 状态（待办/进行中/完成）                        │
+ │ ★ progress    │ ✗ 缺     │ ★ 完成度 = 已完成子节点数 / 总子节点数（叶子=100%）│
+ │ expected_files│ ✅ 有     │ 要改哪些文件（执行用, 用户视图不显示）            │
+ │ scope         │ ✅ 有     │ 描述                                            │
+ └──────────────┴──────────┴────────────────────────────────────────────────┘
+ ★ 只补 3 个（display_name / assignee / progress）⇒ 不推翻现有任务树, 不另起一套。</pre>
+<p>---</p>
+<h2>6. 两个投影的生成规则（都只读 §5, 不再加字段）</h2>
+<pre> 功能链路图:
+   · 节点 = kind=domain 的节点 → 显示 display_name
+   · 边   = depends_on（读成"前置关系"）
+   · 分层 = parent_id（可折叠）
+   · 主次 = 被依赖次数（被多人依赖 ⇒ 核心）
+
+ 层级待办清单:
+   · 行   = kind=task 的叶 → 显示 display_name, 缩进体现 parent_id
+   · 勾选 = status（☐ 待办 / 🚧 进行中 / ✅ 完成）
+   · 百分比 = progress（父节点由子节点聚合）
+   · 谁做 = assignee（无 ⇒ 显示"待派"）</pre>
+<p>---</p>
+<h2>7. 改动写回（三种改法）</h2>
+<pre> ┌────┬────────────────────────┬──────────────────────┬──────────────────────┐
+ │ #  │ 用户在哪改              │ 写回字段              │ 举例                  │
+ ├────┼────────────────────────┼──────────────────────┼──────────────────────┤
+ │ ①  │ 清单里改【人话名】       │ display_name          │ "商品管理"→"商品与分类" │
+ │ ②  │ 清单里改【做不做/怎么做】 │ title / acceptance /  │ "建商品表"→"导入已有表" │
+ │    │ （语义改动）             │ parent_id（拆分/合并） │                      │
+ │ ③  │ 链路图里改【功能关系】    │ depends_on            │ 让"支付"不再依赖"库存" │
+ └────┴────────────────────────┴──────────────────────┴──────────────────────┘
+ ⇒ 任一处写回 ⇒ 两个投影同时更新（同一份数据）✓</pre>
+<p>---</p>
+<h2>8. 与现状的差距（要补的）</h2>
+<pre> ┌────┬────────────────────────────────┬──────────────────────────────────────┐
+ │ #  │ 缺什么                          │ 现状                                  │
+ ├────┼────────────────────────────────┼──────────────────────────────────────┤
+ │ ①  │ 定位（类型 + 承接）              │ ✗ 完全没有（归属靠 --project 手动传）  │
+ │ ②  │ 分析层的"需求拆解"（业务层）      │ △ 有 PRD/产品/UX/架构, 但无"业务模块拆分"│
+ │ ③  │ 两个投影的生成                  │ ✗ 无                                  │
+ │ ④  │ 逐节点可看/可改/可确认           │ △ 只有整树 confirm（要么全要要么全不要）│
+ │ ⑤  │ 3 个新字段                      │ ✗ display_name / assignee / progress  │
+ └────┴────────────────────────────────┴──────────────────────────────────────┘</pre>
+<p>---</p>
+<h2>9. 已复用/已具备的地基（不用重做）</h2>
+<pre> · 任务树: parent_id 层级 / depends_on / acceptance / required_capabilities / status ✓
+ · 消费侧: decompose 已支持多级种子（实测能物化"子子任务"）✓
+ · 事实层: conversation understand → 结构化事实（含重要性门）✓
+ · 分析产物: PRD / 产品定义 / 交互设计 / 架构（含双输入溯源）✓
+ · 确认机制: tasktree confirm（candidate → confirmed）—— 需从"整树"扩到"逐节点" ✓</pre>
+<div class="foot">由 requirement-flow-and-user-view.md 生成 · 6585 字符</div>
+</main></body></html>

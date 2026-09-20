@@ -986,6 +986,54 @@
       <b>注</b>: 消费侧（decompose 支持嵌套）已完成, 实测能物化出"子子任务"。</span></span></label>
   </div>
 
+  <h2><span class="n">17</span>需求流程与用户视图（Founder 定的设计 · 本次不含执行）</h2>
+    <label class="item done"><input type="checkbox" id="rf-1" checked><span class="body">
+      <span class="t"><span class="tag p0">设计</span>✅ 四步流程: 定位 → 理解 → 分析 → 拆解（+ 用户视图 → 确认/修改）</span>
+      <span class="meta"><b>Founder 原话</b>: "需求进来先定位，然后理解，然后分析，然后拆解"。<br>
+      ① <b>定位</b>: 归属（公司/部门/项目）+ 类型（新项目/改现有/问答/一次性）+ 承接（谁提的/谁做）<br>
+      &nbsp;&nbsp;· 为什么最前: 归属决定记忆存哪/权限/上下文; <b>承接决定拆到多深</b>（一个 agent 一次能做多少）<br>
+      &nbsp;&nbsp;· 现状差距: 归属靠 <code>--project</code> 手动传; 类型/承接<b>完全没有</b><br>
+      ② <b>理解</b>: 结构化事实 IDEA/REQ/CONSTRAINT/DECISION（已有 ✓ 含重要性门）<br>
+      ③ <b>分析</b>: 含 需求分析(PRD) / <b>需求拆解</b>(业务模块) / UX 设计 / 架构设计<br>
+      ④ <b>拆解</b>: 任务树 任务→子任务→子子任务（★ 输入含①的承接信息, 决定粒度）<br>
+      <b>文件</b>: <code>docs/design/requirement-flow-and-user-view.md</code></span></span></label>
+    <label class="item done"><input type="checkbox" id="rf-2" checked><span class="body">
+      <span class="t"><span class="tag p0">设计</span>✅ 两层拆解: 需求拆解（业务层） vs 任务拆解（执行层）</span>
+      <span class="meta"><b>Founder</b>: "两层，普通人是看有可能不懂需求拆解的，不懂架构设计的" ⇒<br>
+      · 需求拆解（在③分析里）: 业务视角 —— 需求由哪些模块/功能组成<br>
+      · 任务拆解（④）: 执行视角 —— 做哪些活/谁做/怎么验收<br>
+      ⇒ 所以内部用专业表达, 给用户的是<b>翻译后的人话表达</b>（见 rf-3）。</span></span></label>
+    <label class="item done"><input type="checkbox" id="rf-3" checked><span class="body">
+      <span class="t"><span class="tag p0">设计</span>✅ 用户视图: 两种呈现, <b>说的是同一件事</b>（Founder 强调）</span>
+      <span class="meta">
+      · <b>功能链路图</b>（看关系）: "包含什么功能、怎么串起来" —— 脑图/流程图/表格, 能说明白即可<br>
+      · <b>层级待办清单</b>（看进度）: "做哪些活、谁做、到哪了" —— 可勾/带状态/有层级<br>
+      ★ <b>两者是同一件事的两种看法</b>: 链路图的"商品管理"点 = 清单的"商品管理"块, 必须能互相对上。<br>
+      ★ 人话层是<b>事后翻译</b>（Founder 选: "专业层更纯, 翻译不影响专业判断"）—— 非同时生成。<br>
+      ★ 硬要求: ① 数据源只有一份 ② 两视图可互相定位 ③ 改任一处写回同一份数据 ⇒ 同时更新
+      （用户改的是字段, 不是另一套数据 ⇒ 无需"回译"）<br>
+      <b>呈现形式</b>: 现阶段表格/mermaid; 将来 Web 换脑图（换载体不改数据）</span></span></label>
+    <label class="item done"><input type="checkbox" id="rf-4" checked><span class="body">
+      <span class="t"><span class="tag p0">设计</span>✅ 同一份数据只加 3 个字段（其余全复用）</span>
+      <span class="meta">
+      ★ 新增: <code>display_name</code>（人话名, 用户视图靠它）· <code>assignee</code>（谁在做）·
+      <code>progress</code>（完成度 = 已完成子节点/总子节点, 叶子=100%）<br>
+      复用: id/kind/<b>parent_id</b>(多级靠它)/title(专业名)/depends_on(链路图的边)/
+      acceptance(<b>"能一句话写出验收"决定该不该再拆</b>)/required_capabilities/status/expected_files/scope<br>
+      ⇒ 不推翻现有任务树, 不另起一套。</span></span></label>
+    <label class="item done"><input type="checkbox" id="rf-5" checked><span class="body">
+      <span class="t"><span class="tag p0">设计</span>✅ 改动写回规则（三种改法）</span>
+      <span class="meta">
+      ① 清单里改人话名 ⇒ 写 <code>display_name</code> ② 清单里改"做不做/怎么做" ⇒ 写
+      <code>title/acceptance/parent_id</code>（拆分/合并）③ 链路图里改功能关系 ⇒ 写 <code>depends_on</code><br>
+      ⇒ 任一处写回 ⇒ 两个投影同时更新 ✓</span></span></label>
+    <label class="item"><input type="checkbox" id="rf-6"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>⬜ 待实现（按差距清单）</span>
+      <span class="meta">
+      ① 定位: 类型 + 承接（现在完全没有）② 分析层补"需求拆解"（业务模块拆分）<br>
+      ③ 两个投影的生成（功能链路图 + 层级待办清单）④ 逐节点可看/可改/可确认
+      （现只有整树 confirm）⑤ 3 个新字段落地<br>
+      <b>★ 本次范围不含执行</b>（Founder: "执行等这部分完成后再说"）</span></span></label>
   <h2><span class="n">16</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">

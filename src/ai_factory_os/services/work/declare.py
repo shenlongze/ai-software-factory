@@ -22,44 +22,61 @@ from ai_factory_os.services.work.priority import VALID as VALID_PRIORITIES
 _MAX_ENTS = 8          #: 一个模块最多声明几个实体（防一次倒一堆）
 
 
-def _prompt(module: str, desc: str, acceptance: str, entities: list[str]) -> str:
+def _prompt(module: str, desc: str, acceptance: str, entities: list[str],
+            roles: list[str] | None = None) -> str:
+    staff = ""
+    if roles:
+        staff = (
+            "· role 与 capabilities 只能从这份【真实角色清单】里选, 不许自己造:\n"
+            f"    {', '.join(roles)}\n"
+            "  （capabilities 可给 1~2 个: 主要是谁来做 + 需要哪些角色配合; role 是主责角色）;\n"
+        )
     return (
-        "你是资深技术负责人。下面是开发计划里的一个模块, 请判断它【读/写】哪些数据实体,"
-        "并给它一个【优先级】。\n"
+        "你是资深技术负责人。下面是开发计划里的一个模块, 请判断它【读/写】哪些数据实体、"
+        "给它一个【优先级】, 并指定【谁做】。\n"
         "★ 硬约束:\n"
         f"· 实体只能从这份清单里选, 不许出现清单外的名字: {', '.join(entities)}\n"
         f"· 最多选 {_MAX_ENTS} 个; 拿不准就返回空数组 []（宁可没有, 不要瞎标）;\n"
         "· access 只能是 read / write / both（只读查询=read, 建表或写入=write, 两者都=both）;\n"
         "· priority 只能是 P0 / P1 / P2 / P3: 越挡着别人做、越影响整体完工 ⇒ 越靠前（P0 最先）;"
         " 拿不准给 P2; 旁边支线给 P3;\n"
+        f"{staff}"
         "· reason 一句话说清为什么（≤40 字）;\n"
         "· 只输出 JSON 对象, 不要解释、不要 markdown。格式:\n"
-        '{"entities":[{"name":"Order","access":"write"},{"name":"User","access":"read"}],'
-        '"priority":"P1","reason":"下单主流程，后面支付与对账都等它"}\n'
+        '{"entities":[{"name":"Order","access":"write"}],"priority":"P1",'
+        f'"role":"{roles[0] if roles else "developer"}","capabilities":["{roles[0] if roles else "developer"}"],'
+        '"reason":"下单主流程，后面支付与对账都等它"}\n'
         f"\n模块: {module}\n"
         f"模块说明: {desc or '（无）'}\n"
         f"验收要求: {acceptance or '（无）'}\n"
     )
 
 
-def _parse_full(content: str, allowed: set[str]) -> dict[str, Any]:
-    """解析 LLM 输出 ⇒ {entities, dropped, priority, reason}。
+def _parse_full(content: str, allowed: set[str],
+                roles: list[str] | None = None) -> dict[str, Any]:
+    """解析 LLM 输出 ⇒ {entities, dropped, priority, reason, role, capabilities, staff_dropped}。
 
     · 实体: ★ 清单外的一律丢, 并计数（不静默）
     · 优先级: 只收 P0~P3（非法/缺失 ⇒ 空串, 由调用方决定不写 —— 不猜）
+    · 派工: role/capabilities 只收【真实角色清单】里的值（清单外的丢弃并计数）
     容忍三种形态: 裸数组 / {"entities":[...]} / {"data_entities":[...]}
     """
+    empty = {"entities": [], "dropped": 0, "priority": "", "reason": "",
+             "role": "", "capabilities": [], "staff_dropped": []}
     s = str(content or "").strip()
     if s.startswith("```"):
         s = "\n".join(ln for ln in s.splitlines() if not ln.strip().startswith("```")).strip()
     try:
         got = json.loads(s)
     except Exception:  # noqa: BLE001 — 解析不了 ⇒ 当作"没声明", 由调用方决定重试
-        return {"entities": [], "dropped": 0, "priority": "", "reason": ""}
-    raw_priority, reason = "", ""
+        return empty
+    raw_priority, reason, raw_role, raw_caps = "", "", "", []
     if isinstance(got, dict):
         raw_priority = str(got.get("priority") or "").strip().upper()
         reason = str(got.get("reason") or "").strip()[:200]
+        raw_role = str(got.get("role") or "").strip()
+        caps = got.get("capabilities") or got.get("required_capabilities") or []
+        raw_caps = caps if isinstance(caps, list) else [caps]
     items = (got.get("entities") or got.get("data_entities") or []) if isinstance(got, dict) else got
     if not isinstance(items, list):
         items = []
@@ -81,9 +98,15 @@ def _parse_full(content: str, allowed: set[str]) -> dict[str, Any]:
         out.append({"name": name, "access": access if access in ("read", "write", "both") else "both"})
         if len(out) >= _MAX_ENTS:
             break
-    return {"entities": out, "dropped": dropped,
-            "priority": raw_priority if raw_priority in VALID_PRIORITIES else "",
-            "reason": reason}
+    res = {**empty, "entities": out, "dropped": dropped,
+           "priority": raw_priority if raw_priority in VALID_PRIORITIES else "",
+           "reason": reason}
+    if roles:
+        from ai_factory_os.services.work import staffing as _st
+
+        role, caps2, staff_dropped = _st.parse_staffing(raw_role, raw_caps, {r: 1 for r in roles})
+        res.update({"role": role, "capabilities": caps2, "staff_dropped": staff_dropped})
+    return res
 
 
 def _parse(content: str, allowed: set[str]) -> tuple[list[dict[str, Any]], int]:
@@ -133,18 +156,21 @@ def declare_module(                # noqa: N802 — 与 expand_module 同族命�
     acceptance: str = "",
     entities: list[str],
     provider: Any,
+    roles: list[str] | None = None,
 ) -> dict[str, Any]:
-    """让 LLM 为一个模块声明【读/写的实体 + 优先级】—— 一次调用两个产出（不额外烧 token）。
+    """让 LLM 为一个模块声明【实体 + 优先级 + 谁做】—— 一次调用三样产出（不额外烧 token）。
 
-    返回 {entities, dropped, priority, reason}（priority 可能为空串 = LLM 没给/给了非法值 ⇒ 不写）。
+    返回 {entities, dropped, priority, reason, role, capabilities, staff_dropped}
+    （priority/role 可能为空 = LLM 没给或给了清单外的值 ⇒ 不写, 不猜）。
     失败 ⇒ 抛错（不产半成品, 与 expand_module 同一纪律）。
     """
     from ai_factory_os.infrastructure.llm.provider import ProviderRequest
 
     if not entities:
         raise ValueError("没有实体清单 —— 项目里没有数据模型（*.prisma / *.sql）⇒ 不声明（不编）")
-    ctx = _prompt(module_title, desc, acceptance, list(entities))
+    role_list = list(roles or [])
+    ctx = _prompt(module_title, desc, acceptance, list(entities), role_list)
     resp = provider.generate(ProviderRequest(task_context=ctx, max_tokens=1024))
     if not getattr(resp, "ok", False):
         raise ValueError(f"声明失败: {getattr(resp, 'error', '') or '调用失败'}")
-    return _parse_full(resp.content, set(entities))
+    return _parse_full(resp.content, set(entities), role_list)

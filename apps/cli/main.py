@@ -604,6 +604,15 @@ def build_parser() -> Any:
         help="人工设某节点（短 id 也行）—— 人工最高, 自动不再覆盖它")
     p_tt_pri.add_argument("--value", default=None, help="P0/P1/P2/P3（配 --set-node）")
     p_tt_pri.add_argument("--why", default="", help="人工排的理由（可选, 落盘）")
+    p_tt_st = ttsub.add_parser(
+        "staffing", help="★ 谁做: 看派工情况 / 人工指定角色（调度器按【成员角色】匹配, 不是 skills）")
+    json_opt(p_tt_st)
+    p_tt_st.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
+    p_tt_st.add_argument("--project", default=None, help="项目 id")
+    p_tt_st.add_argument("--node", default=None, help="只改这一个节点（短 id 也行）")
+    p_tt_st.add_argument("--role", default=None, help="主责角色（必须是真实角色清单里的值）")
+    p_tt_st.add_argument("--cap", default=None,
+        help="需要的角色（逗号分隔, 可多个; 缺省 = 与 --role 相同）")
     p_tt_dec.add_argument("--set", nargs="+", default=None, dest="set_spec",
         help="★ 手动改声明（须配 --node）: 写法 Order:write User:read（省略 access = both）")
     p_tt_dec.add_argument("--clear", action="store_true",
@@ -2543,6 +2552,7 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
 
     from ai_factory_os.services.work import data_flow as _DF
     from ai_factory_os.services.work import decomposition as _D
+    from ai_factory_os.services.work import staffing as _ST
     from ai_factory_os.services.work.declare import declare_module, parse_entity_spec
 
     plan_id = str(getattr(args, "plan_id", "") or "")
@@ -2598,16 +2608,19 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
     dry = bool(getattr(args, "dry_run", False))
 
     prov = _arch_provider()
+    roles = _ST.role_catalog(ctx.root)          # ★ 真实角色清单（与调度器读同一份成员文件）
     rows: list[dict[str, Any]] = []
     dropped_total = 0
+    staff_dropped_total = 0
     for n in todo:
         res = declare_module(
             str(n.get("display_name") or n.get("title") or ""),
             desc=str(n.get("scope") or ""),
             acceptance=str(n.get("acceptance") or ""),
-            entities=names, provider=prov)
+            entities=names, provider=prov, roles=list(roles))
         got, dropped = res["entities"], res["dropped"]
         dropped_total += dropped
+        staff_dropped_total += len(res.get("staff_dropped") or [])
         if not dry:
             _D.declare_node_entities(ctx.root, plan_id, node_id=str(n.get("id") or ""),
                                      entities=got, project_id=project)
@@ -2616,12 +2629,21 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
                 _D.set_node_priority(ctx.root, plan_id, node_id=str(n.get("id") or ""),
                                      priority=res["priority"], source="declared",
                                      reason=res.get("reason") or "", project_id=project)
+            # ★ C 产线声明"谁做"（值已按真实角色清单校验过; 空 ⇒ 不写, 不假装能派）
+            if res.get("capabilities"):
+                _D.set_node_staffing(ctx.root, plan_id, node_id=str(n.get("id") or ""),
+                                     role=res.get("role") or res["capabilities"][0],
+                                     capabilities=list(res["capabilities"]), project_id=project)
         rows.append({"node": str(n.get("display_name") or n.get("title") or ""),
                      "entities": got, "dropped": dropped,
-                     "priority": res["priority"], "reason": res.get("reason") or ""})
+                     "priority": res["priority"], "reason": res.get("reason") or "",
+                     "role": res.get("role") or "", "capabilities": res.get("capabilities") or [],
+                     "staff_dropped": res.get("staff_dropped") or []})
     return {"ok": True, "action": "tasktree-declare", "tree": tree,
-            "entities_available": names, "declared": rows,
+            "entities_available": names, "roles_available": sorted(roles),
+            "declared": rows,
             "skipped": len(targets) - len(todo), "dropped_total": dropped_total,
+            "staff_dropped_total": staff_dropped_total,
             "dry_run": dry, "exit_code": 0, "args": args}
 
 
@@ -2673,6 +2695,53 @@ def _tasktree_priority(ctx: FactoryContext, args: Any) -> dict:
             "distribution": _pri.distribution(eff), "sources": sources, "did": did,
             "stored": _pri.stored_stats(tree.get("nodes") or []),
             "written": written, "skipped": skipped, "missing": missing, "invalid": invalid,
+            "exit_code": 0, "args": args}
+
+
+def _tasktree_staffing(ctx: FactoryContext, args: Any) -> dict:
+    """`factory tasktree staffing <plan> [--node X --role developer --cap developer,tester]`。
+
+    ★ "谁做"是执行能不能派出去的前提: 调度器 `resolution_for` 拿节点的 `required_capabilities`
+      与**成员的角色**求交集 ⇒ 值必须是【真实角色清单】里的（`~/.factory/agents/agents.json`）。
+      （适配器 docstring 写的是 "skill 命中", 与代码不符 —— 以代码为准。）
+    """
+    from ai_factory_os.services.work import decomposition as _D
+    from ai_factory_os.services.work import staffing as _ST
+
+    plan_id = str(getattr(args, "plan_id", "") or "")
+    project = str(getattr(args, "project", "") or "")
+    tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+    if not tree:
+        raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
+    catalog = _ST.role_catalog(ctx.root)
+    if not catalog:
+        raise CliError("读不到成员清单（~/.factory/agents/agents.json）⇒ 不知道有哪些角色可用, "
+                       "不猜（先 `factory agent list` 看舰队）", exit_code=1)
+    node_arg = str(getattr(args, "node", "") or "")
+    role = str(getattr(args, "role", "") or "")
+    did, written, dropped = "查看现状", 0, []
+    if node_arg or role:
+        if not (node_arg and role):
+            raise CliError("--node 与 --role 要一起给（改一个节点的一个角色）", exit_code=2)
+        raw_cap = str(getattr(args, "cap", "") or "") or role
+        caps_in = [c for c in raw_cap.replace("，", ",").split(",") if c.strip()]
+        got_role, caps, dropped = _ST.parse_staffing(role, caps_in, catalog)
+        if not got_role:
+            raise CliError(f"role 必须是真实角色之一: {'/'.join(sorted(catalog))}", exit_code=2)
+        r = _D.set_node_staffing(ctx.root, plan_id, node_id=node_arg, role=got_role,
+                                 capabilities=caps, project_id=project)
+        tree, did, written = r["tree"], "人工指定", 1
+    nodes = tree.get("nodes") or []
+    leaves = [n for n in nodes if n.get("kind") == "task"]
+    staffed = [n for n in leaves if n.get("required_capabilities")]
+    by_role: dict[str, int] = {}
+    for n in staffed:
+        for c in n["required_capabilities"]:
+            by_role[c] = by_role.get(c, 0) + 1
+    return {"ok": True, "action": "tasktree-staffing", "tree": tree,
+            "roles": catalog, "did": did, "written": written, "dropped": dropped,
+            "leaves": len(leaves), "staffed": len(staffed),
+            "unstaffed": len(leaves) - len(staffed), "by_role": by_role,
             "exit_code": 0, "args": args}
 
 
@@ -2883,6 +2952,8 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
         return _tasktree_declare(ctx, args)
     if cmd == "priority":
         return _tasktree_priority(ctx, args)
+    if cmd == "staffing":
+        return _tasktree_staffing(ctx, args)
     if cmd == "edit":
         return _tasktree_edit(ctx, args)
     if cmd == "translate":
@@ -3310,8 +3381,9 @@ def _print_tasktree(args: Any, r: dict) -> None:
                    if row["entities"] else "（拿不准 ⇒ 空数组, 不瞎标）")
             pri = f"    优先级 {row['priority']}" if row.get("priority") else "    优先级（没给）"
             why = f" —— {row['reason'][:30]}" if row.get("reason") else ""
+            staff = ("    谁做 " + "/".join(row.get("capabilities") or [])) if row.get("capabilities") else "    谁做（没给）"
             extra = f"    ⚠ 丢弃清单外名字 {row['dropped']} 个" if row["dropped"] else ""
-            print(f"    {row['node']:<14} → {got}{pri}{why}{extra}")
+            print(f"    {row['node']:<14} → {got}{pri}{staff}{why}{extra}")
         print()
         if r.get("dropped_total"):
             print(f"  ⚠ 共丢弃清单外的名字 {r['dropped_total']} 个（LLM 编的, 没写进树）")
@@ -3347,6 +3419,29 @@ def _print_tasktree(args: Any, r: dict) -> None:
         print()
         print("  （取值 P0~P3; 调度器排序原文: 先到期 → 优先级 → 便宜的先做 → 声明序）")
         print("  （人工改: --set-node <id> --value P1 [--why 理由]; 页面点徽标亦可）")
+    elif cmd == "staffing":
+        # ★ 谁做: 派工覆盖 + 舰队可用角色（调度器能不能派出去就看这个）
+        print()
+        print(f"  派工(谁做)    {r['tree'].get('plan_id')}    {r.get('did')}"
+              + (f" · 写入 {r['written']} 条" if r.get("written") else ""))
+        print(f"  {'━' * 52}")
+        print()
+        avail = r.get("roles") or {}
+        print("  舰队可用角色: " + " · ".join(f"{k} {v}人" for k, v in
+              sorted(avail.items(), key=lambda kv: -kv[1])))
+        cov = f"  派工覆盖: 叶 {r['staffed']}/{r['leaves']}"
+        if r.get("unstaffed"):
+            print(cov + f" · ⚠ 还有 {r['unstaffed']} 条没说谁做 ⇒ 调度器判 unresolved, 派不出去")
+        else:
+            print(cov + " ✓")
+        if r.get("by_role"):
+            print("  按角色: " + " · ".join(f"{k} {v} 条" for k, v in
+                  sorted(r["by_role"].items(), key=lambda kv: -kv[1])))
+        if r.get("dropped"):
+            print(f"  ⚠ 清单外的值被丢弃 {len(r['dropped'])} 个: {', '.join(r['dropped'][:5])}")
+        print()
+        print("  （调度器匹配规则: 节点 required_capabilities ∩ 成员【role】—— 必须是真实角色名, 不是技能词）")
+        print("  （人工改: --node <id> --role developer [--cap developer,tester]）")
     elif cmd == "edit":
         n = r.get("node") or {}
         print(f"✔ {r.get('action')}: {_todo_display_name(n.get('title'))}")

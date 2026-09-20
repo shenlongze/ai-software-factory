@@ -1115,6 +1115,68 @@ def clear_node_priority(
     return {"tree": tree, "node": node, "before": before}
 
 
+def set_node_staffing(
+    root: Path | str,
+    plan_id: str,
+    *,
+    node_id: str,
+    role: str,
+    capabilities: list[str],
+    project_id: str = "",
+    cascade: bool = True,
+) -> dict[str, Any]:
+    """★ 声明"谁做": 写节点的 `required_role` + `required_capabilities`（调度器靠后者匹配成员）。
+
+    ★★ `cascade=True` 是关键（实测踩过）: 调度器读的是**叶自己**的 required_capabilities,
+      所以声明在模块上【不会自动继承】⇒ 必须级联写到该节点下所有 task 叶, 否则执行依旧
+      一个叶都派不出去（模块有角色、叶还是空）。
+    ★ 值必须是【真实角色清单】里的（见 `services/work/staffing.py`）—— 调用方负责校验;
+      本函数只写（写入口一处, 一次落盘, 改完回候选态）。
+    空 capabilities ⇒ 清掉字段（回落"没声明", 由调度器报 unresolved —— 不假装能派）。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        raise FileNotFoundError(f"任务树不存在: {plan_id}")
+    nodes: list[dict[str, Any]] = list(tree.get("nodes") or [])
+    target = next((n for n in nodes if str(n.get("id") or "") == node_id
+                   or str(n.get("id") or "").endswith(node_id)), None)
+    if target is None:
+        raise ValueError(f"找不到节点: {node_id}")
+    caps = [str(c).strip() for c in capabilities if str(c).strip()]
+    r_role = str(role or "").strip() or "unassigned"
+
+    # 收集要写的节点: 自己 + （cascade 时）整棵子树里的叶
+    write_to: list[dict[str, Any]] = [target]
+    if cascade:
+        stack = [str(target.get("id") or "")]
+        seen = set(stack)
+        while stack:
+            cur = stack.pop()
+            for n in nodes:
+                if str(n.get("parent_id") or "") != cur:
+                    continue
+                nid = str(n.get("id") or "")
+                if nid in seen:
+                    continue
+                seen.add(nid)
+                if n.get("kind") == "task":
+                    write_to.append(n)
+                stack.append(nid)
+    for n in write_to:
+        n["required_role"] = r_role
+        if caps:
+            n["required_capabilities"] = list(caps)
+        else:
+            n.pop("required_capabilities", None)
+    tree["nodes"] = nodes
+    tree["status"] = "candidate"
+    tree["edited_at"] = _now_iso()
+    tree.pop("_saved_to", None)
+    tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
+    return {"tree": tree, "node": target, "role": r_role, "capabilities": caps,
+            "written": len(write_to)}
+
+
 def tree_leaves(tree: dict[str, Any]) -> list[dict[str, Any]]:
     return [n for n in (tree.get("nodes") or []) if n.get("kind") == "task"]
 

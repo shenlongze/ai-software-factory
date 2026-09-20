@@ -1400,6 +1400,12 @@ def cmd_run_plan(ctx: FactoryContext, args: Any) -> dict:
                     limit=int(getattr(args, "limit", 0) or 0))
         # ★ 第 5 件·监控不能骗人: 派活/验证落成事件（metrics 的 Agents / Validation 两段读它们）
         _emit_execution_events(logger, ctx.root, rep)
+        # ★ 核心第 5 条·学习自治: 把本批经验落进经验库（失败也记 · 幂等 · 只追加）
+        _n_exp = _record_experiences(ctx.root, rep)
+        if _n_exp:
+            logger.record(EventType.EXPERIENCE_RECORDED if hasattr(EventType, "EXPERIENCE_RECORDED")
+                          else EventType.SYSTEM_INIT, source=SOURCE, action="record experiences",
+                          result="OK", payload={"count": _n_exp})
 
     return {
         "ok": True, "plan_id": plan_id, "ticks": rep.ticks,
@@ -4593,3 +4599,83 @@ def _persist_analysis(root: Path, path: str, report: Any) -> str:
     except Exception:  # noqa: BLE001 — 指针更新失败不影响记录本身
         pass
     return rec.id
+
+
+def _record_experiences(root: Path, rep: Any) -> int:
+    """★ 学习自治（核心第 5 条）: 把本批执行的**经验**落进经验库（agent 域）。
+
+    实测病: `intelligence experience list` 恒 0 条 —— 机制齐（ExperienceRecord/Store/Analyzer
+      + 六域 + freshness/decay + 负样本）, **但没有任何地方写**（0 个 save 调用者）⇒ 学习没有输入。
+
+    依 ExperienceRecord 自述执行:
+      · **失败也记**（负样本, 防"只记成功"的自我循环偏差）
+      · 幂等: 同一 execution_id 已有记录 ⇒ 跳过（重复驱动不会灌水）
+      · 只追加 —— 不改任何权重/配置（与"经验分析 ≠ 自我修改"的既有边界一致）
+    返回: 新写入条数。
+    """
+    from ai_factory_os.services.execution.runtime.store import open_runtime_store
+    from ai_factory_os.services.learning.store import ExperienceStore
+    from ai_factory_os.services.learning.types import (
+        Evidence, EvidenceSource, ExperienceDomain, ExperienceRecord,
+    )
+    from ai_factory_os.services.work import decomposition as _D
+
+    try:
+        store_rt = open_runtime_store(root)
+        ex = {str(e.id): e for e in store_rt.list_executions()}
+        exp = ExperienceStore(root / "intelligence")
+        # 幂等键 = 已有经验里记录的执行 id（evidence 是 Evidence 列表, 取 source_id）
+        seen = {str(ev.source_id)
+                for rec in exp.list_by_domain(ExperienceDomain.AGENT)
+                for ev in (rec.evidence or [])}
+        written = 0
+        ids: set[str] = set()
+        for o in list(getattr(rep, "outcomes", []) or []):
+            eid = str(o.get("execution_id") or "")
+            if not eid or "," in eid or eid in ids:
+                continue
+            ids.add(eid)
+            if eid in seen or eid not in ex:
+                continue
+            req = ex[eid]
+            raw = getattr(req.status, "value", req.status)
+            st = str(raw or "").upper()
+            if st not in ("SUCCESS", "FAILED"):
+                continue
+            inp = dict(getattr(req, "input", None) or {})
+            node_id = str(inp.get("node_id") or "")
+            member_id = str(inp.get("member_id") or "")
+            caps: list[str] = []
+            try:
+                tree = _D.load_tree(root, str(getattr(req, "task_id", "") or ""))
+                for n in (tree or {}).get("nodes") or []:
+                    if str(n.get("id") or "") == node_id:
+                        caps = [str(x) for x in (n.get("required_capabilities") or [])]
+                        break
+            except Exception:  # noqa: BLE001 — 读不到能力 ⇒ 空（不编）
+                caps = []
+            dur = 0.0
+            try:
+                from datetime import datetime, timezone
+
+                dur = max(0.0, (datetime.now(timezone.utc) - req.created_at).total_seconds())
+            except Exception:  # noqa: BLE001
+                dur = 0.0
+            exp.save(ExperienceRecord(
+                domain=ExperienceDomain.AGENT,
+                subject_id=member_id or "unknown",
+                subject_type="agent",
+                task_type=(caps[0] if caps else "unknown"),
+                capability=caps,
+                result="success" if st == "SUCCESS" else "failure",
+                score=1.0 if st == "SUCCESS" else 0.0,
+                cost=None, duration=dur, confidence=1.0,
+                evidence=[Evidence(source_type=EvidenceSource.EVENT, source_id=eid,
+                                   description=f"plan={getattr(req, 'task_id', '')} node={node_id} "
+                                               f"产出={inp.get('repo_evidence') or '-'}")],
+            ))
+            written += 1
+        return written
+    except Exception as exc:  # noqa: BLE001 — 经验写不上不影响执行（但要说出来）
+        print(f"⚠ 经验写入失败（不影响执行）: {type(exc).__name__}: {str(exc)[:80]}", file=sys.stderr)
+        return 0

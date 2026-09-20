@@ -1732,6 +1732,84 @@ def test_plugin_drop_in() -> None:
     assert _check_plugin_drop_in() == []
 
 
+def _check_experience_learning() -> list[str]:
+    """★ 学习自治（核心第 5 条）: 经验从【真执行】自动积累, 失败也记, 且写读同源。
+
+    实测病: `intelligence experience list` 恒 0 条 —— 机制齐（六域 + freshness/decay + 负样本）
+      但**没有任何地方写** ⇒ 学习没有输入。
+    判据:
+      ① 终态执行 ⇒ 自动落经验（谁 / 任务类型 / 能力 / 成败 / 耗时 / 证据）
+      ② **失败也记**（负样本, 防"只记成功"的自我偏差）
+      ③ 幂等: 同一执行重复记 ⇒ 不灌水
+      ④ 写读同源: 写进的是 `intelligence experience list` 读的那个 store（<root>/intelligence, AGENT 域）
+      ⑤ 调用点: cmd_run_plan 里真的调了
+    """
+    import tempfile
+    from types import SimpleNamespace
+
+    from apps.cli.commands import _record_experiences as _rec
+    from ai_factory_os.services.execution.runtime.store import open_runtime_store
+    from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionStatus
+    from ai_factory_os.services.learning.store import ExperienceStore
+    from ai_factory_os.services.learning.types import ExperienceDomain
+
+    bad: list[str] = []
+    import inspect as _insp
+
+    import importlib as _il
+
+    if "_record_experiences(ctx.root, rep)" not in _insp.getsource(
+            _il.import_module("apps.cli.main") and _il.import_module("apps.cli.commands").cmd_run_plan):
+        bad.append("cmd_run_plan 里没调用 _record_experiences ⇒ 经验库永远是空的（护栏没接上）")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        proj, plan = "P-e", "PLAN-e"
+        d = root / "projects" / proj / "tasks"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{plan}.json").write_text(json.dumps({
+            "plan_id": plan, "project_id": proj, "status": "confirmed",
+            "nodes": [
+                {"id": "t-ok", "kind": "task", "title": "做成的事", "status": "completed",
+                 "required_capabilities": ["developer"]},
+                {"id": "t-bad", "kind": "task", "title": "没做成的事", "status": "pending",
+                 "required_capabilities": ["tester"]},
+            ],
+        }, ensure_ascii=False), encoding="utf-8")
+        st = open_runtime_store(root)
+        for eid, node, member, s in (("EXR-e1", "t-ok", "dev-1", ExecutionStatus.SUCCESS),
+                                     ("EXR-e2", "t-bad", "qa-1", ExecutionStatus.FAILED)):
+            st.save_execution(ExecutionRequest(id=eid, task_id=plan, status=s,
+                                              input={"node_id": node, "member_id": member,
+                                                     "resolution_id": "r", "identity_id": member}))
+        rep = SimpleNamespace(outcomes=[{"execution_id": "EXR-e1", "ok": True},
+                                        {"execution_id": "EXR-e2", "ok": False}])
+        n = _rec(root, rep)
+        if n != 2:
+            bad.append(f"两条终态执行该落两条经验, 实得 {n}")
+        recs = ExperienceStore(root / "intelligence").list_by_domain(ExperienceDomain.AGENT)
+        if len(recs) != 2:
+            bad.append(f"经验库该有 2 条（list_by_domain 读得到）: {len(recs)}")
+        by_subject = {r.subject_id: r for r in recs}
+        ok = by_subject.get("dev-1")
+        bad_r = by_subject.get("qa-1")
+        if not ok or ok.result != "success" or ok.task_type != "developer":
+            bad.append(f"成功经验不对: {ok}")
+        if not bad_r or bad_r.result != "failure" or bad_r.task_type != "tester":
+            bad.append(f"**失败也要记**（负样本）: {bad_r}")
+        if ok and not (ok.evidence or []):
+            bad.append("经验没带执行证据（追溯不了）")
+        elif ok and str(ok.evidence[0].source_id) != "EXR-e1":
+            bad.append(f"证据指向不对: {ok.evidence[0].source_id}")
+        if _rec(root, rep) != 0:
+            bad.append("同一执行重复记 ⇒ 灌水了（该幂等）")
+    return bad
+
+
+def test_experience_learning() -> None:
+    """学习自治: 经验自动落库（含失败）· 幂等 · 写读同源 · 调用点接上。"""
+    assert _check_experience_learning() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -1768,6 +1846,7 @@ def main() -> int:
     results.append(("监控不装样子（Agents/Validation 接真事件）", not _check_metrics_not_empty_shells(), "；".join(_check_metrics_not_empty_shells())))
     results.append(("理解产物落盘不过期（实时报告进档案）", not _check_analysis_persist_fresh(), "；".join(_check_analysis_persist_fresh())))
     results.append(("插件放下即用（丢清单即生效·坏清单响亮报错）", not _check_plugin_drop_in(), "；".join(_check_plugin_drop_in())))
+    results.append(("学习自治（经验从真执行来·失败也记·幂等）", not _check_experience_learning(), "；".join(_check_experience_learning())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

@@ -126,6 +126,7 @@ from .commands import (
 )
 from .context import DEFAULT_ROOT, FactoryContext
 from .domains import architecture as _dom_architecture
+from .domains import chain as _dom_chain
 from .domains import audit as _dom_audit
 from .domains import conversation as _dom_conversation
 from .domains import governance as _dom_governance
@@ -432,6 +433,9 @@ def build_parser() -> Any:
     # factory arch —— 架构域（按域拆至 domains/architecture.py）
     # ★ 2026-09-15 新增: 兑现 registry 里登记的 "architecture": ("arch",)
     _dom_architecture.register(sub, json_opt)
+
+    # ★ factory chain —— 全链编排（需求 → … → 拆解, Founder 问'闭环了么'）
+    _dom_chain.register(sub, json_opt)
 
     # factory create —— 平台域（按域拆至 domains/platform.py）
     # 底层 org.cli 已在新地基（services/organization/cli.py）⇒ 零老区依赖 ✓
@@ -1261,6 +1265,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_org(ctx, args)
         elif args.command == "exec":
             result = _dispatch_exec(ctx, args)
+        elif args.command == "chain":
+            result = _dispatch_chain(ctx, args)
         elif args.command == "demo":
             result = _dispatch_demo(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
@@ -3591,6 +3597,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_task(args.task_command, result)
     elif args.command == "conversation":
         _dom_conversation.render(result)
+    elif args.command == "chain":
+        _dom_chain.render(result)
     elif args.command == "event":
         _print_event_logs(result)
     elif args.command == "status":
@@ -3678,6 +3686,12 @@ def _print_output(args: Any, result: dict) -> None:
     elif args.command == "demo":
         _print_demo(args, result)
 
+
+
+def _dispatch_chain(ctx: FactoryContext, args: Any) -> dict:
+    """factory chain —— 全链编排（实现复用 domains/chain.py, 不重写逻辑）。"""
+    from .domains import chain as _chain
+    return _chain.run(ctx, args)
 
 def _dispatch_demo(ctx: FactoryContext, args: Any) -> dict:
     """factory demo 命令分发 (Phase 13A: Demo Productization)。"""

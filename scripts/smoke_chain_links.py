@@ -866,6 +866,66 @@ def test_llm_key_resolution() -> None:
     assert _check_llm_key_resolution() == []
 
 
+def _check_locate_reads_conversation() -> list[str]:
+    """★ 定位要【读会话】（卡点2）: 不给文本也能定位, 且归属自动取自会话绑定。
+
+    实测病: `locate` 的 `text` 原为**必填**位置参数 ⇒ 逼人把需求再粘一遍（看着像"它没读会话"）;
+            且公开视图 `get_conversation()` 不含 project_id ⇒ 不给 --project 时**归属恒为空**。
+    """
+    import tempfile
+    from types import SimpleNamespace
+
+    from ai_factory_os.services.conversation import understanding as U
+    from apps.cli.domains.conversation import _locate
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        d = root / "projects" / "P-loc" / "conversations"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "conv-t1.json").write_text(json.dumps({
+            "id": "conv-t1", "title": "t", "status": "OPEN", "created_by": "human",
+            "project_id": "P-loc", "messages": [
+                {"id": "m1", "role": "human", "content": "我要做一个社区图书借还小程序", "created_at": ""}],
+            "understanding": {"version": 0, "facts": {}}, "created_at": "", "updated_at": "",
+        }, ensure_ascii=False), encoding="utf-8")
+
+        # ① 只给会话 id（不给文本）⇒ 必须能定位, 且归属=会话绑定的项目
+        #    注: 定位结果是**中文字段**（归属/类型/承接 —— 给人看的）, 不是 intent/project_id
+        try:
+            r = _locate(root, SimpleNamespace(conversation_id="conv-t1", text="", project=None,
+                                              proposer="", intent=""))
+        except Exception as exc:  # noqa: BLE001 — 失败也要干净可读（别崩栈）
+            return [f"不给文本时应从会话取需求, 实际抛错: {type(exc).__name__}: {str(exc)[:80]}"]
+        loc = r.get("location") or {}
+        if not loc.get("类型"):
+            bad.append(f"不给文本时没定位成功: {loc}")
+        got_pid = str((loc.get("归属") or {}).get("project") or "")
+        if got_pid != "P-loc":
+            bad.append(f"归属没从会话带出来（公开视图缺 project_id 那个坑）: {got_pid!r}")
+        # ② 落盘（后续步骤要读它 —— 定位白做就是这里没写）: 落在会话的 location 字段
+        _raw = U._load_conv(root, "conv-t1") or {}  # noqa: SLF001
+        if not (_raw.get("location") or {}):
+            bad.append("定位结果没落盘（R26: 状态必须落盘）")
+        # ③ 会话里没有人类消息 ⇒ 响亮报错（不静默给个空定位）
+        (d / "conv-t2.json").write_text(json.dumps({
+            "id": "conv-t2", "project_id": "P-loc", "messages": [],
+            "understanding": {"version": 0, "facts": {}}, "status": "OPEN", "created_by": "human",
+        }, ensure_ascii=False), encoding="utf-8")
+        try:
+            _locate(root, SimpleNamespace(conversation_id="conv-t2", text="", project=None,
+                                          proposer="", intent=""))
+            bad.append("空会话（无人类消息）应响亮报错, 实际静默通过")
+        except Exception:
+            pass
+    return bad
+
+
+def test_locate_reads_conversation() -> None:
+    """定位: 读会话取文本与归属 · 落盘 · 空会话响亮报错。"""
+    assert _check_locate_reads_conversation() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -891,6 +951,7 @@ def main() -> int:
     results.append(("实体清单来源（设计优先/DDL 兜底/空则不编）", not _check_entity_catalog(), "；".join(_check_entity_catalog())))
     results.append(("执行体裁定（停手可表达·待裁决≠完成）", not _check_executor_verdict(), "；".join(_check_executor_verdict())))
     results.append(("LLM key 归属（factory 自己的 .env·写读同源）", not _check_llm_key_resolution(), "；".join(_check_llm_key_resolution())))
+    results.append(("需求定位读会话（不给文本/归属自动带出）", not _check_locate_reads_conversation(), "；".join(_check_locate_reads_conversation())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

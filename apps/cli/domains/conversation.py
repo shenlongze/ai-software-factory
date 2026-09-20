@@ -74,7 +74,8 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
         "locate", help="★ 需求定位（流程第一步）: 归属/类型/承接 + 判据 + 还缺什么")
     json_opt(p_loc)
     p_loc.add_argument("conversation_id", help="会话 id（conv-*）")
-    p_loc.add_argument("text", help="需求原文")
+    p_loc.add_argument("text", nargs="?", default="",
+                       help="需求原文（不给 = 用会话里最后一条人类消息）")
     p_loc.add_argument("--type", dest="intent", default="",
                        choices=["", "新项目", "改现有", "问答", "一次性"],
                        help="显式指定类型（不给=按规则判定）")
@@ -125,9 +126,23 @@ def _locate(root: Path, args: Any) -> dict[str, Any]:
     conv = U.get_conversation(root, cid)
     if not conv:
         raise ValueError(f"会话不存在: {cid}（factory conversation list 看有哪些）")
+    text = str(getattr(args, "text", "") or "").strip()
+    if not text:
+        # ★ 2026-09-21 修（实测卡点）: 原来 `text` 是**必填**位置参数 ⇒ 逼人把需求再粘一遍,
+        #   看着像"它没读会话"。定位本来就读会话 ⇒ 不给文本时用【会话里最后一条人类消息】。
+        text, _mid = _last_human_message(root, cid)
+        if not text:
+            raise ValueError(
+                f"会话里没有人类消息可定位: {cid}（先 `conversation say`, 或显式传需求文本）")
     r = locate(
-        str(getattr(args, "text", "") or ""),
-        project_id=str(getattr(args, "project", None) or conv.get("project_id") or ""),
+        text,
+        project_id=str(getattr(args, "project", None)
+                       # ★ 2026-09-21: 公开视图 `get_conversation()` **不含 project_id**
+                       #   （只有 messages_count/fact_count…）⇒ 用它取"归属"恒为空 ⇒
+                       #   不显式传 --project 时定位结果"归属=（未指定）"（实测）。
+                       #   这里从【原始会话】取绑定（同 conversation.py 别处对 _load_conv 的用法）。
+                       or (U._load_conv(root, cid) or {}).get("project_id")  # noqa: SLF001
+                       or conv.get("project_id") or ""),
         proposer=str(getattr(args, "proposer", "") or conv.get("created_by") or ""),
         intent=str(getattr(args, "intent", "") or ""),
     )

@@ -1810,6 +1810,66 @@ def test_experience_learning() -> None:
     assert _check_experience_learning() == []
 
 
+def _check_provider_experience_learning() -> list[str]:
+    """★ provider 域经验（核心第 5 条的另一半）: 用量记录 ⇒ 经验 ⇒ 推荐引擎能读到。
+
+    实测病: agent 域经验只喂"按任务选人"; 而 `intelligence recommend` 的候选是 **provider**
+      ⇒ 它读 PROVIDER 域、subject_id=provider_id 的经验 —— 那条域**从来没有数据**;
+      且 CLI 建引擎时**没装 ExperienceStore** ⇒ Experience×0.15 那一项恒 0（写读断层）。
+    判据:
+      ① 用量记录 ⇒ provider 域经验（成功/失败都落, 失败=负样本）
+      ② 幂等: 同一条用量不重复落
+      ③ 证据指向 usage id（可追溯）
+      ④ 调用点: run 里落了经验; recommend 建引擎时装了 ExperienceStore
+    """
+    import tempfile
+
+    from apps.cli.commands import _record_provider_experiences as _w
+    from ai_factory_os.infrastructure.llm.providers.usage import ProviderUsage, UsageStore
+    from ai_factory_os.services.learning.store import ExperienceStore
+    from ai_factory_os.services.learning.types import ExperienceDomain
+
+    bad: list[str] = []
+    import importlib as _il
+    import inspect as _insp
+
+    _C = _il.import_module("apps.cli.commands")
+    if "_record_provider_experiences(ctx.root)" not in _insp.getsource(_C.cmd_run_plan):
+        bad.append("cmd_run_plan 里没落 provider 经验（护栏没接上）")
+    if "experience_store=" not in _insp.getsource(_C.cmd_intelligence_recommend):
+        bad.append("recommend 建引擎时没装 ExperienceStore ⇒ 经验权重恒 0（写读断层没修）")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        us = UsageStore(root / "providers")
+        us.record(ProviderUsage(id="u-ok", provider_id="hermes", model="m", prompt_tokens=1,
+                                completion_tokens=1, estimated_cost=0.0, latency_ms=1000,
+                                success=True))
+        us.record(ProviderUsage(id="u-bad", provider_id="hermes", model="m", prompt_tokens=0,
+                                completion_tokens=0, estimated_cost=0.0, latency_ms=300000,
+                                success=False, error="timeout"))
+        n = _w(root)
+        if n != 2:
+            bad.append(f"两条用量该落两条 provider 经验, 实得 {n}")
+        recs = ExperienceStore(root / "intelligence").list_by_domain(ExperienceDomain.PROVIDER)
+        if len(recs) != 2:
+            bad.append(f"provider 域该有 2 条: {len(recs)}")
+        if sorted(r.result for r in recs) != ["failure", "success"]:
+            bad.append(f"成败没照实落: {[r.result for r in recs]}")
+        failed = next((r for r in recs if r.result == "failure"), None)
+        if failed is None or abs(float(failed.duration) - 300.0) > 0.01:
+            bad.append(f"耗时该照实（300 秒超时）: {getattr(failed, 'duration', None)}")
+        if not all((r.evidence or []) and r.evidence[0].source_id for r in recs):
+            bad.append("经验没带用量证据（追溯不了）")
+        if _w(root) != 0:
+            bad.append("同一条用量重复落 ⇒ 灌水了（该幂等）")
+    return bad
+
+
+def test_provider_experience_learning() -> None:
+    """provider 域经验: 用量⇒经验（含失败）· 幂等 · 证据可追溯 · 调用点接上。"""
+    assert _check_provider_experience_learning() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -1847,6 +1907,7 @@ def main() -> int:
     results.append(("理解产物落盘不过期（实时报告进档案）", not _check_analysis_persist_fresh(), "；".join(_check_analysis_persist_fresh())))
     results.append(("插件放下即用（丢清单即生效·坏清单响亮报错）", not _check_plugin_drop_in(), "；".join(_check_plugin_drop_in())))
     results.append(("学习自治（经验从真执行来·失败也记·幂等）", not _check_experience_learning(), "；".join(_check_experience_learning())))
+    results.append(("provider 域经验（用量⇒经验⇒推荐引擎读得到）", not _check_provider_experience_learning(), "；".join(_check_provider_experience_learning())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

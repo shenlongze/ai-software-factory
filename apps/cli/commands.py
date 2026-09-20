@@ -1401,7 +1401,7 @@ def cmd_run_plan(ctx: FactoryContext, args: Any) -> dict:
         # ★ 第 5 件·监控不能骗人: 派活/验证落成事件（metrics 的 Agents / Validation 两段读它们）
         _emit_execution_events(logger, ctx.root, rep)
         # ★ 核心第 5 条·学习自治: 把本批经验落进经验库（失败也记 · 幂等 · 只追加）
-        _n_exp = _record_experiences(ctx.root, rep)
+        _n_exp = _record_experiences(ctx.root, rep) + _record_provider_experiences(ctx.root)
         if _n_exp:
             logger.record(EventType.EXPERIENCE_RECORDED if hasattr(EventType, "EXPERIENCE_RECORDED")
                           else EventType.SYSTEM_INIT, source=SOURCE, action="record experiences",
@@ -3433,7 +3433,9 @@ def cmd_intelligence_recommend(ctx: FactoryContext, args: Any) -> dict:
 
     from ai_factory_os.services.learning.decision import DecisionIntelligenceError
 
-    from ai_factory_os.services.learning.store import DecisionStore, RecommendationStore
+    from ai_factory_os.services.learning.store import (
+        DecisionStore, ExperienceStore, RecommendationStore,
+    )
 
     with ctx.logger_scope() as logger:
         approval_service = None
@@ -3449,6 +3451,8 @@ def cmd_intelligence_recommend(ctx: FactoryContext, args: Any) -> dict:
             RecommendationStore(ctx.root / "intelligence"),
             logger=logger,
             weights=_parse_weights(getattr(args, "weights", None)),
+            # ★ 接上 ExperienceStore —— 否则 Experience×0.15 那一项恒 0（我上一条实测发现的写读断层）
+            experience_store=ExperienceStore(ctx.root / "intelligence"),
             approval_service=approval_service,
         )
         try:
@@ -4678,4 +4682,58 @@ def _record_experiences(root: Path, rep: Any) -> int:
         return written
     except Exception as exc:  # noqa: BLE001 — 经验写不上不影响执行（但要说出来）
         print(f"⚠ 经验写入失败（不影响执行）: {type(exc).__name__}: {str(exc)[:80]}", file=sys.stderr)
+        return 0
+
+
+def _record_provider_experiences(root: Path) -> int:
+    """★ 补齐 provider 域经验（核心第 5 条的另一半）: 用量记录 ⇒ 经验记录。
+
+    为什么: agent 域经验只喂"按任务选人"; `intelligence recommend`（推荐引擎, Experience×0.15）
+      的候选是 **provider** ⇒ 它读的是 PROVIDER 域、subject_id = provider_id 的经验
+      —— 原来那条域**从没有数据**（我上一刀声明过这个边界）。
+    做: 扫 `providers/usage.json` 里还没有经验的用量记录 ⇒ 落一条（成功/失败都落, 失败=负样本）;
+      幂等按 usage id（同一条用量不重复落）; 成本/耗时照实落（estimated_cost / latency_ms/1000）,
+      **不编归一化分数**（cost 分留空, 数字进证据）。
+    返回: 新写入条数。
+    """
+    from ai_factory_os.infrastructure.llm.providers.usage import UsageStore
+    from ai_factory_os.services.learning.store import ExperienceStore
+    from ai_factory_os.services.learning.types import (
+        Evidence, EvidenceSource, ExperienceDomain, ExperienceRecord,
+    )
+
+    try:
+        exp = ExperienceStore(root / "intelligence")
+        seen = {str(ev.source_id)
+                for rec in exp.list_by_domain(ExperienceDomain.PROVIDER)
+                for ev in (rec.evidence or [])}
+        written = 0
+        for u in UsageStore(root / "providers").list():
+            uid = str(getattr(u, "id", "") or "")
+            if not uid or uid in seen:
+                continue
+            pid = str(getattr(u, "provider_id", "") or "unknown")
+            ok = bool(getattr(u, "success", False))
+            try:
+                lat = float(getattr(u, "latency_ms", 0) or 0) / 1000.0
+            except (TypeError, ValueError):
+                lat = 0.0
+            exp.save(ExperienceRecord(
+                domain=ExperienceDomain.PROVIDER,
+                subject_id=pid, subject_type="provider",
+                task_type=str(getattr(u, "model", "") or "unknown"),
+                capability=[],
+                result="success" if ok else "failure",
+                score=1.0 if ok else 0.0,
+                cost=None, duration=lat, confidence=1.0,
+                evidence=[Evidence(source_type=EvidenceSource.EVENT, source_id=uid,
+                                   description=f"usage: model={getattr(u, 'model', '')} "
+                                               f"cost={getattr(u, 'estimated_cost', 0)} "
+                                               f"err={str(getattr(u, 'error', '') or '')[:40]}")],
+            ))
+            written += 1
+        return written
+    except Exception as exc:  # noqa: BLE001 — 经验写不上不影响执行（说出来）
+        print(f"⚠ provider 经验写入失败（不影响执行）: {type(exc).__name__}: {str(exc)[:80]}",
+              file=sys.stderr)
         return 0

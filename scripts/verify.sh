@@ -68,6 +68,7 @@ run "事实层 端到端"      "$PY" scripts/smoke_conversation_understanding.py
 run "会话链 端到端"      "$PY" scripts/smoke_conversation_chain.py
 # 用户视图（两个投影）—— ★ 视图层此前零守卫: 拍平/丢边 verify 不会红（"堆砌"能溜过去的原因）
 run "用户视图 端到端"    "$PY" scripts/smoke_user_view.py
+run "执行面 调度依赖"    "$PY" scripts/smoke_exec_dispatch.py
 
 echo
 echo "═══ ③ 守卫扫仓库（= 当前债务清单，非工具故障）═══"

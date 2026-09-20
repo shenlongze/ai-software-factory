@@ -299,6 +299,7 @@ def drive(
     run_execution: Callable[[str], Any],
     max_parallel: int = 3,
     max_ticks: int = 50,
+    limit: int = 0,
     on_batch_done: Callable[[PumpReport], None] | None = None,
 ) -> PumpReport:
     """反复 tick 并**并行**跑掉被调度的执行, 直到没有就绪叶（或触顶）。
@@ -306,6 +307,9 @@ def drive(
     `run_execution`: 执行一个 execution_id（真实实现 = ExecutionRunner.run）。
     `max_parallel`: 批内并发上限（第一级）。
     `max_ticks`: 最多推进几轮（第二级 · 防死循环）。
+    `limit`: ★ 本次【最多跑几个执行】(0=不限) —— 第三级, 给"小步试跑"用:
+      一棵 199 叶的树不加限量会一路跑到没就绪叶为止（真实 agent + LLM 成本）,
+      想先验一个/一批就得能掐住。
     `on_batch_done`: 每批完成回调（事件回流用）。
 
     返回 PumpReport（ticks/scheduled/outcomes/deferred/stopped_because）——
@@ -315,6 +319,10 @@ def drive(
     root = Path(getattr(ports.work, "_root", "."))
 
     for _ in range(max_ticks):
+        # ★ 限量: 已经跑够就停（停在【执行之间】, 不打断正在跑的那批）
+        if limit and len(rep.scheduled) >= limit:
+            rep.stopped_because = f"达到本次上限（limit={limit} 个执行）"
+            break
         # ★ 吸收项 7（Steering）: 每轮 tick 前检查改向指令 —— 这是"运行中改向"的注入点。
         #   只影响**未派发的**（已完成的叶不动 —— 改向不该回滚已完成的工作）。
         try:

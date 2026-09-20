@@ -163,12 +163,21 @@ class TaskTreeWork:
             if not par or par == cur:
                 break
             cur = par
+        chain_set = set(chain)
 
         deps: list[str] = []
         for cid in chain:
             for d in ((by_id.get(cid) or {}).get("depends_on") or []):
-                for t in leaves_under(str(d).strip()):
-                    if t and t != leaf_id and t not in deps:
+                d = str(d).strip()
+                # ★★ 2026-09-20 修（实跑执行暴露的硬伤）:
+                #   叶的 depends_on 里【指向自己或自己祖先】的那条是**归属**, 不是可调度先决。
+                #   不跳过它 ⇒ leaves_under(自己的域) 摊成"全部兄弟" ⇒ 每个叶依赖自己所有兄弟
+                #   ⇒ 同域内两两互相依赖 = 环 ⇒ 199/199 全 BLOCKED, 执行永远起不来。
+                #   （实测: 真树摊平后 185 条边 → 9158 条, 13 个环, 全树卡死。）
+                if d in chain_set:
+                    continue
+                for t in leaves_under(d):
+                    if t and t != leaf_id and t not in chain_set and t not in deps:
                         deps.append(t)
         return sorted(deps)
 

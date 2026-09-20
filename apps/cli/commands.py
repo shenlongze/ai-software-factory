@@ -1345,7 +1345,8 @@ def cmd_run_plan(ctx: FactoryContext, args: Any) -> dict:
                     pass
                 return {"status": "FAILED", "error": err}
 
-        rep = drive(ports, run_execution=_run_one, max_parallel=max_parallel)
+        rep = drive(ports, run_execution=_run_one, max_parallel=max_parallel,
+                    limit=int(getattr(args, "limit", 0) or 0))
 
     return {
         "ok": True, "plan_id": plan_id, "ticks": rep.ticks,

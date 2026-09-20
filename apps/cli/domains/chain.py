@@ -198,9 +198,10 @@ def run_chain(
             if designs:
                 try:
                     conv_loc = (U.get_conversation(root, cid) or {}).get("location") or {}
+                    from apps.cli.main import _decompose_refs   # ★ 与 `tasktree decompose` 共用同一份引用语义
+                    _refs = _decompose_refs(designs[-1])
                     tree = D.decompose_from_design(
-                        root, project_id=pid, design_metadata=dict(designs[-1].metadata or {}),
-                        prd_ref=str(getattr(designs[-1], "id", "")),
+                        root, project_id=pid, prd_ref=_refs[0], design_metadata=_refs[1],
                         intent=str(conv_loc.get("intent") or ""),
                         suggested_role=str(conv_loc.get("suggested_role") or ""),
                     )

@@ -199,6 +199,76 @@ def test_execution_state_semantics(tmp_path: Path) -> None:
     assert _check_state_semantics(tmp_path) == []
 
 
+def _check_small_fixes(root: Path) -> list[str]:
+    """★ 小卡点四件里的三件可守部分（卡点 4/6/8）。
+
+    (4) `create project` 静默成功 + `--json` 崩（返回值里塞 module/Namespace）
+    (6) `--limit 1` 却"创建执行 2 个"（限量只在 tick 前判, 建批时没掐）
+    (8) `prd_ref` 字段里存的是 design 制品 id（语义错位）
+    """
+    import json as _json
+    from types import SimpleNamespace
+
+    from ai_factory_os.bootstrap.scheduler_pump import _cap_batch
+
+    bad: list[str] = []
+
+    # (6) 限量: 剩余额度 1、批里 2 个 ⇒ 只能跑 1 个, 且要说明
+    got, note = _cap_batch(["E1", "E2"], limit=1, done=0)
+    if got != ["E1"] or not note:
+        bad.append(f"限量没在建批时掐住: {got} / note={note!r}")
+    got2, note2 = _cap_batch(["E1"], limit=3, done=0)
+    if got2 != ["E1"] or note2:
+        bad.append(f"额度够时不该截: {got2} / {note2!r}")
+    got3, _ = _cap_batch(["E1", "E2"], limit=0, done=0)
+    if got3 != ["E1", "E2"]:
+        bad.append("limit=0（不限）不该截")
+
+    # (8) 引用语义: prd_ref = 需求侧制品; design_ref = 本篇设计; 血缘另存
+    from apps.cli.main import _decompose_refs
+
+    design = SimpleNamespace(id="A-DESIGN", metadata={"artifact_refs": ["A-PRODUCT", "A-UX"]})
+    prd, meta = _decompose_refs(design)
+    if prd != "A-PRODUCT":
+        bad.append(f"prd_ref 应指向需求侧制品, 实得 {prd!r}")
+    if meta.get("artifact_refs") != ["A-DESIGN"]:
+        bad.append(f"design_ref 应是本篇设计, 实得 {meta.get('artifact_refs')!r}")
+    if meta.get("lineage") != ["A-PRODUCT", "A-UX"]:
+        bad.append(f"血缘没另存: {meta.get('lineage')!r}")
+    # 没有血缘时退化到 design 自己（不许空）
+    prd2, meta2 = _decompose_refs(SimpleNamespace(id="A-D2", metadata={}))
+    if prd2 != "A-D2" or meta2.get("artifact_refs") != ["A-D2"]:
+        bad.append(f"无血缘时退化不对: {prd2!r} / {meta2.get('artifact_refs')!r}")
+
+    # (4) create 的返回值必须 JSON 安全（原来塞了 module ⇒ --json 崩）+ 打印不能静默
+    import contextlib
+    import io
+
+    from apps.cli.main import _print_create
+
+    dispatch = {"action": "create", "create_type": "project",
+                "args": SimpleNamespace(json=False, command="create"),
+                "result": {"ok": True, "exit_code": 0,
+                           "project": {"id": "P-x", "name": "小项目", "repo_path": "/tmp/x"}},
+                "exit_code": 0}
+    try:
+        _json.dumps(dispatch, default=str)
+    except TypeError as exc:
+        bad.append(f"create 返回值不能 JSON 序列化: {exc}")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _print_create(dict(dispatch))
+    out = buf.getvalue()
+    if "✔" not in out or "P-x" not in out:
+        bad.append(f"create project 成功时没输出（静默成功, 用户会以为失败）: {out[:60]!r}")
+    return bad
+
+
+def test_small_fixes(tmp_path: Path) -> None:
+    """小卡点: 限量掐住 · 引用语义 · create 不静默且 --json 安全。"""
+    assert _check_small_fixes(tmp_path) == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -211,9 +281,11 @@ def main() -> int:
         bad1 = _check(root)
         bad2 = _check_views_see_tree(root)
         bad3 = _check_state_semantics(root)
+        bad4 = _check_small_fixes(root)
     results.append(("会话事实 → 想法文本", not bad1, "；".join(bad1)))
     results.append(("监控看得见执行（树 → status/metrics/看板）", not bad2, "；".join(bad2)))
     results.append(("执行状态语义（可重试 / 完成留证据）", not bad3, "；".join(bad3)))
+    results.append(("小卡点（限量 / 引用语义 / create 不静默）", not bad4, "；".join(bad4)))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

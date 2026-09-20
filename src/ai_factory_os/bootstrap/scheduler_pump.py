@@ -59,6 +59,22 @@ def _looks_completed(out: Any) -> bool:
     return _run_status(out) in ("COMPLETED", "SUCCESS", "SUCCEEDED", "OK")
 
 
+def _cap_batch(batch: list[str], *, limit: int, done: int) -> tuple[list[str], str]:
+    """★ 限量：把"本轮要跑的批"掐到剩余额度内（纯函数, 便于守）。
+
+    实测踩到（卡点 6）: 原来只在 tick **前**判 `len(scheduled) >= limit`,
+    而一次 tick 可能连开好几个 ⇒ `--limit 1` 却"创建执行 2 个"。
+    被截掉的执行已进 store（PENDING）⇒ 下次驱动用 `_pending_leftovers` 捡起来（不丢）。
+    返回 (批, 说明; 说明为空表示没截)。
+    """
+    if not limit:
+        return batch, ""
+    budget = max(limit - done, 0)
+    if budget >= len(batch):
+        return batch, ""
+    return batch[:budget], (f"★ 限量: 本轮只跑 {budget} 个（其余 {len(batch) - budget} 个留待下次驱动）")
+
+
 def _on_failure(tries: int) -> tuple[str, str]:
     """★ 失败后的状态决策（纯函数, 便于守）—— 返回 (新状态, 说明)。
 
@@ -457,7 +473,13 @@ def drive(
 
         # ★ ① 整批作为"一个驱动单元"; ② 批内并发受 max_parallel 约束
         #   ★ 并入遗留 PENDING: 同一批一起跑（中断后续跑的入口）
+        # ★★ 2026-09-20 修: 限量必须在【建批时就掐住】—— 原来只在 tick 前判,
+        #   而一次 tick 可能连开好几个（实测: `--limit 1` 却"创建执行 2 个"）。
+        #   被截掉的执行已进 store（PENDING）⇒ 下一次驱动会用 `_pending_leftovers` 捡起来（不丢）。
         batch = list(result.scheduled) + _pending_leftovers(root, ports)
+        batch, _cap_note = _cap_batch(batch, limit=limit, done=len(rep.scheduled))
+        if _cap_note:
+            rep.outcomes.append({"execution_id": "", "ok": True, "state": _cap_note})
         rep.scheduled.extend(batch)
         # ★ cr-5: 批内文件冲突检测 —— 同层写同一文件的执行**不能并行**（否则静默互相覆盖）。
         #   decomposition.file_conflicts() 自述要求"执行器降级为串行", 此前零调用者。

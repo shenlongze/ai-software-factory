@@ -382,6 +382,8 @@ def decompose_from_design(
         "created_by": created_by,
         "prd_ref": prd_ref,
         "design_ref": str(design_metadata.get("artifact_refs") or ""),
+        # ★ 血缘（product → ux_ui）另存 —— 原 design_ref 存的其实是它们（语义错位, 见卡点 8）
+        "artifact_lineage": list(design_metadata.get("lineage") or []),
         "limits": dict(DECOMPOSE_LIMITS),
         # ★ 定位（①）的产物 —— 可追溯"这棵树为什么这么拆"
         "location": {"intent": intent, "suggested_role": suggested_role},

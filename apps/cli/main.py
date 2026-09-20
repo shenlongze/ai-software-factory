@@ -2079,19 +2079,39 @@ def _dispatch_create(ctx: FactoryContext, args: Any) -> dict:
         raise CliError(f"错误: create {ctype} 失败 — {exc}", exit_code=1) from exc
     # ★ 退出码必须随 result 传回（main 末尾用 result["exit_code"] 决定进程退出码）——
     #   否则业务失败（如 company already exists）会以 rc=0 静默成功, 与老 CLI 不一致。
-    return {"action": "create", "proxy": org_cli, "args": args, "result": result,
+    # ★★ 2026-09-20 修: 原来这里塞了 `"proxy": org_cli`（module 对象）⇒ 顶层 `--json` 序列化
+    #   整个返回字典时炸（`TypeError: Object of type module is not JSON serializable`, 实测踩到）。
+    #   ⇒ 返回值必须 **JSON 安全**; 打印方自己 import 那个 module（见 _print_create）。
+    return {"action": "create", "create_type": ctype, "args": args, "result": result,
             "exit_code": int(result.get("exit_code", 0) or 0)}
 
 
 def _print_create(r: dict) -> None:
-    """照老 CLI `_emit_proxy_result`: --json → JSON; 否则交给底层 proxy 的 _print_result。"""
-    proxy, args, result = r["proxy"], r["args"], r["result"]
+    """照老 CLI `_emit_proxy_result`: --json → JSON; 否则交给底层 proxy 的 _print_result。
+
+    ★ 2026-09-20 修两处（实测踩到）:
+      · 下层 `_print_result` 按 `args.command` 分支, 而这里 command="create" ⇒ **project 一个分支都没有**
+        ⇒ 建成后【一个字都不打】= 静默成功, 用户以为失败（我自己就误判成"空转"）⇒ 这里补兜底输出。
+      · 返回值不再带 module（见 _dispatch_create）⇒ `--json` 不再崩。
+    """
+    from ai_factory_os.services.organization import cli as org_cli
+
+    args, result = r["args"], r["result"]
     if getattr(args, "json", False) and result.get("ok"):
         import json as _json
         print(_json.dumps(result, ensure_ascii=False, indent=2))
         return
-    if int(result.get("exit_code", 0)) != 2:
-        proxy._print_result(args, result)
+    if int(result.get("exit_code", 0)) == 2:
+        return
+    org_cli._print_result(args, result)
+    # ★ 兜底: 下层没有这个 type 的打印分支时, 保证"建成了"看得见（禁静默）
+    if result.get("ok") and str(r.get("create_type") or "") == "project":
+        p = dict(result.get("project") or {})
+        print(f"✔ 项目已创建: {p.get('name') or p.get('id')}  ({p.get('id')})")
+        print(f"  仓库      {p.get('repo_path') or '-'}")
+        print(f"  语言/框架 {p.get('language') or '-'} / {p.get('framework') or '-'}")
+        print(f"  下一步: factory conversation new --project {p.get('id')}  "
+              f"（或 `factory project adopt <仓库>` 把已有仓库挂上来）")
 
 
 def _dispatch_history(ctx: FactoryContext, args: Any) -> dict:
@@ -2966,6 +2986,27 @@ def _tasktree_expand(ctx: FactoryContext, args: Any) -> dict:
             "results": results, "tree": tree,
             "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(tree)), "done": 0, "percent": "0"}}
 
+def _decompose_refs(design: Any) -> tuple[str, dict[str, Any]]:
+    """★ 拆解要传给 decompose 的两个引用（语义修正, 见 docs/实跑-全链路-20260920.md 卡点 8）。
+
+    实测踩到: 原来 `prd_ref=design.id`（设计制品 id）, 而 `design_ref` 取 design.metadata.artifact_refs
+    （= product / ux_ui 的 id）—— **两个名字都不对**, 追溯时说不清"这棵树按哪份需求/设计拆的"。
+
+    正确语义（字段名就是判据）:
+      · `prd_ref`     = **需求侧制品**（product 制品; 它的 7 节含 mvp_scope / user_stories = PRD 内容）
+      · `design_ref`  = **[design.id]**（本篇设计制品）
+      · `lineage`     = 血缘 [product, ux_ui]（原 artifact_refs, 另存 `artifact_lineage` 不丢）
+    返回 (prd_ref, design_metadata)。
+    """
+    meta = dict(getattr(design, "metadata", {}) or {})
+    lineage = [str(x) for x in (meta.get("artifact_refs") or []) if str(x)]
+    design_id = str(getattr(design, "id", "") or "")
+    out = dict(meta)
+    out["artifact_refs"] = [design_id] if design_id else []
+    out["lineage"] = lineage
+    return (lineage[0] if lineage else design_id), out
+
+
 def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
     """factory tasktree list|show|decompose|confirm —— 产品环 ⑤「任务拆解」。
 
@@ -3046,11 +3087,12 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
             _loc_intent = str(_loc.get("intent") or "")
             _loc_role = str(_loc.get("suggested_role") or "")
         try:
+            _prd_ref, _design_meta = _decompose_refs(design)   # ★ 引用语义修正（卡点 8）
             tree = D.decompose_from_design(
                 ctx.root, project_id=project_id,
-                design_metadata=dict(design.metadata or {}),
+                design_metadata=_design_meta,
                 plan_id=str(getattr(args, "plan", None) or ""),
-                prd_ref=str(getattr(design, "id", "")),
+                prd_ref=_prd_ref,
                 # ★ 承接传进拆解（设计: 承接决定拆解粒度）——
                 #   从会话读①定位结果（intent/suggested_role）, 传给 decompose。
                 #   · intent=问答 ⇒ decompose 拒绝生成树（问答不该进流水线）
@@ -4104,7 +4146,11 @@ def _dispatch_exec(ctx: FactoryContext, args: Any) -> dict:
 
 def _print_output(args: Any, result: dict) -> None:
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        # ★ 2026-09-20 修: 各命令的返回值里可能夹着非 JSON 对象（`args`=Namespace / 早先还有 module /
+        #   偶尔是 dataclass）⇒ 原来在这里直接 dumps 会**崩**（实测: `factory --json create project`
+        #   连崩两次: module → Namespace）。JSON 出口必须**兜底可序列化**（default=str）,
+        #   否则命令本身成功了、用户却只看到 traceback。
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return
     if args.command == "init":
         _print_init(result)

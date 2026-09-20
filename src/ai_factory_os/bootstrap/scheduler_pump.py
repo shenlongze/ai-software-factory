@@ -106,6 +106,43 @@ def _looks_failed(out: Any) -> bool:
     return _run_status(out) in ("FAILED", "ERROR", "ERRORED", "CANCELLED")
 
 
+#: ★ 陈旧执行窗口（秒）: 一直 PENDING/RUNNING 超过它 ⇒ 视为"没有活跃进程"。
+#:   依据: 执行体超时是 900s（hermes 适配器 DEFAULT_TIMEOUT）⇒ 窗口取其两倍有余。
+STALE_EXEC_SEC = 1800
+
+
+def live_node_ids(root: Path, *, stale_after_sec: float = STALE_EXEC_SEC) -> set[str]:
+    """【一处判据】哪些叶上**真正在跑**（有 PENDING/RUNNING 且未陈旧的执行）。
+
+    为什么加"陈旧窗口"（2026-09-21 实测"掐掉再恢复"暴露）:
+      原来只看状态 ⇒ 进程被 kill 后留下的 PENDING 执行**永远算活跃** ⇒ 叶卡在 claimed,
+      `sweep_stale_claims` 与 `recover --plan` 都不会碰它 —— 它自述要治的"整棵树从此不动"
+      其实**没治好**。⇒ 超过窗口还是 PENDING/RUNNING 的, 判为没有活跃进程。
+
+    读不到执行存储 ⇒ **抛**（调用方据此"不扫", 绝不能瞎动数据）。
+    """
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    live: set[str] = set()
+    for req in open_runtime_store(root).list_executions():
+        st = str(getattr(getattr(req, "status", ""), "value", getattr(req, "status", "")) or "").upper()
+        if st not in ("PENDING", "RUNNING"):
+            continue
+        node = str((getattr(req, "input", None) or {}).get("node_id") or "")
+        if not node:
+            continue
+        ts = getattr(req, "created_at", None)
+        try:
+            age = (now - ts).total_seconds() if ts is not None else 0.0
+        except TypeError:  # naive datetime（老数据）⇒ 不因它判陈旧
+            age = 0.0
+        if age > float(stale_after_sec):
+            continue                                    # 陈旧 ⇒ 不算活跃
+        live.add(node)
+    return live
+
+
 def sweep_stale_claims(root: Path, ports: Ports) -> list[dict[str, str]]:
     """★ 把【陈旧认领】交回 pending —— `claimed` 但**没有任何活跃执行**指着它的叶。
 
@@ -121,13 +158,8 @@ def sweep_stale_claims(root: Path, ports: Ports) -> list[dict[str, str]]:
 
     plan_id = str(getattr(ports.work, "_plan_id", "") or "")
     project_id = str(getattr(ports.work, "_project_id", "") or "")
-    active: set[str] = set()
     try:
-        for req in open_runtime_store(root).list_executions():
-            st = str(getattr(req.status, "value", req.status) or "").upper()
-            node = str((req.input or {}).get("node_id") or "")
-            if node and st in ("PENDING", "RUNNING"):
-                active.add(node)
+        active = live_node_ids(root)          # ★ 一处判据（含陈旧窗口 —— 见其自述）
     except Exception:  # noqa: BLE001 — 读不到执行存储 ⇒ 不扫（不能瞎动数据）
         return []
 
@@ -635,6 +667,54 @@ def _pending_leftovers(root: Path, ports: Ports) -> list[str]:
     return out
 
 
+def _write_checkpoint(ports: Ports, rep: PumpReport) -> None:
+    """★ 每批结束给该计划落一个【检查点】（停靠点快照）—— 第 4 件之③"失败恢复接树"。
+
+    为什么: 进程中断后, 叶会停在 claimed; 此前**没有任何落盘证据**说明"上次跑到哪、哪些执行已终态"
+      ⇒ 人只能凭运气重跑。检查点让恢复有据可依（`factory recover --plan <树>` 读它）。
+    与"陈旧认领自动交回"的关系（写清, 不双写）:
+      · 自动: 下次 `factory run` 时 sweep_stale_claims 按【无活跃执行】把 claimed 交回 pending
+      · 主动: `factory recover --plan` 按【检查点 + 当前树/执行状态】交回, 并报出证据
+      两者都走 `D.release_leaf(...)`, 谁先跑谁生效, 另一个自然无事可做（幂等）。
+    失败安全: 写不上不影响执行结果（只记 stderr 一行）。
+    """
+    try:
+        from ai_factory_os.services.execution.recovery.checkpoint import CheckpointStore
+        from ai_factory_os.services.execution.recovery.models import Checkpoint
+        from ai_factory_os.services.work import decomposition as D
+
+        root = Path(getattr(ports.work, "_root", "."))
+        plan_id = str(getattr(ports.work, "_plan_id", "") or "")
+        if not plan_id:
+            return
+        store = CheckpointStore(root / "checkpoints")
+        prev = store.load(plan_id)
+        tree = D.load_tree(root, plan_id) or {}
+        counts: dict[str, int] = {}
+        for n in tree.get("nodes") or []:
+            if str(n.get("kind") or "") == "task":
+                st = str(n.get("status") or "pending")
+                counts[st] = counts.get(st, 0) + 1
+        execs = dict(getattr(prev, "executions", {}) or {})
+        rst = open_runtime_store(root)
+        for req in rst.list_executions():
+            if str(getattr(req, "task_id", "") or "") != plan_id:
+                continue
+            st = getattr(getattr(req, "status", ""), "value", getattr(req, "status", ""))
+            execs[str(req.id)] = str(st)
+        store.save(Checkpoint(
+            id=f"CKPT-{plan_id}", task_id=plan_id,
+            workflow_id=str(tree.get("workflow_id") or "") or None,
+            event_seq=(int(getattr(prev, "event_seq", 0) or 0) + 1) if prev else 1,
+            workflow_state={"node_status": counts, "last_batch": len(rep.outcomes or [])},
+            current_step="scheduler_pump",
+            executions=execs,
+        ))
+    except Exception as exc:  # noqa: BLE001 — 检查点写不上不影响执行
+        print(f"⚠ 检查点写入失败（不影响执行）: {type(exc).__name__}: {str(exc)[:80]}",
+              file=__import__("sys").stderr)
+
+
 def drive(
     ports: Ports,
     *,
@@ -782,6 +862,10 @@ def drive(
                 except Exception as exc:  # noqa: BLE001 — 单叶失败不终止整批
                     rep.outcomes.append({"execution_id": eid, "ok": False,
                                          "state": f"{type(exc).__name__}: {exc}"})
+        # ★ 每批结束落一个检查点（停靠点）—— 必须在【批内】写:
+        #   只在 drive 收尾写的话, 进程被中断的跑**不会留下检查点**（恰恰最需要它的时候没有）——
+        #   我自己第一版就犯了这个错, 实测"掐掉再恢复"时才发现。
+        _write_checkpoint(ports, rep)
         # ★ ④ 每批一条完成事件（不刷屏）
         if on_batch_done is not None:
             try:
@@ -791,6 +875,7 @@ def drive(
     else:
         rep.stopped_because = f"达到 max_ticks={max_ticks} 上限"
 
+    _write_checkpoint(ports, rep)          # ★ 每批结束落停靠点（恢复有据可依）
     return rep
 
 

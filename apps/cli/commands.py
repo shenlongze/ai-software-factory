@@ -4374,3 +4374,55 @@ def cmd_project_org(ctx: FactoryContext, args: Any) -> dict:
     store.save_project(proj)
     return {"ok": True, "action": "project-org", "project_id": pid,
             "company_id": co, "department_ids": list(proj.department_ids)}
+
+
+def cmd_recover_plan(ctx: FactoryContext, args: Any) -> dict:
+    """factory recover --plan <树> —— 按【检查点】恢复中断的树执行（人主动 · 幂等）。
+
+    ★ 2026-09-21（第 4 件之③"失败恢复接树"）: 进程被中断后, 叶会停在 claimed。
+      · 自动路径: 下次 `factory run` 的 sweep_stale_claims 按"无活跃执行"交回
+      · 本命令: 人主动 —— 读检查点当证据, 把"claimed 且没有活跃执行"的叶交回 pending, 并报出证据
+      两条路共用 `D.release_leaf(...)` ⇒ 谁先跑谁生效, 另一个无事可做（幂等, 不双写）。
+    --dry-run: 只报告不落盘。
+    """
+    from ai_factory_os.services.execution.recovery.checkpoint import CheckpointStore
+    from ai_factory_os.services.work import decomposition as D
+
+    plan_id = str(getattr(args, "plan", "") or "")
+    project_id = str(getattr(args, "project", "") or "")
+    tree = D.load_tree(ctx.root, plan_id, project_id) if project_id else D.load_tree(ctx.root, plan_id)
+    if not tree:
+        raise CliError(f"任务树不存在: {plan_id}（`factory tasktree list` 看有哪些）", exit_code=1)
+    pj = str(tree.get("project_id") or project_id or "")
+
+    cp = CheckpointStore(ctx.root / "checkpoints").load(plan_id)
+    # ★ 与自动 sweep 共用一处判据（含陈旧窗口: 被 kill 留下的 PENDING 不算活跃）
+    from ai_factory_os.bootstrap.scheduler_pump import live_node_ids
+
+    try:
+        live = live_node_ids(ctx.root, stale_after_sec=float(getattr(args, "stale_after", 1800.0) or 1800.0))
+    except Exception as exc:  # noqa: BLE001 — 读不到就说清, 不瞎动
+        raise CliError(f"读不到执行存储 ⇒ 不恢复（不能瞎动数据）: {type(exc).__name__}", exit_code=1) from exc
+
+    resumed, busy = [], []
+    for n in tree.get("nodes") or []:
+        if str(n.get("kind") or "") != "task":
+            continue
+        if str(n.get("status") or "") != "claimed":
+            continue
+        nid = str(n.get("id") or "")
+        if nid in live:
+            busy.append({"node_id": nid, "title": str(n.get("title") or "")[:40]})
+            continue
+        if not bool(getattr(args, "dry_run", False)):
+            D.release_leaf(ctx.root, plan_id, nid, status="pending", project_id=pj,
+                           note="按检查点恢复（进程中断遗留）⇒ 交回, 不计重试", count_retry=False)
+        resumed.append({"node_id": nid, "title": str(n.get("title") or "")[:40]})
+    return {
+        "ok": True, "action": "recover-plan", "plan_id": plan_id, "project_id": pj,
+        "dry_run": bool(getattr(args, "dry_run", False)),
+        "resumed": resumed, "busy": busy,
+        "checkpoint": ({"executions": len(cp.executions or {}),
+                        "node_status": (cp.workflow_state or {}).get("node_status"),
+                        "at": str(cp.created_at)} if cp else None),
+    }

@@ -31,7 +31,14 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
         "recover", help="恢复中断任务: 事件回放重建 + 状态纠正 (发 recovery.started/completed/failed)"
     )
     json_opt(p_recover)
-    p_recover.add_argument("task_id", help="任务 ID (如 T-001)")
+    p_recover.add_argument("task_id", nargs="?", default="",
+                           help="任务 ID (如 T-001) —— 任务域恢复（老路）")
+    # ★ 2026-09-21（第 4 件之③ 失败恢复接树）: 按【检查点】恢复中断的树执行（人主动 · 幂等）
+    p_recover.add_argument("--plan", default="", help="任务树 id ⇒ 按检查点恢复中断的叶")
+    p_recover.add_argument("--project", default="", help="项目 id（配合 --plan）")
+    p_recover.add_argument("--dry-run", action="store_true", dest="dry_run", help="只报告不落盘")
+    p_recover.add_argument("--stale-after", type=float, default=1800.0, dest="stale_after",
+                           help="陈旧窗口（秒）: 超过它还是 PENDING/RUNNING 的执行视为无活跃进程（默认 1800）")
 
     # factory backup <动作> [文件] —— 数据保护（X-1/D-1）
     # 搬迁来源: 老 CLI p_backup（cli_factory L9400）

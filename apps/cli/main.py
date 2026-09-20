@@ -105,6 +105,7 @@ from .commands import (
     cmd_product_workflow_start,
     cmd_product_workflow_status,
     cmd_recover,
+    cmd_recover_plan,
     cmd_runtime_add,
     cmd_runtime_catalog_list,
     cmd_runtime_catalog_show,
@@ -1304,7 +1305,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "backup":
             result = _dispatch_backup(ctx, args)
         elif args.command == "recover":
-            result = cmd_recover(ctx, args)
+            # ★ 第 4 件之③: 给了 --plan ⇒ 按检查点恢复树执行（人主动）; 否则走任务域老路
+            result = (cmd_recover_plan(ctx, args) if str(getattr(args, "plan", "") or "")
+                      else cmd_recover(ctx, args))
         elif args.command == "dashboard":
             result = cmd_dashboard(ctx, args)
         elif args.command == "metrics":
@@ -4398,6 +4401,21 @@ def _print_output(args: Any, result: dict) -> None:
     elif args.command == "backup":
         _print_backup(args.backup_command, result)
     elif args.command == "recover":
+        if str(getattr(args, "plan", "") or ""):
+            print()
+            print(f"  恢复（按检查点）: 树 {result['plan_id']}"
+                  + ("（dry-run: 没落盘）" if result.get("dry_run") else ""))
+            print(f"  {'━' * 58}")
+            cp = result.get("checkpoint")
+            print("  检查点: " + (f"执行 {cp['executions']} 条 · 叶状态 {cp['node_status']} · {cp['at'][:19]}"
+                                 if cp else "（无 —— 还没跑过）"))
+            for x in result.get("resumed") or []:
+                print(f"  ↺ 交回待跑  {x['node_id'][-12:]}  {x['title']}")
+            for x in result.get("busy") or []:
+                print(f"  ● 仍在跑    {x['node_id'][-12:]}  {x['title']}（有活跃执行, 不动）")
+            if not (result.get("resumed") or result.get("busy")):
+                print("  （没有需要恢复的叶 —— 幂等重复调用是这个结果）")
+            return
         _print_recover(result)
     elif args.command == "dashboard":
         _print_dashboard(result)

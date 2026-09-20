@@ -13,6 +13,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT / "src") not in sys.path:
@@ -1300,6 +1301,143 @@ def test_load_gate_real_data() -> None:
     assert _check_load_gate_real_data() == []
 
 
+def _check_recover_plan_from_checkpoint() -> list[str]:
+    """★ 失败恢复接树（第 4 件之③）: 中断后能按检查点把叶交回, 且不误伤在跑的。
+
+    判据:
+      ① 泵每批结束落检查点（停靠点）: 有叶状态汇总 + 执行状态快照
+      ② recover --plan 把"claimed 且无活跃执行"的叶交回 pending（不计重试）
+      ③ 有活跃执行的叶**不动**（不误伤）
+      ④ 幂等: 重复调用无事可做（第二次 resumed 为空）
+    """
+    import tempfile
+    from types import SimpleNamespace
+
+    from ai_factory_os.bootstrap import scheduler_pump as SP
+    from ai_factory_os.bootstrap.scheduler_wiring import wire_scheduler
+    from ai_factory_os.services.execution.recovery.checkpoint import CheckpointStore
+    from ai_factory_os.services.execution.runtime.store import open_runtime_store
+    from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionStatus
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        proj, plan = "P-rc", "PLAN-rc"
+        d = root / "projects" / proj / "tasks"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{plan}.json").write_text(json.dumps({
+            "plan_id": plan, "project_id": proj, "status": "confirmed",
+            "nodes": [
+                {"id": "dom", "kind": "domain", "title": "D"},
+                {"id": "t-dead", "kind": "task", "parent_id": "dom", "title": "中断留下的叶",
+                 "status": "claimed", "acceptance": "一句话验收"},
+                {"id": "t-live", "kind": "task", "parent_id": "dom", "title": "正在跑的叶",
+                 "status": "claimed", "acceptance": "一句话验收"},
+            ],
+        }, ensure_ascii=False), encoding="utf-8")
+        open_runtime_store(root).save_execution(ExecutionRequest(
+            id="EXR-live", task_id=plan, status=ExecutionStatus.PENDING,
+            input={"node_id": "t-live", "resolution_id": "r", "member_id": "m", "identity_id": "i"}))
+
+        # ① 检查点: 泵落停靠点
+        SP._write_checkpoint(wire_scheduler(root, plan_id=plan), SimpleNamespace(outcomes=[]))
+        cp = CheckpointStore(root / "checkpoints").load(plan)
+        if cp is None or not (cp.workflow_state or {}).get("node_status"):
+            bad.append(f"泵没落检查点（或没有叶状态汇总）: {cp}")
+        elif "EXR-live" not in (cp.executions or {}):
+            bad.append(f"检查点没带执行状态快照: {cp.executions}")
+
+        # ②③ 恢复: 交回 dead, 不动 live
+        from datetime import datetime, timedelta, timezone
+
+        args = SimpleNamespace(plan=plan, project=proj, dry_run=False, stale_after=1800.0)
+        r = _cmd_recover_plan_for(root, args)
+        got = [x["node_id"] for x in r.get("resumed") or []]
+        if got != ["t-dead"]:
+            bad.append(f"该交回 t-dead（且只交回它）, 实得 {got}")
+        if [x["node_id"] for x in r.get("busy") or []] != ["t-live"]:
+            bad.append(f"有活跃执行的叶该被标'仍在跑': {r.get('busy')}")
+        tree = json.loads((d / f"{plan}.json").read_text(encoding="utf-8"))
+        st = {n["id"]: n.get("status") for n in tree["nodes"] if n.get("kind") == "task"}
+        if st.get("t-dead") != "pending" or st.get("t-live") != "claimed":
+            bad.append(f"落盘后状态不对: {st}（t-dead⇒pending, t-live⇒claimed 保持）")
+        # ④ 幂等
+        r2 = _cmd_recover_plan_for(root, args)
+        if (r2.get("resumed") or []) or [x["node_id"] for x in r2.get("busy") or []] != ["t-live"]:
+            bad.append(f"重复调用该无事可做: resumed={r2.get('resumed')} busy={r2.get('busy')}")
+
+        # ⑤ ★ 陈旧窗口（2026-09-21 实测"掐掉再恢复"才暴露的真 bug）:
+        #    被 kill 留下的 PENDING 执行**永远算活跃** ⇒ 叶卡在 claimed, 恢复不动它。
+        #    ⇒ 超过窗口的 PENDING/RUNNING 视为无活跃进程。
+        old_req = open_runtime_store(root).list_executions()[0]
+        old_req.created_at = datetime.now(timezone.utc) - timedelta(seconds=7200)
+        open_runtime_store(root).save_execution(old_req)
+        if "t-live" in SP.live_node_ids(root):
+            bad.append("陈旧（2 小时前）的 PENDING 执行仍被当成活跃 ⇒ 恢复会永远不动它（老病没治）")
+        if "t-live" not in SP.live_node_ids(root, stale_after_sec=10**9):
+            bad.append("窗口放大到极大时它【该】算活跃 —— 说明判据没按窗口走（第一版这里我写反了）")
+        live_wide = SP.live_node_ids(root, stale_after_sec=1.0)
+        if "t-live" in live_wide:
+            bad.append("窗口缩到 1 秒时陈旧执行不该算活跃")
+        # 陈旧 ⇒ recover 该把它交回
+        tree2 = json.loads((d / f"{plan}.json").read_text(encoding="utf-8"))
+        for n in tree2["nodes"]:
+            if n.get("id") == "t-live":
+                n["status"] = "claimed"
+        (d / f"{plan}.json").write_text(json.dumps(tree2, ensure_ascii=False), encoding="utf-8")
+        r3 = _cmd_recover_plan_for(root, SimpleNamespace(plan=plan, project=proj, dry_run=False,
+                                                         stale_after=60.0))
+        if [x["node_id"] for x in r3.get("resumed") or []] != ["t-live"]:
+            bad.append(f"陈旧的 PENDING 该被判无活跃并把叶交回: {r3}")
+
+        # ⑥ 泵【每批】落检查点（只在收尾写 ⇒ 中断的跑没有检查点, 恰恰最需要时没有）
+        root2 = root / "d2"
+        (root2 / "projects" / proj / "tasks").mkdir(parents=True, exist_ok=True)
+        (root2 / "projects" / proj / "tasks" / f"{plan}.json").write_text(json.dumps({
+            "plan_id": plan, "project_id": proj, "status": "confirmed",
+            "nodes": [{"id": "t1", "kind": "task", "title": "一件事", "status": "pending",
+                       "acceptance": "一句话验收", "required_capabilities": ["developer"]}],
+        }, ensure_ascii=False), encoding="utf-8")
+        (root2 / "agents").mkdir(parents=True, exist_ok=True)
+        (root2 / "agents" / "agents.json").write_text(json.dumps({
+            "d1": {"id": "d1", "name": "D", "role": "developer", "status": "AVAILABLE"}}),
+            encoding="utf-8")
+        ports2 = wire_scheduler(root2, plan_id=plan)
+        SP.drive(ports2, run_execution=lambda eid: _fake_ok(ports2, eid), max_parallel=1,
+                 max_ticks=3, limit=1)
+        if CheckpointStore(root2 / "checkpoints").load(plan) is None:
+            bad.append("跑一批后没落检查点（每批落盘没生效 ⇒ 中断时无据可依）")
+    return bad
+
+
+def _fake_ok(ports: Any, eid: str) -> Any:
+    """假执行: 直接把该执行标成 SUCCESS（守卫用 —— 不碰 LLM）。"""
+    return {"id": eid, "status": "SUCCESS", "ok": True, "output": {"verdict": "done"}}
+
+
+def _cmd_recover_plan_for(root: Path, args: Any) -> dict:
+    """在指定 root 上跑 recover --plan（守卫用 —— 不碰真实数据根）。"""
+    from types import SimpleNamespace
+
+    from apps.cli.commands import cmd_recover_plan
+
+    ctx = SimpleNamespace(root=root, logger_scope=lambda: _null_scope())
+    return cmd_recover_plan(ctx, args)
+
+
+class _null_scope:
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, *a: Any) -> bool:
+        return False
+
+
+def test_recover_plan_from_checkpoint() -> None:
+    """失败恢复接树: 落检查点 · 交回无活跃执行的叶 · 不误伤在跑的 · 幂等。"""
+    assert _check_recover_plan_from_checkpoint() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -1332,6 +1470,7 @@ def main() -> int:
     results.append(("多公司/多部门落到执行（按归属筛人·不串公司）", not _check_org_scope_reaches_execution(), "；".join(_check_org_scope_reaches_execution())))
     results.append(("文件冲突降级串行（并行安全前提·不是死代码）", not _check_file_conflict_demotion(), "；".join(_check_file_conflict_demotion())))
     results.append(("容量门/预算门接真数据（不再是 0/1e9 假数据）", not _check_load_gate_real_data(), "；".join(_check_load_gate_real_data())))
+    results.append(("失败恢复接树（检查点+recover --plan·幂等）", not _check_recover_plan_from_checkpoint(), "；".join(_check_recover_plan_from_checkpoint())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

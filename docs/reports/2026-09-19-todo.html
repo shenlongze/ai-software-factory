@@ -707,12 +707,12 @@
       <span class="meta"><b>缺口（实测）</b>: <code>console_view.fleet()</code>（"谁在做什么·谁空闲·谁干完了"）
       存在但<b>无 CLI 入口</b>; 多任务并行时看不到全局。<br>
       <b>要做的</b>: <code>factory console fleet</code>（或并入 ct-1 的输出）。</span></span></label>
-    <label class="item"><input type="checkbox" id="ct-5"><span class="body">
+    <label class="item done"><input type="checkbox" checked id="ct-5"><span class="body">
       <span class="t"><span class="tag p2">P2</span>失败恢复接进任务树执行</span>
       <span class="meta"><b>现状</b>: <code>CheckpointStore</code> 有（<code>factory checkpoint</code> 可用）·
       <code>recovery/replay</code> 有 ⇒ <b>能力在</b>, 但没接进"任务树执行"这条链。<br>
       <b>要做的</b>: ct-1 跑整棵树时, 每个叶任务落检查点 ⇒ 中途失败可从断点续跑。<br>
-      <b>判据</b>: 13 个任务跑到第 7 个失败 ⇒ 修好后能从第 7 个继续, 不重跑前 6 个。</span></span></label>
+      <b>判据</b>: 13 个任务跑到第 7 个失败 ⇒ 修好后能从第 7 个继续, 不重跑前 6 个。</span></span><br><b style="color:#0a8">【2026-09-21 已接】</b>① 泵【每批】落检查点（停靠点: 叶状态汇总 + 执行快照; 一开始我只写在 drive 收尾 ⇒ 中断的跑没有检查点, 实测掐掉才发现, 已改）② `factory recover --plan <树> [--dry-run] [--stale-after N]` 按检查点把"claimed 且无活跃执行"的叶交回 pending（不计重试; 幂等; 有活跃执行的**不动**）③ ★ 顺带修掉一个真 bug: 被 kill 留下的 PENDING 执行**永远算活跃** ⇒ 叶卡死（sweep 自述要治的病其实没治）—— 加【陈旧窗口】(默认 1800s > 执行体 900s 超时), 与 sweep 共用一处判据 live_node_ids()<br>真跑证据: 跑到一半掐掉进程 ⇒ `recover --plan` 报「↺ 交回待跑」+ 叶回 pending（note: 按检查点恢复）→ 幂等复跑无事可做 ✓</label>
     <label class="item"><input type="checkbox" id="ct-6"><span class="body">
       <span class="t"><span class="tag p2">P2</span>任务间的上下文传递（与记忆主线相关）</span>
       <span class="meta"><b>缺口</b>: 13 个任务串行跑时, 后一个任务怎么知道前一个做了什么?

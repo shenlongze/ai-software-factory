@@ -401,6 +401,140 @@ def _extract_json(content: str) -> Any:
     raise ArchitectError("Architect output is not valid JSON")
 
 
+def _gen_api_design_sliced(*, prompt: str, provider: Any, max_tokens: int) -> dict[str, Any] | None:
+    """★ 分片生成 api_design（先清单 → 分批详情 → 合并）。
+
+    为什么（Founder: "22886 字符 不能分批么？"）:
+      api_design 是 7 节里最大的一节 —— 它 90% 的体积是 `endpoints` 数组。
+      "把 7 节切成几组"不够（单这一组就 22886 字符 ≈ 7302 tokens, 快撞 8192 上限）;
+      ⇒ 必须切到**节内部**: 先只要端点清单（几十个 METHOD/path, 很小）,
+        再每批 ≤8 个端点要详情, 最后程序合并。
+      ⇒ 每次调用的输出都远小于上限；且**不损质量**（每个端点仍写得细, 只是分多轮）。
+
+    ★ 失败一律返回 None ⇒ 调用方**回落到"一次生成"**（不阻塞主流程, 不静默丢）。
+    """
+
+    base = (
+        "你在为下面这个项目做架构设计。现在只处理【API 设计】这一节。\n"
+        "输出必须是纯 JSON, 不要 markdown, 不要解释。\n"
+    )
+    # ① 端点清单（很小）
+    list_prompt = (
+        base
+        + "第一步: 只列出【端点清单】—— 每个端点给 method / path / 一句话用途。\n"
+        "不要写详细契约（下一步再写）。最多 40 个。格式:\n"
+        '{"endpoints":[{"method":"POST","path":"/auth/login","purpose":"登录"}]}\n\n'
+        + prompt[:4000]
+    )
+    try:
+        r1 = provider.generate(ProviderRequest(task_context=list_prompt, max_tokens=2048))
+        if not getattr(r1, "ok", False) or not (r1.content or "").strip():
+            return None
+        data = _extract_json(r1.content)
+        eps = list((data or {}).get("endpoints") or [])
+        if not eps:
+            return None
+    except Exception:  # noqa: BLE001 — 分片是"增强", 失败就回落
+        return None
+
+    # ② 分批详情（每批 ≤8 个）
+    detailed: list[dict[str, Any]] = []
+    batch = 8
+    for i in range(0, len(eps), batch):
+        chunk = eps[i:i + batch]
+        lines = "\n".join(
+            f"{j+1}. {e.get('method')} {e.get('path')} — {e.get('purpose') or ''}"
+            for j, e in enumerate(chunk)
+        )
+        d_prompt = (
+            base
+            + f"第二步: 为下面这 {len(chunk)} 个端点写【contract】—— 一句话说清这个接口\n"
+            "的输入与输出约定（含关键请求/响应字段与错误码）, 供 Developer 照着实现。\n"
+            f"★ 只输出这 {len(chunk)} 个, 不要多写, **必须带 contract 且非空**。格式:\n"
+            '{"endpoints":[{"method":"POST","path":"/x","contract":"入参 a,b; 出参 c; 401 未登录"}]}\n\n'
+            f"端点:\n{lines}\n"
+        )
+        try:
+            r2 = provider.generate(ProviderRequest(task_context=d_prompt, max_tokens=max_tokens))
+            if not getattr(r2, "ok", False) or not (r2.content or "").strip():
+                return None
+            d2 = _extract_json(r2.content)
+            got = list((d2 or {}).get("endpoints") or [])
+            if not got:
+                return None
+            detailed.extend(got)
+        except Exception:  # noqa: BLE001
+            return None
+
+    if not detailed:
+        return None
+    # ③ 合并（程序做, 不经 LLM）
+    return {"endpoints": detailed, "generated_by": "sliced",
+            "batches": (len(eps) + batch - 1) // batch}
+
+
+#: 设计产物的 7 节（顺序即生成顺序; 靠后的节依赖前面的结论）
+SECTION_KEYS: tuple[str, ...] = (
+    "system_architecture", "technical_stack", "database_design", "api_design",
+    "frontend_architecture", "backend_architecture", "task_breakdown",
+)
+
+#: 每节的简短说明（写进 prompt, 让模型知道这一节该产出什么）
+_SECTION_DESC: dict[str, str] = {
+    "system_architecture": "系统架构: 分层/组件/部署形态/关键取舍",
+    "technical_stack": "技术栈选型: 语言/框架/中间件/版本, 各带一句理由",
+    "database_design": "数据库设计: 表/字段/索引/关系（可分批, 表多时按表分批）",
+    "api_design": "API 设计: 端点清单与契约（★ 本节最大, 走分片生成）",
+    "frontend_architecture": "前端架构: 页面/组件/状态管理/路由",
+    "backend_architecture": "后端架构: 模块划分/服务边界/事务与并发要点",
+    "task_breakdown": ("任务拆分: 模块 → 任务。★ 每项**必须**含 4 个非空键: "
+                       "module（模块名）/ task（技术任务）/ api_contract（该任务涉及的 API 约定）/ "
+                       "ui_guidance（UI 实现指导）"),
+}
+
+
+def _gen_sections_individually(*, prompt: str, provider: Any, max_tokens: int) -> dict[str, Any] | None:
+    """★ 逐节生成（**每节一次调用**）—— 避免 7 节合并输出超限被截断。
+
+    Founder: "组[数据与接口] 22886 字符 不能分批么？" ⇒ 能, 而且切法要更细:
+      实测某产物 7 节合计 14447 字符（api_design 5457 / task_breakdown 3638 /
+      database_design 2603 / 其余 4 节 2749）;
+      ⇒ **每节各自一次调用** ⇒ 每次输出都是单节体量, 远小于 8192 tokens 上限 ✓
+      ⇒ api_design 在大项目能到 22886 字符 ⇒ 它再走 **分片生成**
+        （先端点清单 → 每批 ≤8 个写详情 → 程序合并）。
+    ★ 之前"分节 4 组"失败的根因: 把 database + api **合并在同一组** ——
+      api 的 22886 把那组拖爆 ⇒ 必须**每节单独**, 不合并。
+    ★ 任一节失败 ⇒ 返回 None ⇒ 调用方回落到"一次生成"（不阻塞主流程, 不静默丢）。
+    """
+    merged: dict[str, Any] = {}
+    head = prompt[:3000]          # 节取输入摘要（不要整段 prompt, 否则输入本身很占位）
+    for key in SECTION_KEYS:
+        if key == "api_design":
+            sec = _gen_api_design_sliced(prompt=prompt, provider=provider, max_tokens=max_tokens)
+        else:
+            ask = (
+                f"你在为下面这个项目做架构设计。**只输出 `{key}` 这一节**的 JSON。\n"
+                f"这一节的内容与**硬性字段要求**: {_SECTION_DESC.get(key, '')}\n"
+                "★ 只输出这一节, 不要输出其它节; 不要 markdown, 不要解释。\n"
+                f'输出格式: {{"{key}": <这一节的内容>}}\n\n'
+                f"项目背景（节选）:\n{head}\n"
+            )
+            try:
+                resp = provider.generate(ProviderRequest(task_context=ask, max_tokens=max_tokens))
+                if not getattr(resp, "ok", False) or not (resp.content or "").strip():
+                    return None
+                data = _extract_json(resp.content)
+                if not isinstance(data, dict) or key not in data:
+                    return None
+                sec = data[key]
+            except Exception:  # noqa: BLE001 — 逐节是"增强", 失败就回落一次生成
+                return None
+        if sec in (None, "", [], {}):
+            return None
+        merged[key] = sec
+    return merged or None
+
+
 def _parse_design(content: str) -> DesignArtifact:
     """LLM 输出 → DesignArtifact (宽容解析; 空/垃圾 → ArchitectError)。"""
     data = _extract_json(content)
@@ -532,6 +666,23 @@ class ArchitectAgent:
         if _disc_block:
             prompt = f"{prompt}\n\n{_disc_block}"
         last_error: ArchitectError | None = None
+
+        # ★ 2026-09-19（Founder: "组[数据与接口] 22886 字符 不能分批么？"）:
+        #   **逐节生成** —— 实测: 一次把 7 节全吐出来必超 deepseek 单次输出上限
+        #   （8192 tokens; 实测 23550 字符 ⇒ finish_reason=length 被硬截断）。
+        #   关键数据（真产物）: 7 节合计 14447 字符, 其中
+        #     api_design 5457（38%）· task_breakdown 3638 · database_design 2603 · 其余 4 节 2749
+        #   ⇒ **每节各自一次调用** ⇒ 每次输出都是单节体量, 远小于上限 ✓
+        #   ⇒ 而 api_design 在大项目里能到 22886 字符（endpoints 很多）
+        #     ⇒ 它**额外再分片**（先清单 → 分批详情 → 合并, 见 _gen_api_design_sliced）
+        #   ★ 为什么之前"分节 4 组"失败: 把 database + api **合并在同一组**,
+        #     api 的 22886 拖爆了那组 ⇒ 必须**每节单独**, 不合并。
+        sectioned = _gen_sections_individually(
+            prompt=prompt, provider=self._provider, max_tokens=self._max_tokens,
+        )
+        if sectioned is not None:
+            return _parse_design(json.dumps(sectioned, ensure_ascii=False))
+
         for attempt in range(self._max_retries + 1):
             response = self._provider.generate(
                 ProviderRequest(task_context=prompt, max_tokens=self._max_tokens)

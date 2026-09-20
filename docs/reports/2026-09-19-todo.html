@@ -55,6 +55,7 @@
 <div class="wrap">
 
   <h1>AI Factory · 待办清单</h1>
+  <p style="background:#fff7e6;border-left:4px solid #f90;padding:8px 12px"><b>最后更新: 2026-09-21</b>（本会话 27 个提交后同步）—— 本次勾掉 6 项（cr-4 / cr-9 / cr-12 / cr-13 / cr-15 / lint 存量 48）, 其余 5 项附了当日进展（未勾选 = 仍未完成）。<br>当日真跑证据: 三条链从「一句话需求」跑到「叶在执行」（社区图书 / 健身房 / 宠物寄养 18 域 85 叶）, 执行体真写码真提交（EXR-002/003/005）。</p>
   <div class="lede">
     来源：2026-09-18/19 这一轮工作的全部遗留、缺口与待裁决（老区清理 · 代码规范审核 · 平台能力吸收 · 里程碑对比）。<br>
     <b>勾选会自动保存在本机浏览器</b>（localStorage）—— 关掉再打开还在。想清空就点「重置勾选」。
@@ -138,9 +139,9 @@
     <label class="item"><input type="checkbox" id="t2-4"><span class="body">
       <span class="t"><span class="tag p2">P2</span>分类铁律红：R18 一能力一域 8 项 · R20 清单漂移 1</span>
       <span class="meta">R23 命令登记已修（13 个命令补进 registry）</span></span></label>
-    <label class="item"><input type="checkbox" id="t2-5"><span class="body">
+    <label class="item done"><input type="checkbox" checked id="t2-5"><span class="body">
       <span class="t"><span class="tag p3">P3</span>lint 存量 48 个（src/）</span>
-      <span class="meta">E402 23（刻意延迟导入, 该加 noqa）· E702 9 · F841 9 · E741 5 · F401 2</span></span></label>
+      <span class="meta">E402 23（刻意延迟导入, 该加 noqa）· E702 9 · F841 9 · E741 5 · F401 2</span></span><br><b style="color:#0a8">【2026-09-21 已清】</b>全仓 47 条清零（apps+src+scripts ruff 0 错）, 并把 ruff 全仓提为【阻塞门禁】防反弹（0dc32e2f / 87b3f3c8）</label>
     <label class="item"><input type="checkbox" id="t2-6"><span class="body">
       <span class="t"><span class="tag p3">P3</span>R14/R15 规则仍在, 只是"无基线 ⇒ 不报红"</span>
       <span class="meta">实测: <code>check_architecture.py</code> 里 R14/R15 仍写着"需基线文件, 未建则如实报'无基线'"；
@@ -851,7 +852,7 @@
       <b>★ 这有一条极重要的推论</b>: 我原设计里"删掉 prompt_template 后行为不变"作为
       <b>角色外置的验收标准</b> —— 那个验收<b>不能证明迁移成功</b>（因为本来就没人读它）。<br>
       <b>要做的</b>: 先让角色定义<b>真正进入 runtime 选 prompt</b>, 确认消费者存在, 再谈外置。
-      （顺序被 Codex 纠正: 我做反了。）</span></span></label>
+      （顺序被 Codex 纠正: 我做反了。）</span></span><br><b style="color:#a60">【2026-09-21 进展】</b>仍未做: 角色定义的 prompt_template 仍无运行时消费者; 今天只做到'派活带任务名+验收标准'</label>
     <label class="item"><input type="checkbox" id="cr-3"><span class="body">
       <span class="t"><span class="tag p1">P1</span>★ 完成语义绕过了 Outcome（Codex 审出）</span>
       <span class="meta"><b>Codex 证据</b>: contract 明写
@@ -861,15 +862,15 @@
       （<code>:209-220</code>）, <code>TaskTreeWork.has_accepted_outcome()</code> 也把
       <code>completed/done</code> 当验收（<code>scheduler_wiring.py:186-190</code>）。<br>
       <b>后果</b>: "任务完成"没有经过验收语义 ⇒ 与"验收判据无消费方"是同一类病。<br>
-      <b>要做的</b>: 完成必须经 accepted Outcome（不能"跑通即完成"）。</span></span></label>
-    <label class="item"><input type="checkbox" id="cr-4"><span class="body">
+      <b>要做的</b>: 完成必须经 accepted Outcome（不能"跑通即完成"）。</span></span><br><b style="color:#a60">【2026-09-21 进展】</b>部分修: 完成须留【产出证据】+ 执行体裁定（done/needs_decision/blocked）⇒ '停手≠完成'已成立; 但仍未走 accepted Outcome 契约对象</label>
+    <label class="item done"><input type="checkbox" id="cr-4" checked><span class="body">
       <span class="t"><span class="tag p1">P1</span>★ "失败可续"当前【不成立】（Codex 审出）</span>
       <span class="meta"><b>Codex 证据</b>: <code>_claim_and_run()</code> <b>只在抛异常时释放 leaf</b>;
       若 <code>run_execution</code> 返回 <b>FAILED 结果</b>, leaf <b>保持 claimed</b>
       （<code>scheduler_pump.py:116-126</code>）; 同时 <code>_looks_completed()</code> 不认识
       <code>ExecutionRunOutcome</code>（<code>:34-40</code>、<code>services/execution/runner.py:54-70</code>）。<br>
       <b>后果</b>: 一个任务失败后<b>卡在 claimed 永不重试</b> —— 这比"不能续跑"更糟（静默卡死）。<br>
-      <b>要做的</b>: FAILED 结果 ⇒ 释放 claim + 回写状态 + 落 checkpoint。</span></span></label>
+      <b>要做的</b>: FAILED 结果 ⇒ 释放 claim + 回写状态 + 落 checkpoint。</span></span><br><b style="color:#0a8">【2026-09-21 已修】</b>失败结果现已回写并交回重试（上限 3, 超限才终止）; 真跑证据: EXR-001 FAILED ⇒ 叶回 pending + retry_count=1; 另加【陈旧认领自动交回】。守卫+反向验证见 55ab5f3d / 282133ea</label>
     <label class="item"><input type="checkbox" id="cr-5"><span class="body">
       <span class="t"><span class="tag p1">P1</span>★ 文件冲突未处理（Codex 审出）</span>
       <span class="meta"><b>Codex 证据</b>: <code>decomposition.file_conflicts()</code> 明确要求
@@ -877,7 +878,7 @@
       但 scheduler/pump <b>没有调用它</b>。<br>
       <b>后果</b>: 并行的两个任务写同一文件 ⇒ 互相覆盖（静默丢改动）。<br>
       <b>要做的</b>: 并行前做文件冲突检测, 冲突则降级串行。<br>
-      <b>★ 这是并行的安全前提</b> —— 不解决就上并行, 会静默丢代码。</span></span></label>
+      <b>★ 这是并行的安全前提</b> —— 不解决就上并行, 会静默丢代码。</span></span><br><b style="color:#a60">【2026-09-21 进展】</b>仍开放: 并行前的文件冲突检测仍未接进 pump（今天只补了失控证据侧: 产出未提交 ⇒ 待核）</label>
     <label class="item"><input type="checkbox" id="cr-6"><span class="body">
       <span class="t"><span class="tag p1">P1</span>预算门是【假数据】（Codex 审出 · 影响 MoA/资源约束）</span>
       <span class="meta"><b>Codex 证据</b>: <code>SimpleLoad</code> 直接返回 <code>1e9</code>
@@ -886,7 +887,7 @@
       （<code>core/scheduler/evaluate.py:102-113</code>）。<br>
       <b>后果</b>: 预算约束形同虚设（"超限该阻断就阻断"目前无数据支撑）⇒ MoA 的预算门无处可挂。<br>
       <b>要做的</b>: 让 load/capability 返回真实值（至少从 usage/provider 计费取）。<br>
-      ★ 注: 这与"诚实占位"的既有记录一致（SimpleLoad 容量恒 0 是明知占位）。</span></span></label>
+      ★ 注: 这与"诚实占位"的既有记录一致（SimpleLoad 容量恒 0 是明知占位）。</span></span><br><b style="color:#a60">【2026-09-21 进展】</b>仍开放: 预算门仍是占位数据（SimpleLoad 1e9）</label>
     <label class="item"><input type="checkbox" id="cr-7"><span class="body">
       <span class="t"><span class="tag p2">P2</span>两套 Skill/SkillRegistry 体系 + SoD 事实链不统一（Codex 审出）</span>
       <span class="meta">① <b>两套 Skill</b>: <code>plugins/skills/skill.py</code>（有 tools/check_tool_access）与
@@ -896,7 +897,7 @@
       （<code>organization/lifecycle.py:307-316</code>）, 而 scheduler 的成员来源是
       <code>agents.json</code> 的单个 role 字段（<code>scheduler_wiring.py:234-240</code>）
       ⇒ <b>"developer ≠ reviewer"不会天然覆盖执行层选人</b>。<br>
-      <b>要做的</b>: 统一（或明确两者关系）—— 与之前"同名异物/一数据一权威源"同类问题。</span></span></label>
+      <b>要做的</b>: 统一（或明确两者关系）—— 与之前"同名异物/一数据一权威源"同类问题。</span></span><br><b style="color:#a60">【2026-09-21 进展】</b>仍开放: 两套 Skill/SkillRegistry 未统一（今天未动）</label>
     <label class="item done"><input type="checkbox" id="cr-8" checked><span class="body">
       <span class="t"><span class="tag p1">P1</span>◐ `run --plan` 接通（第 1 刀）—— ★"跑通≠跑得动"</span>
       <span class="meta"><b>已做</b>: ① <code>cmd_run_plan</code>（走 <b>scheduler 平面</b>: wire_scheduler + drive,
@@ -907,7 +908,7 @@
       "轮次 1 · 创建执行 0 个 · 停止原因: 无可推进执行（就绪叶为空）: <b>blocked, unresolved</b>"<br>
       ⇒ ★★ <b>命令跑通（不崩、装配对、调到了 drive）, 但跑不动</b> —— 诚实标注:
       <b>"跑通" ≠ "跑得动"</b>（R24 判据的又一次应用）。</span></span></label>
-    <label class="item"><input type="checkbox" id="cr-9"><span class="body">
+    <label class="item done"><input type="checkbox" id="cr-9" checked><span class="body">
       <span class="t"><span class="tag p0">P0</span>★ 下一刀: 解决"叶无法被调度"（unassigned ⇒ unresolved）</span>
       <span class="meta"><b>实测现象</b>: 就绪叶判定返回 <code>blocked, unresolved</code> ⇒ 一个执行都建不出来。<br>
       <b>★ 根因（两方都对, 但责任在"执行层"而非"拆解层"）</b>:<br>
@@ -924,7 +925,7 @@
       （已有值: ['architect','devops','developer'] 等）用 <code>AgentMatcher</code> 选人;<br>
       &nbsp;② 或在 <code>tasktree confirm</code>（人工确认那一步）加"角色分配" —— 把 unassigned 解析成
       具体 role/agent（保留人工把关）。<br>
-      <b>验收</b>: 同一棵 13 叶任务树, <code>run --plan</code> 能创建执行并跑起来（不再是 0 个）。</span></span></label>
+      <b>验收</b>: 同一棵 13 叶任务树, <code>run --plan</code> 能创建执行并跑起来（不再是 0 个）。</span></span><br><b style="color:#0a8">【2026-09-21 已修】</b>叶已被真派工（谁做/优先级落树并级联到叶）; 真跑证据: 今天三条链真派工执行（EXR-002/003/005 真写码真提交）, 宠物寄养树 18 域/85 叶可跑（1f402b93）</label>
     <label class="item done"><input type="checkbox" id="cr-10" checked><span class="body">
       <span class="t"><span class="tag p1">P1</span>✅ 完整链路端到端验证 —— 真跑起来, 查出 7 个问题并修完</span>
       <span class="meta"><b>怎么跑起来的</b>: 真数据根（<code>hermes-runtime</code> AVAILABLE + 53 成员 +
@@ -956,7 +957,7 @@
       是历史包袱、建议删掉; Founder 反问"有没有可能任务没有项目 id？" ⇒ 实测 6 棵树
       <b>4 棵 project_id 为空</b> ⇒ 该回落是<b>合法场景</b> ⇒ 改为止"同一 plan 多处 ⇒ 响亮报错"。<br>
       <b>文件</b>: <code>docs/ssot/code-placement.md</code>（硬约束表 R26/R27/R28）。</span></span></label>
-    <label class="item"><input type="checkbox" id="cr-12"><span class="body">
+    <label class="item done"><input type="checkbox" id="cr-12" checked><span class="body">
       <span class="t"><span class="tag p0">P0</span>★ arch design 输出被 max_tokens 截断 ⇒ 需【分节生成】</span>
       <span class="meta"><b>现象</b>: arch design 报 <code>design artifact missing required fields:
       system_architecture, technical_stack, database_design, api_design, frontend_architecture,
@@ -972,8 +973,8 @@
       ⇒ 已改为同样响亮报错（含字符数 + 真因 + 对策）。<br>
       <b>★ 待做（根治）</b>: <code>deepseek-chat</code> 的 max output 就是 8192 ⇒ 输入一大必然触顶
       ⇒ 该【分节生成】（7 节拆 2-3 次调用, 如 架构3节 + API/DB + 任务拆分）。<br>
-      <b>验收</b>: 输入 ux_ui 摘要 8000 字符（现触顶值）时 arch design 能稳定成功。</span></span></label>
-    <label class="item"><input type="checkbox" id="cr-13"><span class="body">
+      <b>验收</b>: 输入 ux_ui 摘要 8000 字符（现触顶值）时 arch design 能稳定成功。</span></span><br><b style="color:#0a8">【2026-09-21 已修】</b>由 cr-14 关闭（arch 逐节生成 + api_design 分片, 实测 7 节 7/7）—— 本条与 cr-14 同一根因, 同比关闭</label>
+    <label class="item done"><input type="checkbox" id="cr-13" checked><span class="body">
       <span class="t"><span class="tag p2">P2</span>children 产出侧: 3 版 prompt 未生效（换思路）</span>
       <span class="meta"><b>现象</b>: <code>finish_reason=stop</code>（完整输出）下 task_breakdown
       10-14 项 <b>全部 0 children</b> ⇒ 与截断无关, 是 LLM 保守。<br>
@@ -983,7 +984,7 @@
       <b>可换的思路</b>: ① 让 architect 分节生成时<b>专门用一次调用做任务拆分</b>
       （那时 token 充裕, 可展开多级）② 让 decompose 侧<b>按验收标准规则驱动拆分</b>
       （不依赖 LLM 自觉）③ 先做 cr-12, 再评估（截断修好后 token 充裕可能自然改善）。<br>
-      <b>注</b>: 消费侧（decompose 支持嵌套）已完成, 实测能物化出"子子任务"。</span></span></label>
+      <b>注</b>: 消费侧（decompose 支持嵌套）已完成, 实测能物化出"子子任务"。</span></span><br><b style="color:#0a8">【2026-09-21 已修】</b>换思路②落地: `expand_module` 按模块展开（不依赖 architect 的 children）; 真跑证据: 宠物寄养链 18 模块 → 85 叶, 粒度判据只剩 5/85 未拆到位; 人可改: tasktree expand --deep</label>
     <label class="item item--done">
       <input type="checkbox" id="cr-14" checked>
       <span><b>cr-14</b> ✅ arch design 截断解决 —— 逐节生成 + api_design 分片</span>
@@ -996,8 +997,8 @@
         每批 ≤8 个写 contract → 程序合并）③ 失败回落一次生成
         ④ prompt 按校验器 schema（端点必含 contract; task 必含 api_contract/ui_guidance）</span>
     </label>
-    <label class="item">
-      <input type="checkbox" id="cr-15">
+    <label class="item done">
+      <input type="checkbox" id="cr-15" checked>
       <span><b>cr-15</b> ⬜ ux（交互设计）同样会截断 —— 待做（Founder: "ux先记录，晚点在做"）</span>
       <span class="tag">P0 待做</span>
       <span class="note">实测: chain 跑到 ⑤ 时 ux 报 truncated（27536 字符）—— 根因与 arch 完全相同。
@@ -1006,7 +1007,7 @@
         而该: ① 把已验证的机制抽到服务层（llm/sliced.py: 逐节调用 + 大节分片 +
         按 schema 校验 + 失败回落）② arch 改调它（行为不变）③ ux 改调它（解决截断）。
         一处机制, 多处方受益; 以后新的大产物直接复用。</span>
-    </label>
+    <br><b style="color:#0a8">【2026-09-21 已修】</b>ux 截断已修: `_gen_sections_individually`（逐节生成 + 异常路径接住 + 节名用契约的 7 节）; 真跑证据: product ux 单次 27757 字符截断 ⇒ 逐节救回 7 节。★ 遗留: 尚未按本条建议抽到服务层共用（现为 uxui 内实现; architect 侧另有同套路）</label>
   </div>
 
   <h2><span class="n">17</span>需求流程与用户视图（Founder 定的设计 · 本次不含执行）</h2>

@@ -1059,12 +1059,23 @@
       （否则留悬空依赖 ⇒ 调度器判"前驱未验收"永不执行）<br>
       <b>短 id</b>: show/todo 现在都显示节点短 id（8 位）⇒ 用户知道改哪个<br>
       <b>★ 实测</b>: 改验收 ✓ 落盘 ✓ · 回到 candidate ✓ · drop 后节点 27→26 ✓</span></span></label>
-    <label class="item"><input type="checkbox" id="rf-9"><span class="body">
-      <span class="t"><span class="tag p1">P1</span>⬜ 余项: 定位 · 需求拆解 · 3 字段 · LLM 翻译人话名</span>
+    <label class="item done"><input type="checkbox" id="rf-9" checked><span class="body">
+      <span class="t"><span class="tag p1">P1</span>✅ 用户视图完善: display_name 生效 + 完成度派生</span>
+      <span class="meta"><b>修的 bug</b>: <code>tasktree edit --display-name</code> 改了人话名, 但视图
+      【不读该字段】⇒ 用户以为改了其实没用（写的一侧接上了, 读的一侧没接 —— 与 R27 同源）。<br>
+      修法: 新增 <code>_node_name(node)</code> —— 优先读 <code>display_name</code>, 没有才用 title 派生;
+      todo 与 flow 两投影都用它。★ 实测: 一个字段改动 ⇒ 两个投影同步变 ✓<br>
+      <b>完成度</b>: <code>_node_progress(node, by_parent)</code> 递归上卷 ——
+      <code>节点完成度 = 已完成子节点数 / 总子节点数</code>（叶子 DONE ⇒ 1/1）。<br>
+      ★ <b>修正了一处设计</b>: 完成度是【派生值】不是字段 —— 完全由子节点 status 决定,
+      存成字段会出现"存的值 ≠ 算的值"（一数据一权威源）。设计文档已同步修正。<br>
+      <b>实测</b>: todo 视图每个模块显示自己的进度（如 <code>0/1</code>）✓</span></span></label>
+    <label class="item"><input type="checkbox" id="rf-10"><span class="body">
+      <span class="t"><span class="tag p1">P1</span>⬜ 余项: 定位 · 需求拆解 · assignee · LLM 翻译 · 拆分合并</span>
       <span class="meta">① 定位（类型+承接, 现在完全没有）② 分析层补"需求拆解"（业务模块拆分）<br>
-      ③ 3 个新字段落地（display_name/assignee/progress）+ display_name 改由 LLM 翻译<br>
-      ④ 拆分/合并子任务（本轮只做了改字段 + 删节点）<br>
-      <b>★ 范围</b>: 不含执行。★ 用户视图两投影 + 逐节点改 已完成 ✓</span></span></label>
+      ③ <code>assignee</code> 字段（谁在做 —— 现在只有"需要什么能力"）④ display_name 改由 LLM 翻译<br>
+      ⑤ 拆分/合并子任务（本轮只做了改字段 + 删节点）<br>
+      <b>★ 范围</b>: 不含执行</span></span></label>
   <h2><span class="n">16</span>已完成（本轮 · 留档不删）</h2>
   <div class="card" data-group="7">
     <label class="item done"><input type="checkbox" id="t7-20" checked><span class="body">

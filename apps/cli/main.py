@@ -2555,6 +2555,28 @@ def _todo_display_name(title: str) -> str:
     return s[:24] + ("…" if len(s) > 24 else "")
 
 
+def _node_progress(node: dict, by_parent: dict[str, list], leaves_only: bool = True) -> tuple[int, int]:
+    """★ 完成度（派生, 不落字段）—— Founder 设计: "节点完成度 = 已完成子节点数 / 总子节点数"。
+
+    为什么是**派生值而非字段**: 完成度完全由子节点的 status 决定 ⇒ 若存成字段,
+    就会出现"存的值"与"算的值"不一致（R25 一能力一处 / 一数据一权威源）。
+    叶子: DONE ⇒ (1,1), 否则 (0,1)。父节点: 递归汇总子节点。
+
+    返回: (done, total)
+    """
+    kids = [k for k in by_parent.get(str(node.get("id") or ""), [])
+            if k.get("kind") in ("domain", "task")]
+    if not kids:
+        done = 1 if str(node.get("status") or "").lower() in ("completed", "done", "accepted") else 0
+        return (done, 1)
+    d = t_ = 0
+    for k in kids:
+        kd, kt = _node_progress(k, by_parent, leaves_only)
+        d += kd
+        t_ += kt
+    return (d, t_)
+
+
 def _node_name(node: dict) -> str:
     """节点的显示名 —— ★ 优先 `display_name` 字段（用户在 `tasktree edit` 里改过的）,
     没有才用 title 规则派生。
@@ -2653,7 +2675,10 @@ def _print_tasktree(args: Any, r: dict) -> None:
                 indent = "  " * (depth + 2)
                 name = _node_name(n)
                 line = f"{indent}{mark} {name}   [{str(n.get('id'))[-8:]}]"
-                if depth > 0 and who:
+                if n.get("kind") == "domain":
+                    dd, tt = _node_progress(n, by_parent)
+                    line += f"    {dd}/{tt}"
+                elif depth > 0 and who:
                     line += f"    {who}"
                 print(line)
                 _walk(str(n.get("id") or ""), depth + 1)

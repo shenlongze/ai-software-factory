@@ -402,6 +402,16 @@ class StoreExecution:
                 lines.append("预期产出文件: " + ", ".join(files))
             if pid:
                 lines.append(f"项目: {pid}" + (f"  仓库: {repo}" if repo else ""))
+                # ★ 2026-09-21（多公司/多部门落到执行）: 让执行体知道自己在哪个公司/部门干活
+                try:
+                    from ai_factory_os.services.work import staffing as _ST
+
+                    _co, _dep = _ST.project_scope(self._root, pid)
+                except Exception:  # noqa: BLE001 — 取不到归属 ⇒ 不写这一行（不编）
+                    _co, _dep = "", ""
+                if _co or _dep:
+                    lines.append("归属: " + " · ".join(
+                        x for x in (f"公司 {_co}" if _co else "", f"部门 {_dep}" if _dep else "") if x))
             # ★ 2026-09-21（"无固定流程(可编排)"接进主链）: 树挂了流程 ⇒ 说明这是第几步、要求什么技能
             step = self._workflow_step(node_id)
             if step:
@@ -456,6 +466,14 @@ class StoreExecution:
         eid = self._store.next_execution_id(prefix="EXR-")
         _task, _instr = self._brief(node_id)          # ★ 把"活"说清楚（见 _brief 自述）
         _step = self._workflow_step(node_id) or {}
+        try:
+            from ai_factory_os.services.work import decomposition as _D
+            from ai_factory_os.services.work import staffing as _ST
+
+            _proj = str((_D.load_tree(self._root, self._plan_id) or {}).get("project_id") or "")
+            _scope = _ST.project_scope(self._root, _proj)
+        except Exception:  # noqa: BLE001 — 取不到归属 ⇒ 空（下游按未归属处理）
+            _scope = ("", "")
         req = ExecutionRequest(
             id=eid,
             task_id=self._plan_id,                      # ★ 任务树 id（pump 用它定位叶）
@@ -474,6 +492,9 @@ class StoreExecution:
                 "workflow_step_name": str(_step.get("step_name") or ""),
                 "workflow_step_index": int(_step.get("step_index") or 0),
                 "workflow_steps_total": int(_step.get("steps_total") or 0),
+                # ★ 2026-09-21（多公司/多部门落到执行）: 归属进请求（审计/执行体都能看到）
+                "company_id": _scope[0],
+                "department_id": _scope[1],
             },
         )
         self._store.save_execution(req)

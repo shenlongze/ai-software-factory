@@ -48,6 +48,10 @@ class Agent(BaseModel):
     skills: list[str] = Field(default_factory=list)  # Skill.id 引用列表 (去重保序)
     status: AgentStatus = AgentStatus.AVAILABLE
     current_task: str | None = None                  # 当前任务 id (Task.owner 引用, 不自动分配)
+    #: ★ 2026-09-21（四维"多公司/多部门"落到执行）: 成员归属。空 = 未归属;
+    #:   派活时若【项目】有归属 ⇒ 只从同公司/同部门的成员里选（见 services/work/staffing.py）。
+    company_id: str = ""
+    department_id: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

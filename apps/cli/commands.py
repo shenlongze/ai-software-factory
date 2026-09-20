@@ -4264,3 +4264,112 @@ def cmd_change_plan(ctx: FactoryContext, args: Any) -> dict:
         "risks": risk,
     }
 
+
+
+# ------------------------------------------------------------------ org member (舰队成员归属: 多公司/多部门落到执行)
+
+def _fleet_registry(root: Any) -> Any:
+    """舰队注册表（agents.json 的正规入口 —— 与派活/调度器读同一份账本）。"""
+    from ai_factory_os.plugins.agents.registry import AgentRegistry
+    from ai_factory_os.plugins.agents.store import AgentStore
+
+    return AgentRegistry(AgentStore(Path(str(root)) / "agents"))
+
+
+def cmd_org_member_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory org member list — 舰队成员的【归属】清单（公司/部门）。
+
+    ★ 2026-09-21（四维"多公司/多部门落到执行"）: 派活要按公司的成员筛人, 前提是成员**有归属**。
+      数据源: `~/.factory/agents/agents.json`（与派活同一份 —— 一处账本, 不另起）。
+    """
+    co = str(getattr(args, "company", "") or "")
+    items = []
+    for a in _fleet_registry(ctx.root).list():
+        items.append({
+            "id": a.id, "name": a.name, "role": a.role,
+            "company_id": str(getattr(a, "company_id", "") or ""),
+            "department_id": str(getattr(a, "department_id", "") or ""),
+            "status": str(getattr(a.status, "value", a.status)),
+        })
+    if co:
+        items = [x for x in items if x["company_id"] == co]
+    unassigned = sum(1 for x in items if not x["company_id"])
+    return {"ok": True, "action": "org-member-list", "company": co,
+            "count": len(items), "unassigned": unassigned, "members": items}
+
+
+def cmd_org_member_set(ctx: FactoryContext, args: Any) -> dict:
+    """factory org member set [<member_id>] --company <C> [--department <D>] [--all]
+
+    给成员设归属。`--all` = 把所有【未归属】成员一次设到该公司（存量 53 人的迁移就用它）。
+    合法值: 公司/部门 id 必须已存在（不猜 —— 拼错会响亮报错）。
+    """
+    co = str(getattr(args, "company", "") or "")
+    dep = str(getattr(args, "department", "") or "")
+    if not co:
+        raise CliError("必须给 --company <公司 id>（先 `factory org company show <id>` 看有哪些）", exit_code=2)
+    org = Path(str(ctx.root)) / "org"
+    try:
+        companies = json.loads((org / "companies.json").read_text(encoding="utf-8")).get("companies") or {}
+    except (OSError, ValueError):
+        companies = {}
+    if companies and co not in companies:
+        raise CliError(f"公司不存在: {co}（现有: {', '.join(list(companies)[:5])}）", exit_code=2)
+    if dep:
+        try:
+            deps = json.loads((org / "departments.json").read_text(encoding="utf-8")).get("departments") or {}
+        except (OSError, ValueError):
+            deps = {}
+        if deps and dep not in deps:
+            raise CliError(f"部门不存在: {dep}", exit_code=2)
+
+    reg = _fleet_registry(ctx.root)
+    mid = str(getattr(args, "member_id", "") or "")
+    if bool(getattr(args, "all", False)):
+        targets = [a for a in reg.list() if not str(getattr(a, "company_id", "") or "")]
+    elif mid:
+        a = reg.get(mid)
+        if a is None:
+            raise CliError(f"成员不存在: {mid}（`factory org member list` 看舰队）", exit_code=2)
+        targets = [a]
+    else:
+        raise CliError("要么给 <member_id>, 要么用 --all（把未归属成员一次设好）", exit_code=2)
+
+    changed: list[str] = []
+    for a in targets:
+        a.company_id = co
+        a.department_id = dep
+        reg.update(a)
+        changed.append(a.id)
+    return {"ok": True, "action": "org-member-set", "company": co, "department": dep,
+            "changed": changed, "count": len(changed)}
+
+
+def cmd_project_org(ctx: FactoryContext, args: Any) -> dict:
+    """factory project org <project_id> [--company <C>] [--department <D>]
+
+    给【项目】设归属公司/部门（多公司/多部门落到执行的第一格: 派活按项目归属筛人）。
+    不给任何参数 ⇒ 摘掉归属（回到"不筛"的现状）。
+    合法值校验: 公司/部门 id 必须已存在（不猜）。
+    """
+    from ai_factory_os.services.organization.projects import ProjectStore
+
+    store = ProjectStore(Path(str(ctx.root)) / "org")
+    pid = str(getattr(args, "project_id", "") or "")
+    proj = store.get_project(pid)
+    if proj is None:
+        raise CliError(f"项目不存在: {pid}（`factory project list` 看有哪些）", exit_code=2)
+    co = str(getattr(args, "company", "") or "")
+    dep = str(getattr(args, "department", "") or "")
+    org = Path(str(ctx.root)) / "org"
+    try:
+        companies = json.loads((org / "companies.json").read_text(encoding="utf-8")).get("companies") or {}
+    except (OSError, ValueError):
+        companies = {}
+    if co and companies and co not in companies:
+        raise CliError(f"公司不存在: {co}（现有: {', '.join(list(companies)[:5])}）", exit_code=2)
+    proj.company_id = co
+    proj.department_ids = [dep] if dep else []
+    store.save_project(proj)
+    return {"ok": True, "action": "project-org", "project_id": pid,
+            "company_id": co, "department_ids": list(proj.department_ids)}

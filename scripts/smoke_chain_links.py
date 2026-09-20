@@ -1125,6 +1125,78 @@ def test_workflow_drives_chain() -> None:
     assert _check_workflow_drives_chain() == []
 
 
+def _check_org_scope_reaches_execution() -> list[str]:
+    """★ 多公司 / 多部门落到执行（核心第4条 / 四维里的两维）。
+
+    判据:
+      ① 默认不变: 项目未归属公司 ⇒ 选人池 = 全部成员（现状）
+      ② 按公司筛: 项目归了公司 ⇒ 池子里**只有该公司**成员（跨公司不串人）
+      ③ 归属进执行: 执行请求 input 带 company_id/department_id + 简报写明归属
+      ④ 合法值: 项目归属读的是 projects.json（唯一一处 project_scope）
+    """
+    import tempfile
+
+    from ai_factory_os.bootstrap.scheduler_wiring import StoreExecution
+    from ai_factory_os.services.work import staffing as ST
+
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "agents").mkdir(parents=True, exist_ok=True)
+        (root / "agents" / "agents.json").write_text(json.dumps({
+            "a1": {"id": "a1", "name": "A1", "role": "developer", "company_id": "C-A"},
+            "a2": {"id": "a2", "name": "A2", "role": "tester", "company_id": "C-A"},
+            "b1": {"id": "b1", "name": "B1", "role": "developer", "company_id": "C-B"},
+            "u1": {"id": "u1", "name": "U1", "role": "developer", "company_id": ""},
+        }, ensure_ascii=False), encoding="utf-8")
+        plan, proj, leaf = "PLAN-o1", "P-o1", "t-o1"
+        (root / "org").mkdir(parents=True, exist_ok=True)
+        (root / "org" / "projects.json").write_text(json.dumps({
+            "projects": {proj: {"id": proj, "name": "P1", "company_id": "C-A", "department_ids": ["D-A"]}}
+        }, ensure_ascii=False), encoding="utf-8")
+        d = root / "projects" / proj / "tasks"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{plan}.json").write_text(json.dumps({
+            "plan_id": plan, "project_id": proj, "status": "confirmed",
+            "nodes": [{"id": leaf, "kind": "task", "title": "做事", "status": "pending",
+                       "acceptance": "一句话验收"}],
+        }, ensure_ascii=False), encoding="utf-8")
+
+        # ① 默认不变（不给公司）
+        allc = ST.role_catalog(root)
+        if allc.get("developer") != 3 or allc.get("tester") != 1:
+            bad.append(f"不筛时应见全部成员: {allc}")
+        # ② 按公司筛（未归属成员不入选, 跨公司不串人）
+        sc = ST.role_catalog(root, company_id="C-A")
+        if sc.get("developer") != 1 or sc.get("tester") != 1 or "b1" in str(sc):
+            bad.append(f"按公司筛人不对: {sc}（B 公司的 developer 不该进池）")
+        # ④ 项目归属读一处
+        if ST.project_scope(root, proj) != ("C-A", "D-A"):
+            bad.append(f"project_scope 读不出归属: {ST.project_scope(root, proj)}")
+        # ③ 归属进执行请求 + 简报
+        req = StoreExecution(root, plan_id=plan).create(leaf, resolution_id="r",
+                                                       member_id="a1", identity_id="a1")
+        inp = req.input or {}
+        if inp.get("company_id") != "C-A" or inp.get("department_id") != "D-A":
+            bad.append(f"执行请求没带归属: {inp.get('company_id')!r}/{inp.get('department_id')!r}")
+        if "归属: 公司 C-A" not in str(inp.get("instruction") or ""):
+            bad.append("简报里没写归属（执行体不知道自己在哪个公司干活）")
+        # 未归属项目 ⇒ 不筛 + 请求里为空（默认行为不变）
+        (root / "org" / "projects.json").write_text(json.dumps({
+            "projects": {proj: {"id": proj, "name": "P1", "company_id": "", "department_ids": []}}
+        }, ensure_ascii=False), encoding="utf-8")
+        req2 = StoreExecution(root, plan_id=plan).create(leaf, resolution_id="r",
+                                                        member_id="a1", identity_id="a1")
+        if (req2.input or {}).get("company_id"):
+            bad.append("项目未归属时不该带公司")
+    return bad
+
+
+def test_org_scope_reaches_execution() -> None:
+    """多公司/多部门落到执行: 默认不筛 · 按公司筛人不串 · 归属进请求与简报。"""
+    assert _check_org_scope_reaches_execution() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -1154,6 +1226,7 @@ def main() -> int:
     results.append(("执行收尾契约（提交/未提交分开·指令写清）", not _check_repo_closing_contract(), "；".join(_check_repo_closing_contract())))
     results.append(("会话唯一入口（chain 覆盖到拆解·自动生成三件制品）", not _check_chain_covers_rings(), "；".join(_check_chain_covers_rings())))
     results.append(("流程接进主链（按步骤推进·走完才算完成·可编排）", not _check_workflow_drives_chain(), "；".join(_check_workflow_drives_chain())))
+    results.append(("多公司/多部门落到执行（按归属筛人·不串公司）", not _check_org_scope_reaches_execution(), "；".join(_check_org_scope_reaches_execution())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

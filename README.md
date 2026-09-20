@@ -30,7 +30,10 @@
   `bug-fix` / `release`）已接进主链 —— `factory tasktree workflow <plan> --id feature-delivery` 挂上后，
   叶按流程**步骤顺序**推进（走完全部步骤才算完成，每步完成会交回待下一步）；不挂 = 现状（一叶一次派活）。
   多公司 / 多部门维度的流程分派尚未做。
-- **多公司 / 多部门**：组织账本齐（公司/角色/授权/阶段），但派活尚未按 `company_id / department_id` 区分。
+- **多公司 / 多部门（已落到执行）**：成员有归属（`factory org member set --all --company <C>`），
+  项目可归属公司/部门（`factory project org <P> --company <C> [--department <D>]`）——
+  派活只在**项目所属公司/部门**的成员里选（跨公司不串人），归属同时写进执行请求与派活简报。
+  尚未做：一家成员同时服务多家公司（多对多）、部门级预算/审批。
 - **学习自治**：经验库仍为空，尚未回喂决策（项目级记忆已接线）。
 - **前端**：`apps/web` 为空（API 可起，无界面）；`apps/desktop`、`apps/mobile` 为壳。
 - **云端 / 多租户**：无 —— 本地单机运行。

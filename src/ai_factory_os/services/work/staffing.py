@@ -26,10 +26,32 @@ from typing import Any
 _MEMBER_FILES = ("agents/agents.json", "org/agents.json")
 
 
-def role_catalog(root: Path | str) -> dict[str, int]:
+def project_scope(root: Path | str, project_id: str) -> tuple[str, str]:
+    """项目归哪家公司/哪个部门 ⇒ (company_id, department_id)。
+
+    ★ 2026-09-21（四维里的"多公司/多部门落到执行"）: 这是**读项目归属的唯一一处**。
+      读不到 / 项目没归 ⇒ ("", "") = 不筛（与现状完全一致）。
+    """
+    try:
+        data = json.loads((Path(root) / "org" / "projects.json").read_text(encoding="utf-8"))
+        rows = data.get("projects") or {}
+        row = rows.get(project_id) or {}
+        deps = [str(x) for x in (row.get("department_ids") or []) if str(x)]
+        return str(row.get("company_id") or ""), (deps[0] if deps else "")
+    except (OSError, ValueError, AttributeError):
+        return "", ""
+
+
+def role_catalog(root: Path | str, *, company_id: str = "",
+                 department_id: str = "") -> dict[str, int]:
     """真实角色清单 ⇒ {角色: 可用人数}（可用 = status 为空或 AVAILABLE）。
 
     ★ 这是"合法值全集"——声明时只许从这里选; 也是给 LLM 的清单, 不是我编的常量。
+
+    ★ 2026-09-21（多公司/多部门落到执行）: 给了 `company_id` ⇒ **只数该公司的成员**;
+      给了 `department_id` ⇒ 再按部门过滤。**未归属公司的成员不入选**（严格隔离 ——
+      项目归了公司就只从该公司的人里派活, 不跨公司串人）。
+      两个参数都不给（项目未归属）⇒ 数全部成员 = 现状, 行为不变。
     """
     base = Path(root)
     for rel in _MEMBER_FILES:
@@ -45,6 +67,10 @@ def role_catalog(root: Path | str) -> dict[str, int]:
         for r in rows:
             if not isinstance(r, dict):
                 continue
+            if company_id and str(r.get("company_id") or "") != company_id:
+                continue                                   # ★ 跨公司的成员不进池
+            if department_id and str(r.get("department_id") or "") not in ("", department_id):
+                continue                                   # 部门给了 ⇒ 只留该部门（空部门=通用）
             role = str(r.get("role") or "").strip()
             if not role:
                 continue

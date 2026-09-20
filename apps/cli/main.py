@@ -61,6 +61,9 @@ from .commands import (
     cmd_org_company_show,
     cmd_org_employee_hire,
     cmd_org_employee_list,
+    cmd_org_member_list,
+    cmd_org_member_set,
+    cmd_project_org,
     cmd_org_knowledge_add,
     cmd_org_knowledge_list,
     cmd_exec_approval_apply,
@@ -463,6 +466,12 @@ def build_parser() -> Any:
     p_pr_show = prsub.add_parser("show", help="项目详情: 技术栈/Agent/技能/工作流映射 (发 project.viewed)")
     json_opt(p_pr_show)
     p_pr_show.add_argument("name", help="项目名 (如 markpad)")
+    p_pr_org = prsub.add_parser(
+        "org", help="★ 给项目设归属公司/部门（派活按它筛人; 不给参数=摘掉）")
+    json_opt(p_pr_org)
+    p_pr_org.add_argument("project_id", help="项目 id（P-*）")
+    p_pr_org.add_argument("--company", default="", help="公司 id（C-*）")
+    p_pr_org.add_argument("--department", default="", help="部门 id（D-*，可选）")
     p_pr_adopt = prsub.add_parser("adopt", help="把一个已有仓库注册为项目 (记忆链上游: 产生 repo_path)")
     json_opt(p_pr_adopt)
     p_pr_adopt.add_argument("path", help="仓库目录 (必须存在)")
@@ -1089,6 +1098,21 @@ def build_parser() -> Any:
     )
     json_opt(p_oc_show)
     p_oc_show.add_argument("company_id")
+
+    # factory org member <sub>（舰队成员归属 —— 多公司/多部门落到执行）
+    p_org_mem = osub.add_parser(
+        "member", help="舰队成员归属（给成员设公司/部门 —— 派活会按归属筛人）")
+    json_opt(p_org_mem)
+    omsub = p_org_mem.add_subparsers(dest="member_command", required=True)
+    p_om_l = omsub.add_parser("list", help="成员清单（含公司/部门归属）")
+    json_opt(p_om_l)
+    p_om_l.add_argument("--company", default="", help="只看该公司")
+    p_om_s = omsub.add_parser("set", help="给成员设归属; --all = 把所有未归属成员一次设好")
+    json_opt(p_om_s)
+    p_om_s.add_argument("member_id", nargs="?", default="", help="成员 id（--all 时可省）")
+    p_om_s.add_argument("--company", default="", help="公司 id（必填）")
+    p_om_s.add_argument("--department", default="", help="部门 id（可选）")
+    p_om_s.add_argument("--all", action="store_true", help="把所有未归属成员一次设到该公司")
 
     # factory org employee <sub>
     p_org_emp = osub.add_parser("employee", help="员工管理 (发 org.employee.* 事件)")
@@ -2705,7 +2729,15 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
     dry = bool(getattr(args, "dry_run", False))
 
     prov = _arch_provider()
-    roles = _ST.role_catalog(ctx.root)          # ★ 真实角色清单（与调度器读同一份成员文件）
+    # ★ 2026-09-21（多公司/多部门落到执行）: 项目归了公司/部门 ⇒ 只从该公司/部门的人里选
+    _co, _dep = _ST.project_scope(ctx.root, str(getattr(args, "project", "") or
+                                                (tree.get("project_id") if isinstance(tree, dict) else "") or ""))
+    roles = _ST.role_catalog(ctx.root, company_id=_co, department_id=_dep)
+    if _co and not roles:
+        raise CliError(f"项目归属公司 {_co} 但该公司一个可用成员都没有 ⇒ 不猜（先给成员设归属: "
+                       f"factory org member set --all --company {_co}）", exit_code=1)
+    if not roles:                              # 项目未归属 ⇒ 现状（全部成员）
+        roles = _ST.role_catalog(ctx.root)
     rows: list[dict[str, Any]] = []
     dropped_total = 0
     staff_dropped_total = 0
@@ -2813,7 +2845,14 @@ def _tasktree_staffing(ctx: FactoryContext, args: Any) -> dict:
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
         raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
-    catalog = _ST.role_catalog(ctx.root)
+    _proj = str(getattr(args, "project", "") or "") or str(tree.get("project_id") or "")
+    _co, _dep = _ST.project_scope(ctx.root, _proj)
+    catalog = _ST.role_catalog(ctx.root, company_id=_co, department_id=_dep)   # ★ 按归属筛人
+    if _co and not catalog:
+        raise CliError(f"项目归属公司 {_co} 但该公司没有可用成员 ⇒ 不猜（先 `factory org member set "
+                       f"--all --company {_co}`）", exit_code=1)
+    if not catalog:
+        catalog = _ST.role_catalog(ctx.root)
     if not catalog:
         raise CliError("读不到成员清单（~/.factory/agents/agents.json）⇒ 不知道有哪些角色可用, "
                        "不猜（先 `factory agent list` 看舰队）", exit_code=1)
@@ -3938,6 +3977,8 @@ def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
         return cmd_project_list(ctx, args)
     if args.project_command == "show":
         return cmd_project_show(ctx, args)
+    if args.project_command == "org":
+        return cmd_project_org(ctx, args)
     if args.project_command == "adopt":
         return cmd_project_adopt(ctx, args)
     raise CliError(f"unknown project command: {args.project_command}", exit_code=2)
@@ -4272,6 +4313,12 @@ def _dispatch_org(ctx: FactoryContext, args: Any) -> dict:
         if args.employee_command == "list":
             return cmd_org_employee_list(ctx, args)
         raise CliError(f"unknown org employee command: {args.employee_command}", exit_code=2)
+    if args.org_command == "member":
+        if args.member_command == "list":
+            return cmd_org_member_list(ctx, args)
+        if args.member_command == "set":
+            return cmd_org_member_set(ctx, args)
+        raise CliError(f"unknown org member command: {args.member_command}", exit_code=2)
     if args.org_command == "authority":
         if args.authority_command == "check":
             return cmd_org_authority_check(ctx, args)
@@ -4815,8 +4862,13 @@ def _print_knowledge(sub: str, r: dict) -> None:
         print(f"{r.get('count')} 个项目已重建")
         return
 
-
 def _print_project(sub: str, r: dict) -> None:
+    if sub == "org":
+        # ★ 2026-09-21: 项目归属公司/部门（派活按它筛人）
+        print(f"✔ 项目 {r.get('project_id')} 归属: 公司 {r.get('company_id') or '（未归属）'}"
+              + (" · 部门 " + ", ".join(r.get("department_ids") or []) if r.get("department_ids") else ""))
+        print("  派活会按它筛人（`factory tasktree staffing` / `tasktree declare`）")
+        return
     if sub == "adopt":
         # ★ 2026-09-19: adopt 的输出（记忆链上游 —— 项目有了 repo_path, 知识索引才知道扫哪）
         print(f"\n  ✓ 已注册项目: {r.get('name')}  ({r.get('project_id')})")
@@ -5614,6 +5666,20 @@ def _print_org(args: Any, r: dict) -> None:
         print(f"error: {r.get('error')}", file=sys.stderr)
         return
     command = args.org_command
+    if command == "member":
+        # ★ 2026-09-21: 舰队成员归属（多公司/多部门落到执行的前提）
+        if getattr(args, "member_command", "") == "list":
+            rows = [[m["id"], m["role"], m["company_id"] or "（未归属）",
+                     m["department_id"] or "-", m["status"]] for m in r.get("members") or []]
+            print(_render_table(["成员", "角色", "公司", "部门", "状态"], rows))
+            tail = f"{r.get('count', 0)} 人"
+            if r.get("unassigned"):
+                tail += f" · 未归属 {r['unassigned']} 人 ⇒ 用 `factory org member set --all --company <C>` 一次设好"
+            print(tail)
+            return
+        print(f"✔ 已设归属: {r.get('count', 0)} 个成员 → 公司 {r.get('company')}"
+              + (f" · 部门 {r.get('department')}" if r.get("department") else ""))
+        return
     if command == "company":
         company = r["company"]
         if args.company_command == "create":

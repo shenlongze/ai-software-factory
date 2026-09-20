@@ -224,7 +224,19 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
 
     if banner:
         print(render_welcome(ctx.root))
-        print("  ★ 已进入交互式 CLI: 直接敲命令（例: status）· help 帮助 · exit 离开")
+        # ★ 亮出"当前用什么模型"（Hermes 那样）—— 读真值, 读不到就留空
+        try:
+            from apps.cli.domains.chat import _provider as _p, provider_info as _pi
+
+            _info = _pi(_p()) if _p() is not None else {}
+            _zh = {"model": "模型", "provider": "供应商"}
+            _mline = " · ".join(f"{_zh.get(k, k)} {v}" for k, v in _info.items() if v)
+        except Exception:  # noqa: BLE001 — 拿不到就不显示
+            _mline = ""
+        print("  ★ 已进入交互式 CLI —— 直接说人话 = 会话; `/命令` = 执行命令（例: /status）; exit 离开")
+        if _mline:
+            print(f"     当前: {_mline}")
+        print("     help 帮助中心 · 会话里只会自动跑**只读**命令, 会改数据的只念给你确认")
         print()
 
     _conv_id = ""
@@ -275,13 +287,15 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                     pass
                 return buf.getvalue().strip() or "（无输出）"
 
-            _ans, _conv = _chat.chat_turn(ctx.root, line, conv_id=_conv_id, history=_chat_hist,
-                                          on_run=_run_capture)
+            _ans, _conv, _meta = _chat.chat_turn(ctx.root, line, conv_id=_conv_id, history=_chat_hist,
+                                                 on_run=_run_capture)
             _conv_id = _conv
             _chat_hist += [{"role": "human", "content": line}, {"role": "assistant", "content": _ans}]
+            # ★ 2026-09-21（Founder: "Hermes 的有分界线、有模型、有成本"）: 每回合都亮出这轮的实情
             print()
+            print(_chat.turn_header(_meta))
             print(_ans or "（没答上来; 换句话再说一次?）")
-            print()
+            print("  " + "─" * 66)
             continue
         argv = line.split()
         # 敲错命令 ⇒ 一句短提示（不再是 argparse 整屏 usage + 长报错 ✗）

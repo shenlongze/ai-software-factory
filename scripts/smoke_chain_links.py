@@ -2272,9 +2272,17 @@ def _check_cli_chat() -> list[str]:
             __import__("sys").stdin = old_stdin
         if "工厂状态" not in buf.getvalue():
             bad.append("`/status` 没当命令跑（/ 命令没通）")
-        # ④ 写命令不许自动跑
-        _, _ = C.chat_turn(Path.home() / ".factory", "帮我跑一下任务树", conv_id="",
-                           on_run=lambda argv: (_ for _ in ()).throw(AssertionError("不该跑到这里")))
+        # ④ 写命令不许自动跑（chat_turn 现在返回 (answer, conv, meta)）
+        _a, _c2, _m2 = C.chat_turn(Path.home() / ".factory", "帮我跑一下任务树", conv_id="",
+                                   on_run=lambda argv: (_ for _ in ()).throw(AssertionError("不该跑到这里")))
+        if not (_m2 or {}).get("elapsed"):
+            bad.append("回合信息里没有用时（Hermes 那样的回合信息没接）")
+        _h = C.turn_header({"model": "m", "provider": "p", "usage": {"prompt_tokens": 1, "completion_tokens": 2,
+                                                                    "estimated_cost_usd": 0.0001},
+                            "elapsed": 1.0, "rounds": 1})
+        for kw in ("模型 m", "供应商 p", "tokens", "成本 $0.000100", "用时 1.0s"):
+            if kw not in _h:
+                bad.append(f"回合信息缺「{kw}」")
     finally:
         C._provider = real
     if C.is_readonly(["run", "--plan", "P"]):

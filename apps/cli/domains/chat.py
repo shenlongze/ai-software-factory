@@ -18,7 +18,7 @@ from typing import Any
 #: 会话里可以**自动执行**的只读命令（白名单; 想加就加只读的, 别加会写数据的 ✗）
 READONLY_PREFIXES: tuple[str, ...] = (
     "status", "metrics", "dashboard", "kanban", "console dashboard", "console approvals",
-    "project list", "project show", "tasktree show", "tasktree todo", "tasktree flow",
+    "tasktree show", "tasktree todo", "tasktree flow",
     "tasktree dataflow", "tasktree priority", "agent list", "approval list",
     "intelligence experience list", "intelligence experience evaluate", "intelligence recommend",
     "provider list", "memory list", "knowledge status", "plugin list", "execution list",
@@ -51,12 +51,42 @@ def _provider() -> Any:
     return provs[0] if provs else None
 
 
-def _ask_llm(prov: Any, messages: list[dict[str, str]]) -> str:
+def _ask_llm2(prov: Any, messages: list[dict[str, str]]) -> tuple[str, dict[str, Any]]:
     from ai_factory_os.infrastructure.llm.provider import ProviderRequest
 
     ctx = "\n\n".join(f"[{m['role']}] {m['content']}" for m in messages)
     resp = prov.generate(ProviderRequest(task_context=ctx, max_tokens=1200))
-    return str(getattr(resp, "content", "") or "").strip()
+    return str(getattr(resp, "content", "") or "").strip(), dict(getattr(resp, "usage", None) or {})
+
+
+def provider_info(prov: Any) -> dict[str, str]:
+    """这次用的是什么（模型/供应商）—— 如实读, 读不到就留空（不编）。"""
+    return {
+        "provider": str(getattr(prov, "provider_id", "") or ""),
+        "model": str(getattr(prov, "_model", "") or getattr(prov, "model", "") or ""),
+    }
+
+
+def turn_header(meta: dict[str, Any], *, width: int = 66) -> str:
+    """Hermes 那样的一行回合信息（分界线 + 模型/用量/成本/用时）。"""
+    u = meta.get("usage") or {}
+    bits: list[str] = []
+    if meta.get("model"):
+        bits.append(f"模型 {meta['model']}")
+    if meta.get("provider"):
+        bits.append(f"供应商 {meta['provider']}")
+    pt, ct = u.get("prompt_tokens"), u.get("completion_tokens")
+    if pt is not None or ct is not None:
+        bits.append(f"tokens {pt if pt is not None else '?'}↑/{ct if ct is not None else '?'}↓")
+    cost = u.get("estimated_cost_usd")
+    if cost is not None:
+        bits.append(f"成本 ${float(cost):.6f}")
+    if meta.get("elapsed") is not None:
+        bits.append(f"用时 {float(meta['elapsed']):.1f}s")
+    if meta.get("rounds"):
+        bits.append(f"查了 {int(meta['rounds'])} 次")
+    info = " · ".join(bits)
+    return "  " + "─" * width + ("\n  " + info if info else "")
 
 
 def _system_prompt(root: Path | str) -> str:
@@ -76,7 +106,7 @@ def _system_prompt(root: Path | str) -> str:
 
 
 def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[dict[str, str]] | None = None,
-              on_run: Any = None) -> tuple[str, str]:
+              on_run: Any = None) -> tuple[str, str, dict[str, Any]]:
     """一轮会话: 返回 (回答文本, 会话 id)。
 
     on_run(argv) 用于"把这行 RUN 命令真的跑掉并把结果拿回来"——由调用方注入（CLI 里 = 跑命令）。
@@ -90,9 +120,14 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
     if conv:
         U.append_message(root, conv, role="human", content=text)
 
+    import time as _time
+
+    _t0 = _time.monotonic()
+    _meta: dict[str, Any] = {"rounds": 0, "cmds": [], "elapsed": 0.0, "usage": {}}
     prov = _provider()
     if prov is None:
-        return "（没配置 LLM provider —— 用 factory provider add 配一个, 我才能跟你对话。）", conv
+        return "（没配置 LLM provider —— 用 factory provider add 配一个, 我才能跟你对话。）", conv, _meta
+    _meta.update(provider_info(prov))
 
     msgs = [{"role": "system", "content": _system_prompt(root)}]
     msgs += (history or [])[-8:]
@@ -100,7 +135,10 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
 
     answer = ""
     for _round in range(_MAX_ROUNDS):
-        answer = _ask_llm(prov, msgs)
+        answer, _usage = _ask_llm2(prov, msgs)
+        if _usage:
+            _meta["usage"] = _usage
+        _meta["rounds"] = _round + 1
         runs = [ln.split("RUN:", 1)[1].strip() for ln in answer.splitlines() if ln.strip().startswith("RUN:")]
         runs = [r for r in runs if r][:_MAX_ROUNDS]
         if not runs or on_run is None:
@@ -122,4 +160,20 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
     answer = "\n".join(ln for ln in answer.splitlines() if not ln.strip().startswith("RUN:")).strip()
     if conv:
         U.append_message(root, conv, role="assistant", content=answer)
-    return answer, conv
+    _meta["elapsed"] = round(_time.monotonic() - _t0, 2)
+    # 记一笔用量（平台的用量账本 —— 与执行侧同一本账, 不是我自己另记）
+    try:
+        from ai_factory_os.infrastructure.llm.providers.usage import ProviderUsage, UsageStore
+
+        _u = _meta.get("usage") or {}
+        UsageStore(str(Path(root) / "providers")).record(ProviderUsage(
+            provider_id=str(_meta.get("provider") or "unknown"),
+            model=str(_meta.get("model") or "") or None,
+            prompt_tokens=int(_u.get("prompt_tokens") or 0),
+            completion_tokens=int(_u.get("completion_tokens") or 0),
+            estimated_cost=float(_u.get("estimated_cost_usd") or 0.0),
+            latency_ms=int(float(_meta.get("elapsed") or 0) * 1000),
+        ))
+    except Exception:  # noqa: BLE001 — 记账失败不影响对话
+        pass
+    return answer, conv, _meta

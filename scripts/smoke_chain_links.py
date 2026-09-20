@@ -1411,7 +1411,21 @@ def _check_recover_plan_from_checkpoint() -> list[str]:
 
 
 def _fake_ok(ports: Any, eid: str) -> Any:
-    """假执行: 直接把该执行标成 SUCCESS（守卫用 —— 不碰 LLM）。"""
+    """假执行: 把该执行在**库里**标成 SUCCESS（守卫用 —— 不碰 LLM）。
+
+    注: 必须落库 —— 事件发射只看执行库里的真实终态（不认返回 dict 里的 status）, 否则守卫会假绿。
+    """
+    from ai_factory_os.services.execution.runtime.store import open_runtime_store
+    from ai_factory_os.services.execution.runtime.types import ExecutionStatus
+
+    root = getattr(getattr(ports, "execution", None), "_root", None)
+    if root is not None:
+        st = open_runtime_store(root)
+        for req in st.list_executions():
+            if str(req.id) == str(eid):
+                req.status = ExecutionStatus.SUCCESS
+                st.save_execution(req)
+                break
     return {"id": eid, "status": "SUCCESS", "ok": True, "output": {"verdict": "done"}}
 
 
@@ -1506,6 +1520,53 @@ def _check_metrics_not_empty_shells() -> list[str]:
         vm = calculate_validation_metrics(events)
         if vm.total_rules <= 0 or vm.runs <= 0:
             bad.append(f"Validation 指标仍是 0: total_rules={vm.total_rules} runs={vm.runs}")
+
+        # ④ 同一执行的**多条 outcome**（跑完了 + "流程推进中"）只能发一次结果事件,
+        #    且成败取执行库真实终态 —— 否则 Agents 里会出现 success=1/failed=1 的怪数（实测踩到）
+        eid = rep.scheduled[0] if rep.scheduled else ""
+        if eid:
+            from types import SimpleNamespace as _SNS
+
+            from ai_factory_os.infrastructure.events.logger import EventLogger as _EL
+            from ai_factory_os.infrastructure.events.store import EventStore as _ES
+
+            st2 = _ES(root / "e2.db")
+            try:
+                lg2 = _EL(st2)
+                _emit_execution_events(lg2, root, _SNS(
+                    scheduled=[eid], outcomes=[
+                        {"execution_id": eid, "ok": True, "state": "完成"},
+                        {"execution_id": eid, "ok": False, "state": "流程推进中（本步完成 ⇒ 已交回待下一步）"},
+                    ]))
+                evs2 = list(st2.recent(limit=100))
+            finally:
+                st2.close()
+            done = [e for e in evs2 if str(getattr(e.type, "value", e.type))
+                    == EventType.ASSIGNMENT_COMPLETED.value]
+            fail = [e for e in evs2 if str(getattr(e.type, "value", e.type))
+                    == EventType.ASSIGNMENT_FAILED.value]
+            if len(done) != 1 or fail:
+                bad.append(f"同一执行该只发 1 条成功结果（取库终态 SUCCESS）, 实得 成功{len(done)}/失败{len(fail)}"
+                           "（按 outcome 逐条发会既记成功又记失败 —— 实测踩到过）")
+            # ⑤ "库说了算": outcome 说 ok 但库里是 FAILED ⇒ 必须发 FAILED（不按 outcome 的标记走）
+            from ai_factory_os.services.execution.runtime.store import open_runtime_store as _ors
+            from ai_factory_os.services.execution.runtime.types import ExecutionStatus as _ES2
+
+            _st3 = _ors(root)
+            for req in _st3.list_executions():
+                if str(req.id) == str(eid):
+                    req.status = _ES2.FAILED
+                    _st3.save_execution(req)
+            se3 = _ES(root / "e3.db")
+            try:
+                _emit_execution_events(_EL(se3), root, _SNS(
+                    scheduled=[eid], outcomes=[{"execution_id": eid, "ok": True, "state": "完成"}]))
+                evs3 = list(se3.recent(limit=50))
+            finally:
+                se3.close()
+            if not [e for e in evs3 if str(getattr(e.type, "value", e.type))
+                    == EventType.ASSIGNMENT_FAILED.value]:
+                bad.append("outcome 说 ok 但库里是 FAILED 时没发失败事件（成败必须以执行库为准）")
     return bad
 
 

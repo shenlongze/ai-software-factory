@@ -4476,12 +4476,22 @@ def _emit_execution_events(logger: Any, root: Path, rep: Any) -> None:
                           action=f"dispatch {eid}", result="OK",
                           payload={"execution_id": eid, "node_id": node})
 
+        # ★ 每条执行**只发一次**结果事件, 且成败取【执行库里的真实终态】（不取 outcome 的 ok 标记）:
+        #   实测踩到过 —— 一次执行会产生多条 outcome（跑完了 + "流程推进中"）⇒ 按 ok 逐条发
+        #   会把同一次执行既记成功又记失败（Agents 里 success=1/failed=1 的怪数就是这么来的）。
+        _seen: set[str] = set()
         for o in list(getattr(rep, "outcomes", []) or []):
             eid = str(o.get("execution_id") or "")
-            if not eid or "," in eid:                      # 汇总行（如"降级串行 N 个"）不发
+            if not eid or "," in eid or eid in _seen:      # 汇总行/已发过的跳过
                 continue
+            _seen.add(eid)
             task_id, node = _info(eid)
-            ok = bool(o.get("ok"))
+            _ex = ex_by_id.get(eid)
+            _st_raw = getattr(_ex, "status", "") if _ex is not None else ""
+            _st = str(getattr(_st_raw, "value", _st_raw) or "").upper()
+            if _st not in ("SUCCESS", "FAILED"):
+                continue                                   # 还没到终态 ⇒ 不发（不猜成败）
+            ok = _st == "SUCCESS"
             mem = _member(eid)
             logger.record(
                 EventType.ASSIGNMENT_COMPLETED if ok else EventType.ASSIGNMENT_FAILED,

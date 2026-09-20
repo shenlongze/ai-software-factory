@@ -699,6 +699,130 @@ def edit_node(
     return {"tree": tree, "node": target, "action": action, "status": tree["status"]}
 
 
+def split_node(
+    root: Path | str,
+    plan_id: str,
+    *,
+    node_id: str,
+    children: list[str],
+    project_id: str = "",
+) -> dict[str, Any]:
+    """★ 把一个叶【拆成多个子任务】—— Founder: "每一个子节点, 用户都有可能做修改"。
+
+    语义: 被拆的叶**变成容器（kind=domain）**, 它的子任务是新叶 ⇒
+      任务→子任务→子子任务 的层级由**用户**决定（不必等 LLM 自觉拆）。
+    ★ 为什么这是对的解法: 实测证明"让 LLM 自觉拆细"无效（3330 tokens 余量下仍 0/14）;
+      而"用户看得懂就去拆"是可控的 —— 拆解质量靠人机协作, 不靠模型自觉。
+
+    边界:
+      · 子任务标题为空 ⇒ 跳过（不造无名节点）
+      · 超过 max_leaves ⇒ 响亮报错（不静默丢）
+      · 拆后子叶继承父叶的 depends_on（原来等谁, 现在子叶还是等谁）
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        raise FileNotFoundError(f"任务树不存在: {plan_id}")
+    nodes: list[dict[str, Any]] = tree.get("nodes") or []
+    target = next((n for n in nodes if str(n.get("id") or "") == node_id
+                   or str(n.get("id") or "").endswith(node_id)), None)
+    if target is None:
+        raise ValueError(f"找不到节点: {node_id}")
+
+    titles = [str(c).strip() for c in children if str(c).strip()]
+    if not titles:
+        raise ValueError("拆分必须给出至少一个子任务标题")
+    leaves = len(tree_leaves(tree))
+    if leaves + len(titles) > DECOMPOSE_LIMITS["max_leaves"]:
+        raise ValueError(
+            f"拆分后叶子数 {leaves + len(titles)} 超过上限 "
+            f"{DECOMPOSE_LIMITS['max_leaves']}（不静默丢弃 —— 请分批拆）"
+        )
+
+    tid = str(tree.get("plan_id") or plan_id)
+    parent_id = str(target.get("id") or "")
+    # ★ 被拆的叶变成容器（它不再是"一件可执行的事", 而是"一组事"）
+    target["kind"] = "domain"
+    target["change_type"] = ""
+    target["expected_files"] = []
+    target["assignee"] = target.get("assignee") or ""
+    inherited_deps = [str(x) for x in (target.get("depends_on") or [])]
+    new_ids: list[str] = []
+    for i, title in enumerate(titles, 1):
+        nid = f"{tid}-t-{uuid.uuid4().hex[:8]}"
+        nodes.append({
+            "id": nid,
+            "kind": "task",
+            "title": title[: DECOMPOSE_LIMITS["max_title"]],
+            "parent_id": parent_id,
+            "prd_ref": str(target.get("prd_ref") or ""),
+            "change_type": "NEW_FILE",
+            "expected_files": [],
+            "depends_on": [parent_id] + inherited_deps,
+            "scope": "",
+            "required_role": str(target.get("required_role") or _DEFAULT_ROLE),
+            "required_capabilities": list(target.get("required_capabilities") or []),
+            "role_hint": str(target.get("role_hint") or ""),
+            "acceptance": "",
+            "status": None,
+        })
+        new_ids.append(nid)
+
+    tree["status"] = "candidate"
+    tree["edited_at"] = _now_iso()
+    tree.pop("_saved_to", None)
+    tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
+    return {"tree": tree, "node": target, "new_ids": new_ids,
+            "action": f"拆成 {len(new_ids)} 个子任务"}
+
+
+def merge_nodes(
+    root: Path | str,
+    plan_id: str,
+    *,
+    node_ids: list[str],
+    title: str = "",
+    project_id: str = "",
+) -> dict[str, Any]:
+    """★ 把多个节点【合并成一个】—— 拆分/合并是同一个用户操作的两面。
+
+    做法: 保留第一个, 把其余的**依赖引用改指到第一个**, 然后删掉其余（及其子树）,
+    并把它们的子节点挂到保留者下。★ 与 drop 同策略: 不留悬空依赖。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        raise FileNotFoundError(f"任务树不存在: {plan_id}")
+    nodes: list[dict[str, Any]] = tree.get("nodes") or []
+    ids: list[str] = []
+    for want in node_ids:
+        hit = next((str(n.get("id") or "") for n in nodes
+                    if str(n.get("id") or "") == want or str(n.get("id") or "").endswith(want)), "")
+        if not hit:
+            raise ValueError(f"找不到节点: {want}")
+        ids.append(hit)
+    if len(ids) < 2:
+        raise ValueError("合并需要至少两个节点")
+    keep, rest = ids[0], set(ids[1:])
+    keeper = next(n for n in nodes if str(n.get("id") or "") == keep)
+    if title:
+        keeper["title"] = str(title)[: DECOMPOSE_LIMITS["max_title"]]
+
+    # 其余的子树挂到保留者下
+    for n in nodes:
+        if str(n.get("parent_id") or "") in rest:
+            n["parent_id"] = keep
+    # 依赖引用改指到保留者（★ 不清就是悬空依赖 ⇒ 永不执行）
+    for n in nodes:
+        deps = [keep if str(x) in rest else str(x) for x in (n.get("depends_on") or [])]
+        n["depends_on"] = list(dict.fromkeys(d for d in deps if d != str(n.get("id") or "")))
+    kept_nodes = [n for n in nodes if str(n.get("id") or "") not in rest]
+    tree["nodes"] = kept_nodes
+    tree["status"] = "candidate"
+    tree["edited_at"] = _now_iso()
+    tree.pop("_saved_to", None)
+    tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
+    return {"tree": tree, "node": keeper, "action": f"合并 {len(ids)} 个节点（保留 {keep[-8:]}）"}
+
+
 def tree_leaves(tree: dict[str, Any]) -> list[dict[str, Any]]:
     return [n for n in (tree.get("nodes") or []) if n.get("kind") == "task"]
 

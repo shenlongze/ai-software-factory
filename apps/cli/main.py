@@ -575,6 +575,10 @@ def build_parser() -> Any:
     p_tt_e.add_argument("--acceptance", default=None, help="改验收标准")
     p_tt_e.add_argument("--display-name", dest="display_name", default=None, help="改人话名")
     p_tt_e.add_argument("--assignee", default=None, help="指派谁做（承接落地; 空串=回到待派）")
+    p_tt_e.add_argument("--split", nargs="+", default=None,
+                        help="★ 把该叶拆成多个子任务（给子任务标题）")
+    p_tt_e.add_argument("--merge", nargs="+", default=None, dest="merge_ids",
+                        help="★ 合并多个节点（给节点 id, 保留第一个）")
     p_tt_e.add_argument("--drop", action="store_true", help="删除该节点及其子树")
     p_tt_e.add_argument("--project", default=None, help="项目 id")
     p_tt_d = ttsub.add_parser("decompose", help="从 Design Artifact 生成任务树（候选态）")
@@ -2436,6 +2440,22 @@ def _tasktree_edit(ctx: FactoryContext, args: Any) -> dict:
 
     plan_id = str(getattr(args, "plan_id", "") or "")
     project = str(getattr(args, "project", "") or "")
+
+    # ★ 拆分 / 合并（与"改字段"是并列的三种编辑操作）
+    if getattr(args, "split", None):
+        r = _D.split_node(ctx.root, plan_id, node_id=str(getattr(args, "node", "") or ""),
+                          children=list(args.split), project_id=project)
+        return {"ok": True, "action": "tasktree-edit", **r,
+                "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(r["tree"])),
+                            "done": 0, "percent": "0"}}
+    if getattr(args, "merge_ids", None):
+        ids = list(args.merge_ids)
+        r = _D.merge_nodes(ctx.root, plan_id, node_ids=ids,
+                           title=str(getattr(args, "title", "") or ""), project_id=project)
+        return {"ok": True, "action": "tasktree-edit", **r,
+                "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(r["tree"])),
+                            "done": 0, "percent": "0"}}
+
     r = _D.edit_node(
         ctx.root, plan_id,
         node_id=str(getattr(args, "node", "") or ""),
@@ -2723,7 +2743,8 @@ def _print_tasktree(args: Any, r: dict) -> None:
             print(f"  验收: {n['acceptance'][:80]}")
         if n.get("assignee"):
             print(f"  指派: {n['assignee']}")
-        print(f"  ★ 树已回到【候选态】（{r.get('status')}）—— 需重新确认:")
+        st = r.get("status") or (r.get("tree") or {}).get("status") or "candidate"
+        print(f"  ★ 树已回到【候选态】（{st}）—— 需重新确认:")
         print(f"     factory tasktree confirm {r['tree'].get('plan_id')}")
     elif cmd == "decompose":
         t = r["tree"]

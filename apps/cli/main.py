@@ -1511,11 +1511,12 @@ def _load_json_safe(path: Any) -> Any | None:
 def _task_rows(data_dir: Any) -> list[dict[str, Any]]:
     """任务行（id/title/status/project/role/agent）—— 照老 CLI `_task_rows`（L783）逻辑。
 
-    合并三源（WebUI/CLI 同源, P2b 同步）:
+    合并四源（WebUI/CLI 同源, P2b 同步）:
       ① tasks/*.json（每文件一条）
       ② ops/unified/entities.json 补 required_role
       ③ assignments/assignments.json 补 agent_id
       ④ workspace/projects/*/management/backlog/task.json（会话/WebUI 创建）
+      ⑤ ★ 任务树的叶（开发任务 = 执行的真实账本; 判据见 services/work/progress.py）
     """
     data_dir = Path(data_dir)
     rows: list[dict[str, Any]] = []
@@ -1568,6 +1569,14 @@ def _task_rows(data_dir: Any) -> list[dict[str, Any]]:
                 "status": str(t.get("status") or ""),
                 "project": str(t.get("project") or pdir.name),
             })
+    # ⑤ ★ 任务树的叶（= 开发任务 = 执行的真实账本）——
+    #    实测踩到（全链路实跑, 卡点 1）: 上面四源都没有它 ⇒ 工厂干着活、看板却显示 0。
+    #    判据只在 progress.py 一份（一能力一处）, 这里只做合并。
+    try:
+        from ai_factory_os.services.work import progress as _prog
+        rows.extend(_prog.leaf_rows(data_dir))
+    except Exception:  # noqa: BLE001 — 失败安全: 读不到树不拖垮看板（但下面会报出来）
+        pass
     return rows
 
 
@@ -1644,7 +1653,8 @@ def _dispatch_kanban(ctx: FactoryContext, args: Any) -> dict:
     if other:
         L.append(f"  （另有 {len(other)} 条状态未识别）")
     L.append("")
-    L.append("  数据源: 与 `factory task list` 同一份 ✓ · 列 = 任务实际流转顺序 ✓")
+    L.append("  数据源: 与 `factory task list` 同一份（①tasks ②backlog ③分配记录 ④**任务树的叶=开发任务**）✓")
+    L.append("          列 = 任务实际流转顺序 ✓（叶状态 pending→claimed→completed 直接映射到列）")
     return {"lines": L}
 
 
@@ -4281,6 +4291,14 @@ def _print_status(r: dict) -> None:
     print(f"  tasks     {r['tasks_count']}  {r['tasks_by_status']}")
     print(f"  agents    {r['agents_count']}  {r['agents']}")
     print(f"  events    {r['events_count']}")
+    # ★ 开发任务（任务树 = 执行的真实账本）+ 舰队 —— 原来这里看不到, 工厂干着活却显示 0
+    dt = r.get("dev_tasks") or {}
+    if dt:
+        print(f"  开发任务  {dt.get('done', 0)}/{dt.get('leaves', 0)} 叶（{dt.get('percent', 0)}%）"
+              f" · {dt.get('plans', 0)} 个计划 · by_status {dt.get('by_status') or '{}'}")
+        print(f"            ↑ 来源: {dt.get('source')}")
+    if r.get("fleet_count"):
+        print(f"  舰队      {r['fleet_count']} 人（agents.json; 与 dashboard 同一份）")
 
 
 def _print_validate(r: dict) -> None:
@@ -4522,6 +4540,17 @@ def _print_metrics(r: dict) -> None:
         print(format_workspace_comparison(WorkspaceComparison.model_validate(r["comparison"])))
         return
     print(format_metrics(FactoryMetrics.model_validate(r["metrics"])))
+    # ★ 开发任务（任务树）—— 上面那张表数的是【任务域】, 而执行跑的是【任务树】;
+    #   两套账本都得报出来（实测踩到: 工厂干着活、这里显示 Tasks 0）
+    tt = r.get("tasks_tree") or {}
+    if tt:
+        print("\n开发任务（任务树 = 执行的真实账本）")
+        print("  total  done  percent  plans  by_status")
+        print("  -----  ----  -------  -----  ---------")
+        print(f"  {tt.get('leaves', 0):5d}  {tt.get('done', 0):4d}  "
+              f"{str(tt.get('percent', 0)) + '%':7s}  {tt.get('plans', 0):5d}  {tt.get('by_status') or '{}'}")
+        if tt.get("by_project"):
+            print("  按项目: " + " · ".join(f"{k} {v['done']}/{v['leaves']}" for k, v in tt["by_project"].items()))
 
 
 def _print_knowledge(sub: str, r: dict) -> None:

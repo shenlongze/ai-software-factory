@@ -280,11 +280,31 @@ def cmd_event_logs(ctx: FactoryContext, args: Any) -> dict:
 # ------------------------------------------------------------------ factory status
 
 def cmd_status(ctx: FactoryContext, args: Any | None = None) -> dict:
-    """factory status — 工厂总览 (Projects/Tasks/Agents/Events 计数), 发 system.status_viewed。"""
+    """factory status — 工厂总览 (Projects/Tasks/Agents/Events 计数), 发 system.status_viewed。
+
+    ★ 全链路实跑踩到（卡点 1/5）: 原来 projects/tasks 只数【任务域】、agents 只数【事件里出现过的】,
+      ⇒ 真实在跑（1 个项目 / 17 个叶 / 53 名员工）时 status 显示 0/0/0 —— 监控看不见执行。
+    现在: 开发任务与项目取自**任务树**（`services/work/progress.py`: 执行的真实账本）,
+      员工取自**舰队**（agents.json, 与 dashboard 同一份）; 任务域那份照旧单列（来源分开报, 不混）。
+    """
+    import json as _json
+
+    from ai_factory_os.services.work import progress as _prog
+
     store = ctx.open_task_store()
     tasks = store.list()
     by_status = Counter(t.status.value for t in tasks)
-    projects = sorted({t.project for t in tasks})
+    tree = _prog.summary(ctx.root)                      # ★ 开发任务（任务树）
+    fleet: list[str] = []
+    _af = ctx.root / "agents" / "agents.json"
+    if _af.is_file():
+        try:
+            _d = _json.loads(_af.read_text(encoding="utf-8"))
+            _rows = _d if isinstance(_d, list) else list(_d.values())
+            fleet = [str(r.get("name") or r.get("id") or "") for r in _rows if isinstance(r, dict)]
+        except Exception:  # noqa: BLE001 — 读不到舰队不编（下面 agents_count=0 会显出来）
+            fleet = []
+    projects = sorted({t.project for t in tasks} | set(tree["projects"]))
     with ctx.logger_scope() as logger:
         all_events = logger.store.query()
         event_count = len(all_events)
@@ -295,7 +315,10 @@ def cmd_status(ctx: FactoryContext, args: Any | None = None) -> dict:
                 "projects": projects,
                 "tasks_total": len(tasks),
                 "tasks_by_status": dict(by_status),
+                "dev_tasks_leaves": tree["leaves"],
+                "dev_tasks_done": tree["done"],
                 "agents": agents,
+                "fleet_total": len(fleet),
                 "events_total": event_count,
             },
         )
@@ -306,6 +329,9 @@ def cmd_status(ctx: FactoryContext, args: Any | None = None) -> dict:
         "projects_count": len(projects),
         "tasks_count": len(tasks),
         "tasks_by_status": dict(by_status),
+        "dev_tasks": tree,
+        "fleet": fleet,
+        "fleet_count": len(fleet),
         "agents": agents,
         "agents_count": len(agents),
         "events_count": event_count,
@@ -1856,6 +1882,19 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
 
 # ------------------------------------------------------------------ metrics (Phase 5B, ADR-0015)
 
+def _progress_summary(ctx: FactoryContext, project_id: str = "") -> dict:
+    """开发任务汇总（任务树）—— 只读。
+
+    ★ 读不到就返回 {}（不编数字, 也不拖垮 metrics）: 监控类命令**失败安全**, 但它会用
+      "开发任务" 那一节显示 0 的事实告诉人"这里没数据"。
+    """
+    try:
+        from ai_factory_os.services.work import progress as _prog
+        return _prog.summary(ctx.root, project_id=str(project_id or ""))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def cmd_metrics(ctx: FactoryContext, args: Any) -> dict:
     """factory metrics — 工厂生产指标 (六域 + 失败原因, 只读), 发 metrics.viewed;
     --workspace → 项目对比 (复用 MetricsCollector 每项目聚合), 发 workspace.metrics.viewed。
@@ -1898,6 +1937,8 @@ def cmd_metrics(ctx: FactoryContext, args: Any) -> dict:
     return {
         "ok": True,
         "metrics": metrics.to_dict(),
+        # ★ 开发任务（任务树）—— 与上面【任务域】分开报（两套账本各自可见, 不混口径）
+        "tasks_tree": _progress_summary(ctx, str(project_id or "")),
         "event_seq": ev.seq,
     }
 

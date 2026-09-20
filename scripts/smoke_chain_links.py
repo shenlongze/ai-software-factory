@@ -80,18 +80,88 @@ def _check(root: Path) -> list[str]:
     return bad
 
 
+def _check_views_see_tree(root: Path) -> list[str]:
+    """★ 监控必须看得见执行（卡点 1）: 任务树里有叶 ⇒ status/metrics/kanban 必须报出来。
+
+    实测踩到: 执行走【任务树】, 而 status/task list/kanban/metrics 读【任务域】⇒ 显示 0。
+    这里直接问那几个命令的**返回值**（不看文案）, 断言数字与树一致。
+    """
+    from apps.cli.commands import cmd_metrics, cmd_status
+    from apps.cli.main import FactoryContext, _task_rows
+    from ai_factory_os.services.work import progress as P
+
+    bad: list[str] = []
+    tree = {
+        "plan_id": "PLAN-v", "project_id": "P-v", "status": "confirmed",
+        "nodes": [
+            {"id": "p", "kind": "project", "parent_id": "", "title": "项目"},
+            {"id": "M", "kind": "domain", "parent_id": "p", "title": "模块"},
+            {"id": "L1", "kind": "task", "parent_id": "M", "title": "做完了的叶", "status": "completed"},
+            {"id": "L2", "kind": "task", "parent_id": "M", "title": "没做的叶", "status": "pending"},
+        ],
+    }
+    d = root / "projects" / "P-v" / "tasks"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "PLAN-v.json").write_text(json.dumps(tree, ensure_ascii=False), encoding="utf-8")
+    ctx = FactoryContext(root=root)
+
+    # ① 投影本身
+    sm = P.summary(root)
+    if (sm["leaves"], sm["done"], sm["projects"]) != (2, 1, ["P-v"]):
+        bad.append(f"progress.summary 不对: {sm}")
+
+    # ② status 必须报出开发任务与项目
+    st = cmd_status(ctx)
+    if st.get("projects") != ["P-v"]:
+        bad.append(f"status 看不到项目: {st.get('projects')}")
+    if (st.get("dev_tasks") or {}).get("leaves") != 2:
+        bad.append(f"status 看不到开发任务: {(st.get('dev_tasks') or {}).get('leaves')}")
+
+    # ③ metrics 必须带 tasks_tree
+    mt = cmd_metrics(ctx, _ns_metrics())
+    if (mt.get("tasks_tree") or {}).get("leaves") != 2:
+        bad.append(f"metrics 看不到开发任务: {(mt.get('tasks_tree') or {}).get('leaves')}")
+
+    # ④ kanban/task list 的那份任务行必须含叶（且状态已映射到看板词）
+    ids = {str(r.get("id")) for r in _task_rows(root)}
+    if not {"L1", "L2"} <= ids:
+        bad.append(f"任务行里没有树上的叶: {sorted(ids)[:5]}")
+    st_map = {str(r.get("id")): str(r.get("status")) for r in _task_rows(root)}
+    if st_map.get("L1") != "done" or st_map.get("L2") != "todo":
+        bad.append(f"叶状态没映射到看板词: L1={st_map.get('L1')} L2={st_map.get('L2')}")
+    return bad
+
+
+def _ns_metrics():
+    from types import SimpleNamespace
+    return SimpleNamespace(workspace=False, project=None, metrics_command="", json=False)
+
+
+def test_monitoring_sees_execution(tmp_path: Path) -> None:
+    """监控看得见执行: 任务树的叶必须出现在 status / metrics / kanban(任务行) 里。"""
+    assert _check_views_see_tree(tmp_path) == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
 
 
 def main() -> int:
+    results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
-        bad = _check(Path(td))
-    ok = not bad
-    print(f"   [{'PASS' if ok else 'FAIL'}] 会话事实 → 想法文本" + ("" if ok else f"   ← {'；'.join(bad)}"))
-    print(f"\n{1 if ok else 0}/1 通过")
-    return 0 if ok else 1
+        root = Path(td)
+        bad1 = _check(root)
+        bad2 = _check_views_see_tree(root)
+    results.append(("会话事实 → 想法文本", not bad1, "；".join(bad1)))
+    results.append(("监控看得见执行（树 → status/metrics/看板）", not bad2, "；".join(bad2)))
+    width = max(len(n) for n, _, _ in results)
+    fails = 0
+    for label, ok, detail in results:
+        print(f"   [{'PASS' if ok else 'FAIL'}] {label.ljust(width)}" + (f"   ← {detail}" if detail else ""))
+        fails += 0 if ok else 1
+    print(f"\n{len(results) - fails}/{len(results)} 通过")
+    return 1 if fails else 0
 
 
 if __name__ == "__main__":

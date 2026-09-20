@@ -2229,6 +2229,74 @@ def test_task_traces_to() -> None:
     assert _check_task_traces_to() == []
 
 
+def _check_cli_chat() -> list[str]:
+    """★ CLI 里的会话（Founder: "我要在 cli 中可以使用会话功能, 并且可以使用 / 使用命令, 像 Hermes 一样"）。
+
+    判据:
+      ① `/status` ⇒ 当命令跑（真出数据）  ② 裸词已知命令 ⇒ 也当命令（向后兼容）
+      ③ 其它一句话 ⇒ **走会话**（LLM; 这里注入假 provider, 不在守卫里联网）
+      ④ 会话里只自动跑**只读**命令; 会改数据的（run/chain/…）**不许自动跑**
+      ⑤ 会话持久化到平台会话存储（不是内存里自说自话）
+    """
+    import io as _io
+    import contextlib as _ctx
+    import types as _types
+
+    from apps.cli import main as _cli_main
+    from apps.cli.domains import chat as C
+
+    bad: list[str] = []
+
+    class _FakeProv:
+        def __init__(self, script):
+            self.script, self.i = script, 0
+
+        def generate(self, req):  # noqa: ANN001
+            out = self.script[min(self.i, len(self.script) - 1)]
+            self.i += 1
+            return _types.SimpleNamespace(ok=True, content=out, error=None)
+
+    real = C._provider
+    try:
+        # ③ + ④: 模型先要跑一条**会改数据**的命令 ⇒ 不许自动跑; 再给一句人话回答
+        C._provider = lambda: _FakeProv(["RUN: run --plan PLAN-x\n先看看。", "我只念命令, 不自动跑。"])
+        buf = _io.StringIO()
+        old_stdin = __import__("sys").stdin
+        __import__("sys").stdin = _io.StringIO("/status\nexit\n")
+        try:
+            with _ctx.redirect_stdout(buf):
+                _cli_main(["start"])
+        except SystemExit:
+            pass
+        finally:
+            __import__("sys").stdin = old_stdin
+        if "工厂状态" not in buf.getvalue():
+            bad.append("`/status` 没当命令跑（/ 命令没通）")
+        # ④ 写命令不许自动跑
+        _, _ = C.chat_turn(Path.home() / ".factory", "帮我跑一下任务树", conv_id="",
+                           on_run=lambda argv: (_ for _ in ()).throw(AssertionError("不该跑到这里")))
+    finally:
+        C._provider = real
+    if C.is_readonly(["run", "--plan", "P"]):
+        bad.append("会改数据的命令被当成只读（会话里会自动跑 ✗）")
+    if not C.is_readonly(["status"]):
+        bad.append("只读命令白名单不含 status")
+    if "append_message" not in _il_get(C):
+        bad.append("会话没落平台存储（应在 chat 模块里 append_message）")
+    return bad
+
+
+def _il_get(mod):
+    import inspect as _i
+
+    return _i.getsource(mod)
+
+
+def test_cli_chat() -> None:
+    """会话 + `/命令`（Hermes 手感）: /命令当命令跑 · 会话只自动跑只读 · 写命令不自动跑 · 会话落库。"""
+    assert _check_cli_chat() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2266,6 +2334,7 @@ def main() -> int:
     results.append(("CLI 友好首屏（空参不甩英文报错·帮助中心四角色）", not _check_cli_welcome(), "；".join(_check_cli_welcome())))
     results.append(("启动 AI Factory OS（factory start 进交互式 CLI·敲命令真跑·exit 退出）", not _check_cli_shell(), "；".join(_check_cli_shell())))
     results.append(("任务出处那一栏（无出处的挡在树外·单列给人看）", not _check_task_traces_to(), "；".join(_check_task_traces_to())))
+    results.append(("CLI 会话（说话=会话 · /命令=执行 · 写命令不自动跑）", not _check_cli_chat(), "；".join(_check_cli_chat())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

@@ -205,7 +205,6 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
       · `--root` 从启动这里继承（每条命令自动带上, 不会中途换数据目录）
     非终端输入（管道/脚本）⇒ 逐行读, EOF 结束（可测、不挂）。
     """
-    import shlex
 
     from apps.cli.context import FactoryContext
 
@@ -228,6 +227,8 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         print("  ★ 已进入交互式 CLI: 直接敲命令（例: status）· help 帮助 · exit 离开")
         print()
 
+    _conv_id = ""
+    _chat_hist: list[dict[str, str]] = []
     while True:
         try:
             line = input("factory> ").strip()
@@ -240,27 +241,53 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         if not line:
             continue
         low = line.lower()
-        if low in ("exit", "quit", "q", ":q"):
+        if low in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
             break
-        if low in ("help", "h", "?", "help center"):
+        if low in ("help", "h", "?", "/help", "/h", "/?"):
             print(render_help(""))
             continue
-        if low in ("welcome", "menu"):
+        if low in ("welcome", "menu", "/welcome", "/menu"):
             print(render_welcome(ctx.root))
             continue
-        try:
-            argv = shlex.split(line)
-        except ValueError as exc:
-            print(f"  （命令解析失败: {exc}）")
-            continue
-        if argv[0] == "factory":          # 允许照抄文档里的 `factory xxx`
-            argv = argv[1:]
-        if not argv:
-            continue
-        # 敲错命令 ⇒ 一句短提示（不再是 argparse 整屏 usage + 长报错 ✗）
+        # ★ 2026-09-21（Founder: "我要在 cli 中可以使用会话功能, 并且可以使用 / 使用命令, 像 Hermes 一样"）:
+        #   `/xxx` ⇒ 命令; 裸词且是已知命令 ⇒ 也当命令（向后兼容）; **其它任何一句话 ⇒ 会话**（LLM + 本平台数据）。
+        if line.startswith("/"):
+            line = line[1:].strip()
+            if not line:
+                continue
         _cmds = _top_commands()
-        if _cmds and argv[0] not in _cmds:
-            print(f"  （没有这个命令: {argv[0]} —— 输入 help 看命令表, 或 <命令> -h 查用法）")
+        _is_cmd = bool(_cmds) and line.split()[0] in _cmds
+        if not _is_cmd and (_cmds or line.startswith("/")):
+            # ── 会话路径
+            from apps.cli.domains import chat as _chat
+
+            def _run_capture(argv: list[str]) -> str:
+                import contextlib as _c
+                import io as _io
+
+                buf = _io.StringIO()
+                try:
+                    with _c.redirect_stdout(buf):
+                        from apps.cli.main import main as _m2
+
+                        _m2(["--root", str(ctx.root), *[str(a) for a in argv]])
+                except SystemExit:
+                    pass
+                return buf.getvalue().strip() or "（无输出）"
+
+            _ans, _conv = _chat.chat_turn(ctx.root, line, conv_id=_conv_id, history=_chat_hist,
+                                          on_run=_run_capture)
+            _conv_id = _conv
+            _chat_hist += [{"role": "human", "content": line}, {"role": "assistant", "content": _ans}]
+            print()
+            print(_ans or "（没答上来; 换句话再说一次?）")
+            print()
+            continue
+        argv = line.split()
+        # 敲错命令 ⇒ 一句短提示（不再是 argparse 整屏 usage + 长报错 ✗）
+        if _cmds and argv and argv[0] not in _cmds:
+            print(f"  （没有这个命令: {argv[0]} —— 输入 help 看命令表, 或 <命令> -h 查用法;"
+                  f" 想聊天就直接说人话）")
             continue
         from apps.cli.main import main as _main  # 局部导入: 避免模块环
 

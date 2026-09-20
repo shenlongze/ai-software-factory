@@ -232,6 +232,88 @@ class DecomposeLimitError(Exception):
     """超出拆解边界（depth/leaves）—— 响亮报错, 不静默硬拆。"""
 
 
+_PUNCT = " \t\n，。、；：（）()【】[]《》<>·-—_/\\\"'“”‘’!？?！"
+
+
+def _norm(s: object) -> str:
+    """归一化: 去空白与标点（用于"出处是否真的在需求里"的核对）。"""
+    return "".join(ch for ch in str(s or "") if ch not in _PUNCT).lower()
+
+
+def _segments(s: str, *, least: int = 8) -> list[str]:
+    """把一句出处切成若干片段（按标点/顿号）, 取长度 ≥ least 的 —— 用于宽松匹配。"""
+    out, cur = [], ""
+    for ch in str(s or ""):
+        if ch in _PUNCT:
+            if len(cur) >= least:
+                out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    if len(cur) >= least:
+        out.append(cur)
+    return out
+
+
+def prd_text(root: Path | str, design_metadata: dict[str, Any]) -> str:
+    """取 PRD/需求原文（归一化后）, 供核对"出处"是不是**编的**。
+
+    实测病（2026-09-21）: 只要求填 traces_to ⇒ 模型**把出处也编出来**（例: "登录 API" 的出处写成
+      "微信小程序登录与角色区分" —— 需求里根本没这句）⇒ 光有字段 = 装饰 ⇒ 必须能对回原文。
+    取法: 设计血缘 lineage[0] = 产品/PRD 制品（A-17…）⇒ 取它的载荷文本。
+    """
+    # ★ 2026-09-21 修正（我第一版取错了"原文"）: 该比对的是**需求原话（会话里用户说的那句）**,
+    #   不是产品/PRD 制品 —— 制品本身已被上游"补全"过（实测它自己就写了"登录"✗）, 拿它当标尺
+    #   只会把编的东西放行、把真需求误杀（实测: 真的"提交预约"被误判, 编的"微信登录"被放行 ✗）。
+    try:
+        proj = str(design_metadata.get("project_id") or "")
+        conv = Path(root) / "projects" / proj / "conversations"
+        if not conv.is_dir():
+            # 兼容: 目录名可能是项目 id 的短名（历史数据）
+            cand = [d for d in (Path(root) / "projects").glob("*/conversations") if d.is_dir()]
+            conv = cand[0] if len(cand) == 1 else conv
+        texts: list[str] = []
+        if conv.is_dir():
+            for f in sorted(conv.glob("*.json")):
+                try:
+                    d = json.loads(f.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001
+                    continue
+                for m in (d.get("messages") or []):
+                    if str(m.get("role")) in ("human", "user"):
+                        texts.append(str(m.get("content") or ""))
+        if texts:
+            return _norm(" ".join(texts))
+        # 退路: 会话取不到 ⇒ 用设计血缘里的**产品制品**（虽不理想, 聊胜于无）
+        lineage = [str(x) for x in (design_metadata.get("lineage") or []) if str(x)]
+        if lineage:
+            from ai_factory_os.services.organization.projects import ProjectStore
+
+            for a in ProjectStore(Path(root) / "org").list_artifacts() or []:
+                if str(getattr(a, "id", "")) == lineage[0]:
+                    blob = json.dumps(getattr(a, "payload", None) or getattr(a, "metadata", None) or {},
+                                      ensure_ascii=False)
+                    return _norm(blob)
+    except Exception:  # noqa: BLE001 — 取不到 ⇒ 视为"没有可核对的原文"（traced_ok 会放行, 不误杀）
+        pass
+    return ""
+
+
+def traced_ok(traces: str, prd: str) -> bool:
+    """出处是否**可核对**: 归一化后整体出现在 PRD 里, 或它的某个 ≥8 字片段出现在 PRD 里。
+
+    prd 为空 ⇒ 无法核对 ⇒ 视为 True（不因为"取不到原文"误杀; 但调用方会记一条提示）。
+    """
+    tn = _norm(traces)
+    if not tn:
+        return False
+    if not prd:
+        return True
+    if tn in prd:
+        return True
+    return any(seg in prd for seg in _segments(str(traces)))
+
+
 def decompose_from_design(
     root: Path | str,
     *,
@@ -286,6 +368,9 @@ def decompose_from_design(
             "expected_files": list(kw.get("expected_files") or []),
             "depends_on": list(kw.get("depends_on") or []),
             "scope": str(kw.get("scope") or "")[:500],
+            # ★ 2026-09-21（Founder 要的"出处"那一栏）: 该任务对应需求/PRD 里的哪一句。
+            #   空 = **填不出出处** ⇒ 架构自己加的（消费方: 拆解门挡在树外 + confirm 前单列给人看）。
+            "traces_to": str(kw.get("traces_to") or "")[:300],
             "required_role": kw.get("required_role") or _DEFAULT_ROLE,
             # ★ 2026-09-19 加（M3 调度前置）: 该叶【需要什么能力】——
             #   由架构阶段给（与 depends_on 同理: 依赖/能力都是架构设计的产物）。
@@ -359,6 +444,7 @@ def decompose_from_design(
                 desc or module,
                 [str(c).strip() for c in (seed.get("required_capabilities") or []) if str(c).strip()],
             ),
+            traces_to=str(seed.get("traces_to") or ""),
             acceptance=str(seed.get("acceptance") or contract or f"{module} 实现完成且可验证"),
         )
         nodes.append(leaf)
@@ -369,6 +455,22 @@ def decompose_from_design(
     #   就变成 1 个粗叶（实测: 13 模块 → 13 粗叶; 那个"7 合 1"的叶 900 秒超时跑不完）。
     #   现在: 同一 module 出现多次 ⇒ 归到一个 domain 下, 每个 seed 一个叶;
     #        叶的 acceptance 取【种子自带的】(架构契约已必填); 没有 ⇒ **不编, 留空**让判据抓。
+    # ★ 2026-09-21 拆解门（Founder: "缺的是任务出处这一栏"）:
+    #   架构给的每条任务若**填不出出处**（traces_to 空）⇒ 那是架构自己加的 ⇒ **不进树**,
+    #   单独记在 tree["excluded_no_trace"] 里, 由 `tasktree confirm` 单列给人看。
+    #   兼容旧设计: 若**一条都没有出处** ⇒ 视为旧格式, 不过滤（但记一条提示, 不静默）。
+    _seeds = [s for s in seeds if isinstance(s, dict)]
+    _prd = prd_text(root, design_metadata)
+    _ok = [s for s in _seeds if traced_ok(str(s.get("traces_to") or ""), _prd)]
+    _excluded: list[dict[str, Any]] = []
+    if _ok:
+        # ★ 出处必须**可核对**（在需求/PRD 原文里查得到）—— 只写字段不核对 = 装饰（实测模型会编出处 ✗）
+        _excluded = [dict(s, _why=("无出处" if not str(s.get("traces_to") or "").strip()
+                                   else "出处对不回需求原文（编的）")) for s in _seeds
+                     if not traced_ok(str(s.get("traces_to") or ""), _prd)]
+        seeds = [s for s in seeds if not isinstance(s, dict)
+                 or traced_ok(str(s.get("traces_to") or ""), _prd)]
+
     by_module: dict[str, list[dict[str, Any]]] = {}
     order: list[str] = []
     for idx, seed in enumerate(seeds, 1):
@@ -422,6 +524,7 @@ def decompose_from_design(
                 # 叶只依赖自己的域（层级归属）—— 模块间的先决在 domain 层表达
                 depends_on=[dom["id"]],
                 scope=contract[:300],
+                traces_to=str(seed.get("traces_to") or ""),
                 required_role=_DEFAULT_ROLE,
                 role_hint=_role_hint(module, desc),
                 required_capabilities=prune_caps(
@@ -458,6 +561,12 @@ def decompose_from_design(
         # ★ 定位（①）的产物 —— 可追溯"这棵树为什么这么拆"
         "location": {"intent": intent, "suggested_role": suggested_role},
         "counts": {"nodes": len(nodes), "leaves": len(leaves)},
+        # ★ 2026-09-21: 架构想加、但**填不出出处**的任务（已挡在树外）—— confirm 前单列给人看
+        "excluded_no_trace": [
+            {"module": str(s.get("module") or ""), "task": str(s.get("task") or "")[:200],
+             "why": str(s.get("_why") or "无出处")}
+            for s in _excluded
+        ],
         "nodes": nodes,
     }
     tree["_saved_to"] = str(_save(root, plan_id, tree, project_id))

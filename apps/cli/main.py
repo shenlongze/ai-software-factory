@@ -3322,6 +3322,20 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
                 "exit_code": 0, "args": args}
 
     if cmd == "confirm":
+        # ★ 2026-09-21（Founder 的"出处"那一栏）: 确认前把【架构自己加的、已挡在树外的】单列给人看 ——
+        #   出初稿→人看懂→人改→确认 里的"人看懂"就是这一步。
+        try:
+            _pre = D.load_tree(ctx.root, str(args.plan_id), project_id) or {}
+            _ex = list(_pre.get("excluded_no_trace") or [])
+            if _ex:
+                print(f"  ⚠ 架构还想加 {len(_ex)} 件【你需求里没有的】东西 —— 已挡在任务树外（不做）:")
+                for _i, _x in enumerate(_ex[:12], 1):
+                    print(f"      {_i}. {str(_x.get('task') or '')[:70]}")
+                if len(_ex) > 12:
+                    print(f"      … 还有 {len(_ex) - 12} 件")
+                print("    （要加就明说, 我把它补进需求再重新走一遍; 不加就不用管。）")
+        except Exception:  # noqa: BLE001 — 提醒是"增强", 拿不到树不挡确认
+            pass
         try:
             tree = D.confirm_tree(ctx.root, str(args.plan_id), project_id)
         except FileNotFoundError as exc:

@@ -2132,6 +2132,103 @@ def _check_cli_shell() -> list[str]:
     return bad
 
 
+def _check_task_traces_to() -> list[str]:
+    """★ 任务【出处】那一栏（Founder: "缺的是什么？" ⇒ 缺的就是它）。
+
+    实测病: 架构产出的任务只有 模块/任务/接口/验收, **没有"出处"** ⇒ 系统分不清"这条是用户要的"
+      还是"架构自己加的" ⇒ 自己加的也拆成叶、也去写码（实测 42/199 叶 = 21%）。
+    判据:
+      ① 架构契约要求每项带 traces_to（提示词 + 分片生成都要有）
+      ② 拆解门: 有出处的进树, 无出处的挡在树外并记进 tree["excluded_no_trace"]
+      ③ 叶节点带 traces_to; 执行简报带出处
+      ④ 向后兼容: 旧设计（全都没出处）不过滤、不报错
+    """
+    import importlib as _il
+    import inspect as _insp
+    import json as _json
+    import tempfile as _tf
+
+    from ai_factory_os.services.work import decomposition as D
+
+    bad: list[str] = []
+    arch = _il.import_module("ai_factory_os.plugins.agents.architect")
+    if "traces_to" not in _insp.getsource(arch):            # 提示词是模块级 str ⇒ 取模块源码
+        bad.append("架构提示词没要求 traces_to（出处）")
+    if "traces_to" not in _insp.getsource(arch._gen_task_breakdown_sliced):
+        bad.append("分片生成没要求 traces_to")
+
+    with _tf.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "org").mkdir(parents=True, exist_ok=True)
+        (root / "org" / "projects.json").write_text(_json.dumps(
+            {"projects": {"P-t": {"id": "P-t", "name": "t", "repo_path": str(root)}}}, ensure_ascii=False),
+            encoding="utf-8")
+        design = {"task_breakdown": [
+            {"module": "约课", "task": "会员提交预约", "api_contract": "POST /appointments",
+             "ui_guidance": "预约页", "acceptance": "提交后能在列表看到",
+             "traces_to": "需求: 会员预约并在线付课时费"},
+            {"module": "约课", "task": "接入微信 code2session 登录", "api_contract": "POST /auth/wx-login",
+             "ui_guidance": "-", "acceptance": "能拿到 token", "traces_to": ""},
+        ]}
+        tree = D.decompose_from_design(root, project_id="P-t", design_metadata=design,
+                                       plan_id="PLAN-tt", prd_ref="A-1")
+        leaves = [n for n in tree["nodes"] if n.get("kind") == "task"]
+        titles = " | ".join(str(n.get("title")) for n in leaves)
+        if "微信" in titles:
+            bad.append("没出处的任务（微信登录）进了树 —— 拆解门没生效")
+        if "提交预约" not in titles:
+            bad.append("有出处的任务被误挡")
+        if "微信" not in str(tree.get("excluded_no_trace") or []):
+            bad.append("被挡的没记进 tree['excluded_no_trace']（人看不到）")
+        if not leaves or not str(leaves[0].get("traces_to") or ""):
+            bad.append("叶节点没带 traces_to（传不到执行简报）")
+        # ★ 出处必须**可核对**: 编的出处（需求原话里查不到）要挡在树外 ——
+        #   实测: 只填字段不核对 ⇒ 模型把出处也编出来（"登录 API"的出处写成"微信小程序登录与角色区分"）
+        conv = root / "projects" / "P-t" / "conversations"
+        conv.mkdir(parents=True, exist_ok=True)
+        (conv / "conv-1.json").write_text(_json.dumps({"messages": [
+            {"role": "human", "content": "我要做一个健身房小程序: 教练设置可约时间段; 会员预约并在线付课时费"}]},
+            ensure_ascii=False), encoding="utf-8")
+        design3 = {"project_id": "P-t", "task_breakdown": [
+            {"module": "约课", "task": "会员提交预约接口", "api_contract": "POST /a", "ui_guidance": "-",
+             "acceptance": "能提交", "traces_to": "会员预约并在线付课时费"},          # 真出处
+            {"module": "登录", "task": "接入微信 code2session 登录", "api_contract": "POST /l",
+             "ui_guidance": "-", "acceptance": "能拿 token",
+             "traces_to": "微信小程序登录与角色区分（会员/教练）"},                    # 编的出处
+        ]}
+        t3 = D.decompose_from_design(root, project_id="P-t", design_metadata=design3,
+                                     plan_id="PLAN-tt3", prd_ref="A-1")
+        lv3 = [n for n in t3["nodes"] if n.get("kind") == "task"]
+        if any("code2session" in str(n.get("title")) for n in lv3):
+            bad.append("编的出处被放行 ⇒ 微信登录又进了树（出处核对没生效）")
+        if not any("提交预约" in str(n.get("title")) for n in lv3):
+            bad.append("真出处（需求原话）被误杀")
+        if not t3.get("excluded_no_trace"):
+            bad.append("编的出处没被记进 excluded_no_trace（人看不到）")
+        design2 = {"task_breakdown": [
+            {"module": "m", "task": "t1", "api_contract": "-", "ui_guidance": "-", "acceptance": "a"},
+            {"module": "m", "task": "t2", "api_contract": "-", "ui_guidance": "-", "acceptance": "b"},
+        ]}
+        try:
+            tree2 = D.decompose_from_design(root, project_id="P-t", design_metadata=design2,
+                                            plan_id="PLAN-tt2", prd_ref="A-1")
+            if len([n for n in tree2["nodes"] if n.get("kind") == "task"]) != 2:
+                bad.append("旧设计（都没出处）被过滤了 —— 向后兼容坏了")
+        except Exception as exc:  # noqa: BLE001
+            bad.append(f"旧设计路径报错: {type(exc).__name__}: {str(exc)[:60]}")
+    if "excluded_no_trace" not in _insp.getsource(_il.import_module("apps.cli.main")._dispatch_tasktree):
+        bad.append("confirm 前没把『架构自己加的』单列给人看")
+    if "出处（需求原句）" not in _insp.getsource(
+            _il.import_module("ai_factory_os.bootstrap.scheduler_wiring").StoreExecution):
+        bad.append("执行简报没带出处")
+    return bad
+
+
+def test_task_traces_to() -> None:
+    """任务"出处"那一栏: 契约要求 · 无出处的挡在树外并记下来 · 叶与简报带上 · 旧设计兼容。"""
+    assert _check_task_traces_to() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2168,6 +2265,7 @@ def main() -> int:
     results.append(("拆解一次到位（原子任务·契约要验收·同模块归一域）", not _check_decompose_is_atomic(), "；".join(_check_decompose_is_atomic())))
     results.append(("CLI 友好首屏（空参不甩英文报错·帮助中心四角色）", not _check_cli_welcome(), "；".join(_check_cli_welcome())))
     results.append(("启动 AI Factory OS（factory start 进交互式 CLI·敲命令真跑·exit 退出）", not _check_cli_shell(), "；".join(_check_cli_shell())))
+    results.append(("任务出处那一栏（无出处的挡在树外·单列给人看）", not _check_task_traces_to(), "；".join(_check_task_traces_to())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

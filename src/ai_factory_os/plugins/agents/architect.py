@@ -304,7 +304,7 @@ _ARCH_AGENT_PROMPT = (
     "产物给出 UI 实现指导)\n"
     "- backend_architecture: 后端架构 (字符串, 服务/模块)\n"
     "- task_breakdown: 任务拆分 (数组, 每项 task = {{module, task, "
-    "api_contract, ui_guidance, acceptance, depends_on, required_capabilities}} — 模块/技术任务/"
+    "api_contract, ui_guidance, acceptance, traces_to, depends_on, required_capabilities}} — 模块/技术任务/"
     "API 约定/UI 实现指导/一句话验收/先决模块/必需能力, "
     "供 Developer 直接消费)\n"
     "  ★★ 拆解 = 【递归】（Founder 口径; 老区 ee84bc18 实现过, 绞杀老区时随 10 万行丢失）: "
@@ -316,6 +316,10 @@ _ARCH_AGENT_PROMPT = (
     "继续拆成 children, 或拆成并列多项。宁可多几条, 不要一条包多件事。\n"
     "  ★ 每一层（含 children 内的每一项）都必须带全 module/task/api_contract/ui_guidance/acceptance;"
     "不适用写 \"-\", 不能省略。\n"
+    "  ★★ traces_to = 该任务的**出处**: 对应需求/PRD 里的**哪一句原话**（照抄那句, 或写用户故事编号）。"
+    "**填不出出处的, 不要放进 task_breakdown** —— 那说明它不在需求里, 是架构自己加的;"
+    "这类东西不许出现在任务清单里（实测踩过: 需求只写约课/消课/课时/统计, 架构却加了微信登录/"
+    "订阅消息/评价 ⇒ 42/199 个任务是没要过的）。\n"
     "  ★ acceptance = 该任务的**一句话验收标准**（怎么算做完, 可被别人独立核对; 必填; "
     "禁止\"等/…/无\"这类兜底写法）\n"
     "  ★ required_capabilities = 该任务**需要什么能力**（角色名数组, 从下面清单里选; "
@@ -468,7 +472,8 @@ def _gen_task_breakdown_sliced(*, prompt: str, provider: Any, max_tokens: int) -
             f"你在为项目做架构设计。**只输出模块「{name}」的任务拆分**（范围: {scope}）。\n"
             "★★ 递归拆到【最小单位 / 最小实现】: 叶子必须是一个工程师一次能做完、别人能独立验收的"
             "最小实现单元（能一句话写出验收）。可带 `children` 继续嵌套（层数不限）, 也可并列多项。\n"
-            "★ 每项字段: {module, task, api_contract, ui_guidance, acceptance, required_capabilities?}"
+            "★ 每项字段: {module, task, api_contract, ui_guidance, acceptance, traces_to, required_capabilities?}"
+            "（traces_to=该任务对应需求/PRD 里的哪一句原话; 填不出出处就别放进 tasks）"
             " —— **含 children 里的每一项都要带全**（递归的每一层都一样）; 不适用就写 \"-\""
             "（**不能省略字段**, 缺字段会被判无效）。\n"
             "★ 只输出 JSON: {\"tasks\": [ ... ]}（module 一律填 \"" + name + "\"）\n"
@@ -578,6 +583,9 @@ _SECTION_DESC: dict[str, str] = {
     "api_design": "API 设计: 端点清单与契约（★ 本节最大, 走分片生成）",
     "frontend_architecture": "前端架构: 页面/组件/状态管理/路由",
     "backend_architecture": "后端架构: 模块划分/服务边界/事务与并发要点",
+    # ★ 2026-09-21（Founder: 缺的是任务出处这一栏）: 每条任务必须能指回需求/PRD 的原句
+    "traces_to 规则": "★ task_breakdown 每项**必须**带 traces_to = 需求/PRD 里的**原句**（或用户故事编号）;"
+                      "**填不出出处的, 不要放进 task_breakdown** —— 那说明是架构自己加的（应另列, 不进任务清单）",
     "task_breakdown": ("任务拆分: 模块 → 任务。★ 每项**必须**含 4 个非空键: "
                        "module（模块名）/ task（技术任务）/ api_contract（该任务涉及的 API 约定）/ "
                        "ui_guidance（UI 实现指导）"),

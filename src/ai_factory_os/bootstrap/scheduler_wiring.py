@@ -439,6 +439,8 @@ class StoreExecution:
                 return "", ""
             title = str(leaf.get("display_name") or leaf.get("title") or "").strip()
             acc = str(leaf.get("acceptance") or "").strip()
+            # ★ 2026-09-21（Founder 的"出处"那一栏）: 该叶对应需求/PRD 里的哪一句
+            _tr = str(leaf.get("traces_to") or "").strip()
             files = [str(x) for x in (leaf.get("expected_files") or [])]
             pid = str(tree.get("project_id") or "")
             repo = ""
@@ -453,6 +455,8 @@ class StoreExecution:
             except Exception:  # noqa: BLE001
                 repo = ""
             lines = [f"任务: {title}"]
+            if _tr:
+                lines.append(f"出处（需求原句）: {_tr}")
             if acc:
                 lines.append(f"验收标准: {acc}")
             if files:

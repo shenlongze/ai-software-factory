@@ -2622,8 +2622,11 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
         dropped_total += dropped
         staff_dropped_total += len(res.get("staff_dropped") or [])
         if not dry:
-            _D.declare_node_entities(ctx.root, plan_id, node_id=str(n.get("id") or ""),
-                                     entities=got, project_id=project)
+            # ★ 幂等保护: 已有实体声明的不重写（LLM 有随机性, 重跑会把你验证过的那份冲掉）——
+            #   本次只补"缺的那部分"（优先级 / 谁做），两者都来自同一次 LLM 调用, 不额外花钱。
+            if not n.get("data_entities"):
+                _D.declare_node_entities(ctx.root, plan_id, node_id=str(n.get("id") or ""),
+                                         entities=got, project_id=project)
             # ★ C 产线声明优先级（来源记 declared ⇒ 只有人工能盖过它）
             if res["priority"]:
                 _D.set_node_priority(ctx.root, plan_id, node_id=str(n.get("id") or ""),

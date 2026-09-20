@@ -69,6 +69,40 @@ def _parse(content: str, allowed: set[str]) -> tuple[list[dict[str, Any]], int]:
     return out, dropped
 
 
+def parse_entity_spec(items: list[str], allowed: set[str]) -> list[dict[str, Any]]:
+    """把人手写的声明("Order:write" / "User" / "Product:read")解析成 `data_entities`。
+
+    写法: `名字[:access]`, access ∈ read|write|both（省略 = both; 也收 `名字=access`）。
+
+    ★ 与 LLM 路径的差别（故意的）:
+      · LLM 输出是【模型生成】⇒ 清单外的静默丢弃 + 计数上报（别因模型跑偏就报错中断整批）
+      · 人输入是【明确指令】⇒ 清单外**当场抛错**（写错了要立刻纠正, 不能悄悄吞掉写库）
+    """
+    if not allowed:
+        raise ValueError("没有实体清单 —— 项目里没有数据模型（*.prisma / *.sql）⇒ 不能声明")
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in items:
+        s = str(raw or "").strip()
+        if not s:
+            continue
+        sep = ":" if ":" in s else ("=" if "=" in s else "")
+        name, _, access = s.partition(sep) if sep else (s, "", "both")
+        name, access = name.strip(), (access.strip().lower() or "both")
+        if name not in allowed:
+            near = sorted(allowed)[:6]
+            raise ValueError(f"实体名不在项目的真实数据模型里: {name}（可选: {', '.join(near)} …）")
+        if access not in ("read", "write", "both"):
+            raise ValueError(f"access 只能是 read/write/both: {access!r}（写法如 {name}:read）")
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append({"name": name, "access": access})
+    if not out:
+        raise ValueError("没解析出任何实体（写法如 --set Order:write User:read）")
+    return out
+
+
 def declare_module_entities(       # noqa: N802 — 与 expand_module 同族命名
     module_title: str,
     *,

@@ -591,6 +591,10 @@ def build_parser() -> Any:
     p_tt_dec.add_argument("--node", default=None, help="只声明这一个模块（短 id 也行）")
     p_tt_dec.add_argument("--dry-run", action="store_true", dest="dry_run",
         help="只算不落盘（先看 LLM 会声明什么）")
+    p_tt_dec.add_argument("--set", nargs="+", default=None, dest="set_spec",
+        help="★ 手动改声明（须配 --node）: 写法 Order:write User:read（省略 access = both）")
+    p_tt_dec.add_argument("--clear", action="store_true",
+        help="★ 清空该模块的声明（须配 --node）—— 该模块回落成『线索』路径")
     p_tt_e = ttsub.add_parser(
         "edit", help="★ 逐节点编辑（改标题/验收/人话名/依赖, 或删节点）—— 改完回到候选态")
     json_opt(p_tt_e)
@@ -2523,7 +2527,7 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
 
     from ai_factory_os.services.work import data_flow as _DF
     from ai_factory_os.services.work import decomposition as _D
-    from ai_factory_os.services.work.declare import declare_module_entities
+    from ai_factory_os.services.work.declare import declare_module_entities, parse_entity_spec
 
     plan_id = str(getattr(args, "plan_id", "") or "")
     project = str(getattr(args, "project", "") or "")
@@ -2537,6 +2541,34 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
         raise CliError("项目里没有数据模型（*.prisma / *.sql）⇒ 无法声明（不编）", exit_code=1)
 
     nodes = tree.get("nodes") or []
+    # ★★ 手动改（人来纠产线的声明）: `--set "Order:write User:read"` / `--clear`
+    #    必须配 --node（别一次改掉全部）; 名字当场对着【项目真实数据模型】校验, 写错立刻报错
+    spec = list(getattr(args, "set_spec", None) or [])
+    clear = bool(getattr(args, "clear", False))
+    if spec or clear:
+        only = str(getattr(args, "node", "") or "")
+        if not only:
+            raise CliError("手动改必须指定 --node（避免一次改掉全部模块）", exit_code=1)
+        node = next((n for n in nodes if str(n.get("id") or "") == only
+                     or str(n.get("id") or "").endswith(only)), None)
+        if node is None:
+            raise CliError(f"找不到节点: {only} —— --node 收的是节点 id（`tasktree show <plan> --ids` "
+                           "可看 id; 也收 id 末尾片段）", exit_code=1)
+        before = list(node.get("data_entities") or [])
+        ents: list[dict[str, Any]] = []
+        if spec:
+            try:
+                ents = parse_entity_spec(spec, set(names))
+            except ValueError as e:
+                raise CliError(str(e), exit_code=1) from e
+        _D.declare_node_entities(ctx.root, plan_id, node_id=str(node.get("id") or ""),
+                                 entities=ents, project_id=project)
+        name = str(node.get("display_name") or node.get("title") or "")
+        return {"ok": True, "action": "tasktree-declare", "tree": tree, "manual": True,
+                "entities_available": names,
+                "declared": [{"node": name, "entities": ents, "dropped": 0, "before": before}],
+                "skipped": 0, "dropped_total": 0, "dry_run": False, "exit_code": 0, "args": args}
+
     dom_ids = {str(n.get("id") or "") for n in nodes if n.get("kind") == "domain"}
     targets = [n for n in nodes if n.get("kind") == "domain"
                and str(n.get("parent_id") or "") not in dom_ids]
@@ -3157,6 +3189,19 @@ def _print_tasktree(args: Any, r: dict) -> None:
     elif cmd == "declare":
         # ★ 产线声明: 模块 → 读/写的数据实体（清单外的一律丢弃并计数）
         rows = r.get("declared") or []
+        if r.get("manual"):                      # 手动改（人来纠产线的声明）
+            row = rows[0]
+            was = "  ".join(f"{e['name']}({e['access']})" for e in row.get("before") or [])
+            now = "  ".join(f"{e['name']}({e['access']})" for e in row["entities"])
+            print()
+            print(f"  声明已改    {r['tree'].get('plan_id')}    {row['node']}")
+            print(f"  {'━' * 52}")
+            print()
+            print(f"    改前: {was or '（原本没有声明）'}")
+            print(f"    改后: {now or '（已清空 ⇒ 该模块回落成『线索』路径）'}")
+            print()
+            print("  （改完回到候选态; `tasktree dataflow <plan>` 看数据流程图）")
+            return
         print()
         print(f"  产线声明    {r['tree'].get('plan_id')}    "
               f"实体清单 {len(r.get('entities_available') or [])} 个（来自项目真实数据模型）"

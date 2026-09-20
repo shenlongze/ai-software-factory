@@ -283,10 +283,21 @@ def _check_declare(root: Path) -> list[str]:
     if "data_entities" in next(n for n in t3["nodes"] if n["id"] == "m1"):
         bad.append("空声明没清掉字段（留了空壳）")
     # LLM 输出里的清单外名字必须被丢弃（不许写进树）
-    from ai_factory_os.services.work.declare import _parse
+    from ai_factory_os.services.work.declare import _parse, parse_entity_spec
     kept, dropped = _parse('[{"name":"Order"},{"name":"编的"}]', {"Order", "User"})
     if [e["name"] for e in kept] != ["Order"] or dropped != 1:
         bad.append(f"清单外名字未被丢弃: kept={kept} dropped={dropped}")
+    # 手动改（--set）: 写对了能解析; 名字不在真实清单里【必须当场报错】(人写的不能静默吞)
+    if parse_entity_spec(["Order:write", "User"], {"Order", "User"}) != [
+            {"name": "Order", "access": "write"}, {"name": "User", "access": "both"}]:
+        bad.append("手动声明解析不对（Order:write / User ⇒ both）")
+    for spec, why in ([["编的:read"], "清单外的实体名"], [["Order:删"], "非法 access"],
+                      [[]], "空输入"):
+        try:
+            parse_entity_spec(spec if isinstance(spec, list) else [], {"Order", "User"})
+            bad.append(f"手动声明该报错却通过了: {why}")
+        except ValueError:
+            pass
     return bad
 
 

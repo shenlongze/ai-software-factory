@@ -926,6 +926,75 @@ def test_locate_reads_conversation() -> None:
     assert _check_locate_reads_conversation() == []
 
 
+def _check_repo_closing_contract() -> list[str]:
+    """★ 执行体的收尾契约 + 证据四态（卡点4）: "提交了"与"留了脏工作区"必须分开。
+
+    实测: EXR-002/003 自提交(干净) · EXR-004(超时)/EXR-005 都没提交(场景仓库 6/18 个未提交文件)
+          ⇒ 原来只有 True/False/None 三态, 分不清 ⇒ 叶被记成干净完成。
+    """
+    import subprocess
+    import tempfile
+
+    from ai_factory_os.bootstrap import scheduler_pump as SP
+    from ai_factory_os.services.execution.runtime.adapters.hermes import (
+        HermesRuntimeAdapter, _VERDICT_CONTRACT,
+    )
+    from ai_factory_os.services.execution.runtime.types import ExecutionRequest
+
+    bad: list[str] = []
+
+    def _git(cwd, *args):
+        return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+
+    with tempfile.TemporaryDirectory() as td:
+        r = Path(td) / "repo"
+        r.mkdir()
+        if _git(r, "init", "-q").returncode != 0:
+            return ["git init 不可用（环境问题, 跳过该守卫）"]
+        _git(r, "-c", "user.email=t@local", "-c", "user.name=t", "config", "user.email", "t@local")
+        _git(r, "config", "user.name", "t")
+        # ① 非 git 仓库 ⇒ unknown（不猜）
+        plain = Path(td) / "plain"
+        plain.mkdir()
+        if SP._repo_state(str(plain)) != "unknown":
+            bad.append(f"非 git 目录应 unknown: {SP._repo_state(str(plain))}")
+        # ② 仓库在、一次没提交 ⇒ none
+        (r / "a.txt").write_text("x", encoding="utf-8")
+        if SP._repo_state(str(r)) != "uncommitted":
+            bad.append(f"有未提交改动应 uncommitted: {SP._repo_state(str(r))}")
+        # ③ 提交后干净 ⇒ committed（窗口内）
+        _git(r, "add", "-A")
+        _git(r, "commit", "-q", "-m", "init")
+        if SP._repo_state(str(r)) != "committed":
+            bad.append(f"刚提交应 committed: {SP._repo_state(str(r))}")
+        # ④ 窗口外（1 秒窗口 + 提交已在过去）⇒ none
+        if SP._repo_state(str(r), window_sec=0.001) != "none":
+            bad.append(f"窗口外应 none: {SP._repo_state(str(r), window_sec=0.001)}")
+        # ⑤ 又脏了 ⇒ uncommitted（"产出未提交"这一态被单独识别出来 —— 本刀的核心）
+        (r / "b.txt").write_text("y", encoding="utf-8")
+        if SP._repo_state(str(r)) != "uncommitted":
+            bad.append(f"提交后又改应 uncommitted: {SP._repo_state(str(r))}")
+        # ⑥ 空仓库（有 .git 无提交）⇒ none（不是 uncommitted, 也不是 unknown）
+        empty = Path(td) / "empty"
+        empty.mkdir()
+        _git(empty, "init", "-q")
+        if SP._repo_state(str(empty)) != "none":
+            bad.append(f"空仓库应 none: {SP._repo_state(str(empty))}")
+
+    # ⑦ 指令里必须写【收尾纪律】（否则执行体不知道要提交）
+    req = ExecutionRequest(id="EXR-c", task_id="PLAN-c", input={"instruction": "做事"})
+    prompt = HermesRuntimeAdapter._build_prompt(req)
+    for kw in ("收尾纪律", "commit"):
+        if kw not in prompt and kw not in _VERDICT_CONTRACT:
+            bad.append(f"指令里缺收尾纪律（{kw}）—— 执行体无从知道要提交")
+    return bad
+
+
+def test_repo_closing_contract() -> None:
+    """收尾契约: 提交/未提交/无改动/判不出 四态分开 + 指令写清收尾纪律。"""
+    assert _check_repo_closing_contract() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -952,6 +1021,7 @@ def main() -> int:
     results.append(("执行体裁定（停手可表达·待裁决≠完成）", not _check_executor_verdict(), "；".join(_check_executor_verdict())))
     results.append(("LLM key 归属（factory 自己的 .env·写读同源）", not _check_llm_key_resolution(), "；".join(_check_llm_key_resolution())))
     results.append(("需求定位读会话（不给文本/归属自动带出）", not _check_locate_reads_conversation(), "；".join(_check_locate_reads_conversation())))
+    results.append(("执行收尾契约（提交/未提交分开·指令写清）", not _check_repo_closing_contract(), "；".join(_check_repo_closing_contract())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

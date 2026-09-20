@@ -212,35 +212,52 @@ def _record_memory(ports: Ports, execution_id: str, *, kind: str, text: str,
         return
 
 
+def _repo_state(repo: str, *, window_sec: float = 1800) -> str:
+    """项目仓库的【收尾状态】⇒ "committed" / "uncommitted" / "none" / "unknown"。
+
+    判据（可解释）:
+      · 不是 git 仓库 / git 不可用 / 路径不存在 ⇒ "unknown"（判不出, 不猜）
+      · `git status --porcelain` 非空 ⇒ **"uncommitted"**（有产出但没收尾: 工作区脏）
+      · 否则: 最近一次提交落在 `window_sec` 内 ⇒ "committed"; 更早 ⇒ "none"
+
+    ★ 2026-09-21（卡点4 实测）: 原来只有 True/False/None 三态 ⇒ **分不清"提交了"和"留了脏工作区"**。
+      实测两份场景: EXR-002/003 的执行体自提交（干净）;  EXR-004 超时、EXR-005 收工都**没提交**
+      （场景仓库 6 / 18 个未提交文件, main 分支 0 提交）⇒ 叶却被记成干净完成。
+      ⇒ 未提交也是"有产出", 但要**标明"待核"**（下一个人/下一个叶会踩到这份脏工作区）。
+    """
+    p = Path(repo) if repo else None
+    if not p or not p.is_dir():
+        return "unknown"
+    try:
+        import subprocess
+
+        def _git(*args: str) -> str:
+            r = subprocess.run(["git", "-C", str(p), *args], capture_output=True,
+                               text=True, timeout=20)
+            return r.stdout.strip() if r.returncode == 0 else ""
+
+        if not _git("rev-parse", "--is-inside-work-tree"):
+            return "unknown"
+        if _git("status", "--porcelain"):
+            return "uncommitted"
+        ts = _git("log", "-1", "--format=%ct")
+        if not ts:
+            return "none"                       # 仓库在、但一次都没提交过
+        import time
+        return "committed" if (time.time() - float(ts)) <= window_sec else "none"
+    except Exception:  # noqa: BLE001 — 判不出 ⇒ unknown（调用方标待核）
+        return "unknown"
+
+
 def _repo_changed(repo: str, *, window_sec: int = 1800) -> bool | None:
     """项目仓库有没有【产出迹象】⇒ True/False; 判不出来 ⇒ None（调用方标"待核"）。
 
-    判据（可解释）: ① 有未提交改动 ⇒ True ② 否则看最近一次提交时间是否落在 `window_sec` 内 ⇒ True/False
-    ③ git 跑不动/不是仓库 ⇒ None（**不猜**）。
-    ★ 抽成函数是为了能守（真跑一次执行要几分钟, 而这段逻辑一行就能验）。
+    薄包装（保留旧签名, 语义不变）; 细分的四态见 `_repo_state`。
     """
-    import subprocess
-    import time as _t
-
-    if not repo or not Path(repo).is_dir():
+    st = _repo_state(repo, window_sec=window_sec)
+    if st == "unknown":
         return None
-    try:
-        st = subprocess.run(["git", "-C", repo, "status", "--porcelain"],
-                            capture_output=True, text=True, timeout=20)
-        if st.returncode != 0:
-            return None
-        if st.stdout.strip():
-            return True
-        lg = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%ct"],
-                            capture_output=True, text=True, timeout=20)
-        if lg.returncode != 0:
-            return False                      # 空仓库（无提交）⇒ 没产出
-        try:
-            return abs(_t.time() - float(lg.stdout.strip() or 0)) < window_sec
-        except ValueError:
-            return False
-    except Exception:  # noqa: BLE001 — git 跑不动 ⇒ 不猜
-        return None
+    return st in ("committed", "uncommitted")
 
 
 def _mark_evidence(ports: Ports, execution_id: str) -> str:
@@ -293,16 +310,31 @@ def _mark_evidence(ports: Ports, execution_id: str) -> str:
                                  if isinstance(r, dict) and str(r.get("id")) == project_id), "")
             except Exception:  # noqa: BLE001
                 repo = ""
-        changed = _repo_changed(repo)          # ★ 判据抽成纯函数（可守, 见下）
+        changed = _repo_state(repo)           # ★ 四态: committed/uncommitted/none/unknown（卡点4）
         tree = D.load_tree(root, plan_id, project_id)
         if not tree:
             return "unknown"
         for n in tree.get("nodes") or []:
             if str(n.get("id") or "") != node_id:
                 continue
-            ev = "repo-changed" if changed is True else ("no-change" if changed is False else "unknown")
+            if changed == "committed":
+                ev, need = "repo-changed", False
+            elif changed == "uncommitted":
+                # ★ 有产出但没收尾（工作区脏）: 记产出 + 标"待核"（下一个人/下一个叶会踩到）
+                ev, need = "repo-uncommitted", True
+            elif changed == "none":
+                ev, need = "no-change", True
+            else:
+                ev, need = "unknown", True
             D.set_node_evidence(root, plan_id, node_id, evidence=ev,
-                                verify_needed=(changed is not True), project_id=project_id)
+                                verify_needed=need, project_id=project_id)
+            if changed == "uncommitted" and hasattr(D, "release_leaf"):
+                # 把"产出未提交"写进叶的状态说明（人一眼看到为什么待核）
+                try:
+                    D.set_node_note(root, plan_id, node_id, project_id=project_id,
+                                    note="产出未提交（工作区有未提交文件）⇒ 待核")
+                except Exception:  # noqa: BLE001 — 说明写不上不影响证据
+                    pass
             return ev
     except Exception:  # noqa: BLE001 — 标记失败不影响执行结果
         return "unknown"

@@ -528,6 +528,25 @@ def set_node_evidence(
     return False
 
 
+def set_node_note(root: Path | str, plan_id: str, node_id: str, *, note: str,
+                  project_id: str = "") -> bool:
+    """★ 给叶写一句【人能看懂的说明】（不改状态）—— 供监控/进度显示"为什么标待核"。
+
+    用例（2026-09-21 卡点4）: 执行体有产出但**没提交**（工作区脏）⇒ 证据记 `repo-uncommitted`
+    + verify_needed, 这里写清"产出未提交（工作区有未提交文件）⇒ 待核"。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        return False
+    for n in tree.get("nodes") or []:
+        if str(n.get("id") or "") != node_id:
+            continue
+        n["status_note"] = str(note)[:300]
+        _save(root, plan_id, tree, project_id)
+        return True
+    return False
+
+
 def mark_needs_decision(
     root: Path | str,
     plan_id: str,

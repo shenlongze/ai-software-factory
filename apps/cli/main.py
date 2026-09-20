@@ -4462,7 +4462,8 @@ def _print_status(r: dict) -> None:
             _extra.append(f"⚠ {dt['needs_decision']} 条执行体停手待你裁决 ⇒ 看 status --json 里的 "
                           "decision_reason（这些不算完成）")
         if dt.get("verify_needed"):
-            _extra.append(f"⚠ {dt['verify_needed']} 个'完成'没有产出证据 ⇒ 待核")
+            _extra.append(f"⚠ {dt['verify_needed']} 个'完成'待核"
+                          "（无产出证据, 或**产出未提交**留在工作区 —— 逐条看 tasktree show 的 note）")
         if dt.get("retrying"):
             _extra.append(f"{dt['retrying']} 条失败重试中")
         for x in _extra:

@@ -561,6 +561,11 @@ def build_parser() -> Any:
     json_opt(p_tt_todo)
     p_tt_todo.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
     p_tt_todo.add_argument("--project", default=None, help="项目 id")
+    p_tt_flow = ttsub.add_parser(
+        "flow", help="用户视图: 功能链路图（有哪些功能/谁依赖谁/先后顺序）")
+    json_opt(p_tt_flow)
+    p_tt_flow.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
+    p_tt_flow.add_argument("--project", default=None, help="项目 id")
     p_tt_d = ttsub.add_parser("decompose", help="从 Design Artifact 生成任务树（候选态）")
     json_opt(p_tt_d)
     p_tt_d.add_argument("--project", required=True, help="项目 id")
@@ -2353,6 +2358,62 @@ def _tasktree_todo(ctx: FactoryContext, args: Any) -> dict:
         },
     }
 
+
+def _tasktree_flow(ctx: FactoryContext, args: Any) -> dict:
+    """`factory tasktree flow <plan>` —— ★ 用户视图之二（功能链路图: 看关系）。
+
+    与 `todo` 的分工（Founder: "两种呈现, 说的是同一件事"）:
+      · todo: 看【要做啥、到哪了】—— 层级待办清单
+      · flow: 看【有什么功能、怎么串起来】—— 功能链路图
+    ★ 同源: 同一个树文件、同一份数据; flow 只是按 depends_on 画关系。
+
+    分层复用 `decomposition.parallel_groups`（Kahn 拓扑分层）——
+    它自述: "同层可并行, 层间必须串行" ⇒ 正好就是用户想看的"先做啥后做啥"。
+    """
+    from ai_factory_os.services.work import decomposition as _D
+
+    plan_id = str(getattr(args, "plan_id", "") or "")
+    project = str(getattr(args, "project", "") or "")
+    tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+    if not tree:
+        raise CliError(f"任务树不存在: {plan_id}（factory tasktree list 看有哪些）", exit_code=1)
+    nodes = tree.get("nodes") or []
+    by_id = {str(n.get("id") or ""): n for n in nodes}
+    doms = [n for n in nodes if n.get("kind") == "domain"]
+    # 被依赖次数（主次: 被依赖多 ⇒ 更靠前的基础件）
+    dep_count: dict[str, int] = {}
+    for n in doms:
+        for d in (n.get("depends_on") or []):
+            dep_count[str(d)] = dep_count.get(str(d), 0) + 1
+    # ★ 按【domain 子图】做 Kahn 分层 —— parallel_groups 是按叶分层,
+    #   而用户视图要看的是"模块级"先后（domain 自带 depends_on 链, 更直接）。
+    dids = [str(n.get("id") or "") for n in doms]
+    dset = set(dids)
+    ddeps = {str(n.get("id") or ""): [str(x) for x in (n.get("depends_on") or []) if str(x) in dset]
+             for n in doms}
+    layers: list[list[str]] = []
+    done: set[str] = set()
+    remaining = list(dids)
+    while remaining:
+        ready = [x for x in remaining if all(d in done for d in ddeps.get(x, []))]
+        if not ready:                      # 有环 ⇒ 整批放一层（不阻塞 · 不静默丢弃）
+            layers.append(sorted(remaining))
+            break
+        layers.append(sorted(ready))
+        done.update(ready)
+        remaining = [x for x in remaining if x not in done]
+    return {
+        "ok": True, "action": "tasktree-flow", "tree": tree,
+        "flow": {
+            "domains": len(doms),
+            "layers": layers,
+            "dep_count": dep_count,
+            "names": {str(n.get("id") or ""): str(n.get("title") or "") for n in doms},
+            "deps": {str(n.get("id") or ""): [str(x) for x in (n.get("depends_on") or [])]
+                     for n in doms},
+        },
+    }
+
 def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
     """factory tasktree list|show|decompose|confirm —— 产品环 ⑤「任务拆解」。
 
@@ -2372,6 +2433,8 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
     #   走独立实现（_tasktree_todo）—— 它的输出结构面向"给人看", 与 show 不同。
     if cmd == "todo":
         return _tasktree_todo(ctx, args)
+    if cmd == "flow":
+        return _tasktree_flow(ctx, args)
 
     if cmd == "list":
         trees = D.list_trees(ctx.root, project_id)
@@ -2549,6 +2612,33 @@ def _print_tasktree(args: Any, r: dict) -> None:
         _walk("", 0)
         print()
         print("  （☐ 待办 · 🚧 进行中 · ✅ 完成 · ⛔ 已终止）")
+    elif cmd == "flow":
+        # ★ 功能链路图（看关系）: 有哪些功能 · 谁依赖谁 · 先做哪层
+        f = r["flow"]
+        names = f["names"]
+        print()
+        print(f"  功能链路    {r['tree'].get('plan_id')}    {f['domains']} 个模块")
+        print(f"  {'━' * 52}")
+        print()
+        for i, layer in enumerate(f["layers"], 1):
+            doms = [x for x in layer if x in names]
+            if not doms:
+                continue
+            print(f"  第 {i} 层" + ("（可先做）" if i == 1 else "（等上一层）"))
+            for nid in doms:
+                nm = _todo_display_name(names[nid])
+                cnt = f["dep_count"].get(nid, 0)
+                tail = f"    ← 被 {cnt} 个模块依赖" if cnt else ""
+                print(f"    · {nm}{tail}")
+            print()
+        print("  依赖明细:")
+        for nid, deps in f["deps"].items():
+            if not deps or nid not in names:
+                continue
+            src = " / ".join(_todo_display_name(names.get(d, "?")) for d in deps if d in names)
+            print(f"    {_todo_display_name(names[nid]):<20} ← {src}")
+        print()
+        print("  （同层可并行 · 层间有前后依赖）")
     elif cmd == "decompose":
         t = r["tree"]
         s = r["summary"]

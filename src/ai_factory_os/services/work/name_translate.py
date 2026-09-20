@@ -34,6 +34,8 @@ def _prompt(items: list[tuple[str, str]]) -> str:
         "要求:\n"
         f"· 每条不超过 {_MAX_NAME} 个字, 说清「做什么事」, 不要技术黑话;\n"
         "· 保留业务含义（如「商品管理」而不是「catalog 模块」）;\n"
+        "· ★ 必须输出【中文】—— 就算输入是英文模块名（如 project-scaffold、database）, "
+        "也要译成中文（如「项目骨架」「数据库」）;\n"
         "· 不要编号、不要解释、不要 markdown;\n"
         '· 只输出 JSON 数组, 元素是字符串, 顺序与输入一一对应。例: ["搭建项目骨架","商品管理"]\n'
         f"\n输入 {len(items)} 条:\n{lines}\n"

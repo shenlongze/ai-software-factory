@@ -561,11 +561,15 @@ def build_parser() -> Any:
     json_opt(p_tt_todo)
     p_tt_todo.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
     p_tt_todo.add_argument("--project", default=None, help="项目 id")
+    p_tt_todo.add_argument("--ids", action="store_true",
+        help="显示节点 id（★ 默认不显示 —— 普通人看不懂内部 id; 要改节点时才需要）")
     p_tt_flow = ttsub.add_parser(
         "flow", help="用户视图: 功能链路图（有哪些功能/谁依赖谁/先后顺序）")
     json_opt(p_tt_flow)
     p_tt_flow.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
     p_tt_flow.add_argument("--project", default=None, help="项目 id")
+    p_tt_flow.add_argument("--ids", action="store_true",
+        help="显示节点 id（★ 默认不显示 —— 普通人看不懂内部 id; 要改节点时才需要）")
     p_tt_e = ttsub.add_parser(
         "edit", help="★ 逐节点编辑（改标题/验收/人话名/依赖, 或删节点）—— 改完回到候选态")
     json_opt(p_tt_e)
@@ -2800,7 +2804,9 @@ def _print_tasktree(args: Any, r: dict) -> None:
                     who = f"待派（需要: {_cap_word(caps[0])}）" if caps else "待派"
                 indent = "  " * (depth + 2)
                 name = _node_name(n)
-                line = f"{indent}{mark} {name}   [{str(n.get('id'))[-8:]}]"
+                _show_id = bool(getattr(args, "ids", False))
+                _idpart = f"   [{str(n.get('id'))[-8:]}]" if _show_id else ""
+                line = f"{indent}{mark} {name}{_idpart}"
                 if n.get("kind") == "domain":
                     dd, tt = _node_progress(n, by_parent)
                     line += f"    {dd}/{tt}"

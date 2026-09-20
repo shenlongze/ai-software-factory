@@ -686,6 +686,17 @@ def move_conv_to_project(root: Path | str, conv_id: str,
         tmp = dst.with_suffix(".tmp")
         tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, dst)
+        # ★ 2026-09-19（实测修正）: 搬完【必须删源】—— 否则两处并存, 违反 R27。
+        #   实测: 搬进项目后 `conversations/<conv>.json` 也还在, 而且内容是**旧快照**
+        #   （2,597 字节 vs 项目内 4,902 字节 ⇒ 两份不一致）。
+        #   为什么原先会漏: 原注释写"原子: os.replace 同盘原子替换"—— 那说的是
+        #   `tmp → dst` 的原子, 不是 `src → dst` 的"移动"; 把"原子替换临时文件"
+        #   误当成"移动了整个文件" ⇒ 源一直没删。
+        #   ★ 顺序安全: 先写 dst（os.replace 原子）再删 src ⇒ 中途失败也不会丢数据。
+        try:
+            src.unlink()
+        except OSError:  # noqa: BLE001 — 删源失败不致命（下次 move 幂等再试）
+            pass
         return True
     except (OSError, ValueError) as exc:
         import sys as _s

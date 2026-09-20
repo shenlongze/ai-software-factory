@@ -480,6 +480,47 @@ def claim_leaf(
         return {"ok": True, "reason": "", "node": node}
 
 
+def set_node_evidence(
+    root: Path | str,
+    plan_id: str,
+    node_id: str,
+    *,
+    evidence: str,
+    verify_needed: bool,
+    project_id: str = "",
+) -> bool:
+    """★ 记【产出证据】（完成时附加信息; 只由调度器的完成判定调用, 写入口仍只这一处）。
+
+    `evidence` ∈ {"repo-changed","no-change","unknown"}; `verify_needed=True` ⇒ 这条完成**要人看一眼**
+    （无改动/判不出来 —— 可能是验证类任务, 也可能是执行体停手）。不动 status（终态集合不碰）。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        return False
+    for n in tree.get("nodes") or []:
+        if str(n.get("id") or "") != node_id:
+            continue
+        n["evidence"] = str(evidence)
+        if verify_needed:
+            n["verify_needed"] = True
+        else:
+            n.pop("verify_needed", None)
+        _save(root, plan_id, tree, project_id)
+        return True
+    return False
+
+
+def get_leaf(root: Path | str, plan_id: str, node_id: str, *, project_id: str = "") -> dict[str, Any] | None:
+    """读一个节点（只读, 给调度器判"重试了几次"用）。"""
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        return None
+    for n in tree.get("nodes") or []:
+        if str(n.get("id") or "") == node_id:
+            return n
+    return None
+
+
 def release_leaf(
     root: Path | str,
     plan_id: str,
@@ -487,8 +528,16 @@ def release_leaf(
     *,
     project_id: str = "",
     status: str = "pending",
+    note: str = "",
 ) -> bool:
-    """归还/推进一个已被认领的叶（执行完 → completed；失败 → 交回 pending 供重认）。"""
+    """归还/推进一个已被认领的叶（执行完 → completed；失败 → 交回 pending 供重认）。
+
+    ★ 状态语义（全链路实跑踩到后加的, 见 docs/实跑-全链路-20260920.md 卡点 3）:
+      · status="pending" ⇒ 这是**交回重试** ⇒ `retry_count` +1（配合调用方的上限: 不能空转,
+        也不能"环境性失败一次就永久取消"—— 两种病都踩过）
+      · status="completed"/"cancelled" ⇒ 终态 ⇒ 清掉 retry_count
+      · `note` ⇒ 记进 `status_note`（人能看到"为什么回到 pending / 为什么被终止"）
+    """
     with _CLAIM_LOCK:
         tree = _read(root, plan_id, project_id)
         if tree is None:
@@ -498,6 +547,12 @@ def release_leaf(
                 n["status"] = status
                 n.pop("claimed_by", None)
                 n.pop("claimed_at", None)
+                if status == "pending":
+                    n["retry_count"] = int(n.get("retry_count") or 0) + 1
+                elif status in ("completed", "cancelled"):
+                    n.pop("retry_count", None)
+                if note:
+                    n["status_note"] = str(note)[:200]
                 _save(root, plan_id, tree, project_id)
                 return True
         return False

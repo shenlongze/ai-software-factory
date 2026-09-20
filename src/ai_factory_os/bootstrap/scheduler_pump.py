@@ -33,6 +33,11 @@ from ai_factory_os.core.scheduler.ports import Ports
 from ai_factory_os.services.execution.runtime.store import open_runtime_store
 
 
+#: ★ 失败重试上限（状态语义, 见 docs/实跑-全链路-20260920.md 卡点 3）：
+#: 环境性失败要能重试, 但不能空转 —— 回 pending 计数, 到上限才终止。
+_MAX_RETRY = 3
+
+
 def _run_status(out: Any) -> str:
     """从各种"执行返回形态"里取终态字符串（dict / ExecutionRunOutcome / 普通对象）。
 
@@ -54,9 +59,100 @@ def _looks_completed(out: Any) -> bool:
     return _run_status(out) in ("COMPLETED", "SUCCESS", "SUCCEEDED", "OK")
 
 
+def _on_failure(tries: int) -> tuple[str, str]:
+    """★ 失败后的状态决策（纯函数, 便于守）—— 返回 (新状态, 说明)。
+
+    · 未到上限 ⇒ 交回 `pending` 重试（环境性失败要能重试）
+    · 到上限 ⇒ `cancelled` 终止（防空转: cr-4 那次"归还 pending ⇒ 打满 50 轮/50 个执行"的教训）
+    """
+    if tries >= _MAX_RETRY:
+        return "cancelled", f"重试 {tries} 次仍失败 ⇒ 终止（修环境后重跑）"
+    return "pending", f"第 {tries + 1} 次失败 ⇒ 交回重试（环境性失败可重试, 上限 {_MAX_RETRY}）"
+
+
 def _looks_failed(out: Any) -> bool:
     """★ cr-4: 执行结果是否明确失败（用于**归还被认领的叶**, 见 _claim_and_run）。"""
     return _run_status(out) in ("FAILED", "ERROR", "ERRORED", "CANCELLED")
+
+
+def _mark_evidence(ports: Ports, execution_id: str) -> None:
+    """★ 完成必须留【产出证据】（全链路实跑踩到, 卡点 3）。
+
+    实测: 执行体"核验 + 停手、零改动"照样被记成 `completed` ⇒ 进度 1/199 是**假的**。
+    这里只做**标记**, 不动状态（改状态会牵动调度器终态集合, 风险大; 且验证类任务本来就无改动）:
+      · 项目仓库有改动/新提交 ⇒ `evidence="repo-changed"`（有据）
+      · 没有任何改动 ⇒ `evidence="no-change"` + `verify_needed=True`（**待核**）
+        —— 可能是"验证类任务"（合理）, 也可能是"执行体停手"（不合理）; 两种都该被人看一眼,
+        不能混进"真做完了"。进度里会把 `verify_needed` 的条数单独报出来。
+    失败安全: 任何一步拿不到 ⇒ 静默返回（标记是附加信息, 不能拖垮执行）。
+    """
+    try:
+        import json as _json
+        import subprocess
+
+        from ai_factory_os.services.work import decomposition as D
+
+        root = Path(getattr(ports.work, "_root", "."))
+        node_id = ""
+        plan_id = ""
+        project_id = ""
+        store = open_runtime_store(root)
+        for req in store.list_executions():
+            if str(req.id) == execution_id:
+                inp = req.input or {}
+                node_id = str(inp.get("node_id") or "")
+                plan_id = str(req.task_id or "")
+                project_id = str(getattr(req, "project_id", "") or "")
+                break
+        if not (node_id and plan_id):
+            return
+        # 项目仓库路径（org/projects.json 里 adopt 时写的 repo_path）
+        repo = ""
+        pj = root / "org" / "projects.json"
+        if pj.is_file() and project_id:
+            try:
+                data = _json.loads(pj.read_text(encoding="utf-8"))
+                rows = data.get("projects") if isinstance(data, dict) else data
+                if isinstance(rows, dict):
+                    repo = str((rows.get(project_id) or {}).get("repo_path") or "")
+                elif isinstance(rows, list):
+                    repo = next((str(r.get("repo_path") or "") for r in rows
+                                 if isinstance(r, dict) and str(r.get("id")) == project_id), "")
+            except Exception:  # noqa: BLE001
+                repo = ""
+        changed = None
+        if repo and Path(repo).is_dir():
+            r = subprocess.run(["git", "-C", repo, "status", "--porcelain"],
+                               capture_output=True, text=True, timeout=20)
+            log = subprocess.run(["git", "-C", repo, "log", "--oneline", "-1", "--format=%ct"],
+                                 capture_output=True, text=True, timeout=20)
+            if r.returncode == 0:
+                changed = bool(r.stdout.strip())
+                if not changed and log.returncode == 0:
+                    # 没有未提交改动时: 看最近提交时间是否落在本次执行附近（±30 分钟）
+                    try:
+                        import time as _t
+                        changed = abs(_t.time() - float(log.stdout.strip() or 0)) < 1800
+                    except Exception:  # noqa: BLE001
+                        changed = None
+        tree = D.load_tree(root, plan_id, project_id)
+        if not tree:
+            return
+        for n in tree.get("nodes") or []:
+            if str(n.get("id") or "") != node_id:
+                continue
+            if changed is True:
+                D.set_node_evidence(root, plan_id, node_id, evidence="repo-changed",
+                                    verify_needed=False, project_id=project_id)
+            elif changed is False:
+                D.set_node_evidence(root, plan_id, node_id, evidence="no-change",
+                                    verify_needed=True, project_id=project_id)
+            else:
+                D.set_node_evidence(root, plan_id, node_id, evidence="unknown",
+                                    verify_needed=True, project_id=project_id)
+            return
+    except Exception:  # noqa: BLE001 — 标记失败不影响执行结果
+        return
 
 
 def _write_back_node_status(ports: Ports, execution_id: str, status: str) -> bool:
@@ -229,17 +325,15 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
             D.release_leaf(root, task_id, node_id, status="pending",
                            project_id=project_id)   # 回滚, 供重认
         raise
-    # ★ 2026-09-19（cr-4 修正）: 返回值为 FAILED ⇒ **把叶标为 cancelled（终止）**。
-    #   原先归还为 "pending"（供重认）—— 但实测: 失败多为**环境性**（如 runtime 未注册）,
-    #   归还后下一轮又被调度 ⇒ 失败 ⇒ 再归还 ⇒ **打满 max_ticks 空转, 且每轮新建执行**
-    #   （实测: 一棵 13 叶的树创建了 50 个执行）。
-    #   ★ 为什么用 cancelled 而不是 failed: `DecisionKind` 只有
-    #     READY/BLOCKED/COMPLETED/CANCELLED/UNRESOLVED —— **没有 FAILED**,
-    #     `_TERMINAL = {completed, cancelled}`; 用 cancelled 才能让调度器真正停下。
-    #     语义 = "该叶终止, 不再自动重试（需人工介入/修环境后重跑）" —— 失败要显式, 不空转。
+    # ★ 状态语义（全链路实跑踩到, 卡点 3）: 环境性失败**要能重试**, 但**不能空转** —— 两种病都踩过:
+    #   · 一律回 pending ⇒ 失败又被调度 ⇒ 打满 max_ticks + 每轮新建执行（cr-4 实测: 13 叶创建 50 个执行）
+    #   · 一律 cancelled ⇒ 缺个 runtime / provider 抖一下, 任务就**永久终止、不可重试**
+    #   正解: 回 pending + `retry_count` 计数, 到上限才终止（并写明原因, 让人修完环境能重跑）。
     if node_id and task_id and _looks_failed(result):
-        D.release_leaf(root, task_id, node_id, status="cancelled",
-                       project_id=project_id)
+        _leaf = D.get_leaf(root, task_id, node_id, project_id=project_id) or {}
+        _tries = int(_leaf.get("retry_count") or 0)
+        _st, _note = _on_failure(_tries)
+        D.release_leaf(root, task_id, node_id, status=_st, project_id=project_id, note=_note)
     return result
 
 
@@ -389,6 +483,8 @@ def drive(
                     #   （has_accepted_outcome 认 completed/accepted/done）。
                     if _looks_completed(out):
                         if _write_back_node_status(ports, eid, "completed"):
+                            # ★ 完成必须留产出证据（实跑踩到: 停手零改动也被记成 completed）
+                            _mark_evidence(ports, eid)
                             # ★ 回写后必须让适配器的树缓存失效 —— 否则本轮 tick 仍读旧树,
                             #   下游叶看不到"前驱已验收"（实测踩过）。
                             inv = getattr(ports.work, "invalidate", None)

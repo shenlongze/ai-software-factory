@@ -142,6 +142,63 @@ def test_monitoring_sees_execution(tmp_path: Path) -> None:
     assert _check_views_see_tree(tmp_path) == []
 
 
+def _check_state_semantics(root: Path) -> list[str]:
+    """★ 执行状态语义（卡点 3）: 环境性失败要能重试但不能空转 · 完成必须留产出证据。
+
+    实测踩过的两种病:
+      · 一律 cancelled ⇒ 缺 runtime / provider 抖一下, 任务**永久终止、不可重试**
+      · 一律 pending   ⇒ 归还后被再调度 ⇒ 打满 max_ticks + 每轮新建执行（cr-4: 13 叶 50 个执行）
+    """
+    from ai_factory_os.bootstrap.scheduler_pump import _MAX_RETRY, _on_failure
+    from ai_factory_os.services.work import decomposition as D
+    from ai_factory_os.services.work import progress as P
+
+    bad: list[str] = []
+    # ① 重试决策: 未到上限 ⇒ 交回 pending; 到上限 ⇒ 终止（防空转）
+    for tries in range(_MAX_RETRY):
+        st, _n = _on_failure(tries)
+        if st != "pending":
+            bad.append(f"第 {tries} 次失败应回 pending 重试, 实得 {st}")
+    st, note = _on_failure(_MAX_RETRY)
+    if st != "cancelled" or not note:
+        bad.append(f"到上限({_MAX_RETRY})应终止并写明原因, 实得 {st} / {note!r}")
+
+    # ② 树: 交回重试 ⇒ retry_count+1 + 写明原因; 终态 ⇒ 清掉计数
+    tree = {"plan_id": "PLAN-s", "project_id": "P-s", "status": "confirmed",
+            "nodes": [{"id": "p", "kind": "project", "parent_id": "", "title": "项目"},
+                      {"id": "M", "kind": "domain", "parent_id": "p", "title": "模块"},
+                      {"id": "L1", "kind": "task", "parent_id": "M", "title": "叶", "status": "claimed"}]}
+    d = root / "projects" / "P-s" / "tasks"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "PLAN-s.json").write_text(json.dumps(tree, ensure_ascii=False), encoding="utf-8")
+    D.release_leaf(root, "PLAN-s", "L1", status="pending", project_id="P-s", note="第 1 次失败 ⇒ 交回")
+    leaf = D.get_leaf(root, "PLAN-s", "L1", project_id="P-s") or {}
+    if leaf.get("retry_count") != 1 or not leaf.get("status_note"):
+        bad.append(f"交回重试没记计数/原因: retry_count={leaf.get('retry_count')} note={leaf.get('status_note')!r}")
+    if leaf.get("status") != "pending" or leaf.get("claimed_by"):
+        bad.append(f"交回后状态/认领没清: {leaf.get('status')} claimed_by={leaf.get('claimed_by')}")
+
+    # ③ 产出证据: 无改动 ⇒ verify_needed（待核）; 有改动 ⇒ 干净完成
+    D.set_node_evidence(root, "PLAN-s", "L1", evidence="no-change", verify_needed=True, project_id="P-s")
+    if (P.summary(root).get("verify_needed") or 0) != 1:
+        bad.append("无产出证据的完成没被标进 verify_needed（进度会把它当'真做完了'）")
+    D.set_node_evidence(root, "PLAN-s", "L1", evidence="repo-changed", verify_needed=False, project_id="P-s")
+    if (P.summary(root).get("verify_needed") or 0) != 0:
+        bad.append("有产出证据后 verify_needed 没清掉")
+
+    # ④ 终态要把重试计数清掉（否则下次改任务会带着旧计数）
+    D.release_leaf(root, "PLAN-s", "L1", status="completed", project_id="P-s")
+    leaf2 = D.get_leaf(root, "PLAN-s", "L1", project_id="P-s") or {}
+    if leaf2.get("retry_count") is not None:
+        bad.append(f"终态没清 retry_count: {leaf2.get('retry_count')}")
+    return bad
+
+
+def test_execution_state_semantics(tmp_path: Path) -> None:
+    """执行状态语义: 失败可重试(带上限) · 完成留证据(无证据 ⇒ 待核) · 终态清计数。"""
+    assert _check_state_semantics(tmp_path) == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -153,8 +210,10 @@ def main() -> int:
         root = Path(td)
         bad1 = _check(root)
         bad2 = _check_views_see_tree(root)
+        bad3 = _check_state_semantics(root)
     results.append(("会话事实 → 想法文本", not bad1, "；".join(bad1)))
     results.append(("监控看得见执行（树 → status/metrics/看板）", not bad2, "；".join(bad2)))
+    results.append(("执行状态语义（可重试 / 完成留证据）", not bad3, "；".join(bad3)))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

@@ -63,6 +63,11 @@ def leaf_rows(root: Path | str, *, plan_id: str = "") -> list[dict[str, Any]]:
                 "plan_id": pid,
                 "role": str(n.get("required_role") or "") if n.get("required_role") not in (None, "unassigned") else (caps[0] if caps else ""),
                 "agent": str(n.get("claimed_by") or n.get("assignee") or ""),
+                # ★ 完成的成色与重试计数（来自调度器的写回; 见 docs/实跑-全链路-20260920.md 卡点 3）
+                "verify_needed": bool(n.get("verify_needed")),
+                "evidence": str(n.get("evidence") or ""),
+                "retry_count": int(n.get("retry_count") or 0),
+                "status_note": str(n.get("status_note") or ""),
                 "source": "tasktree",
             })
     return rows
@@ -86,6 +91,10 @@ def summary(root: Path | str, *, project_id: str = "", plan_id: str = "") -> dic
         "projects": sorted(by_project),
         "leaves": len(rows),
         "done": done,
+        # ★ 完成的成色: 无产出证据 / 判不出的完成 ⇒ 要人看一眼（不混进"真做完了"）
+        "verify_needed": sum(1 for r in rows if r.get("verify_needed")),
+        "retrying": sum(1 for r in rows if int(r.get("retry_count") or 0) > 0
+                        and r["raw_status"] not in ("completed", "cancelled")),
         "percent": (done * 100 // len(rows)) if rows else 0,
         "by_status": by_status,
         "by_project": by_project,

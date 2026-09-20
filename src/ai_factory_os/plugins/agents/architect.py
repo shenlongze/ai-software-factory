@@ -72,7 +72,12 @@ _ENDPOINT_KEYS: tuple[str, ...] = ("method", "path", "contract")
 
 #: task_breakdown 每项必含键 (Developer 消费准备: 模块 / 技术任务 /
 #: API 约定 / UI 实现指导 — S8-005 Developer 消费点)
-_TASK_KEYS: tuple[str, ...] = ("module", "task", "api_contract", "ui_guidance")
+#: ★ 2026-09-21 加 "acceptance"（Founder 纠正: "任务拆解就不够细啊"）。
+#:   背景: 原契约是「每项 = 一个 module + 一个 task」⇒ 天生 1 模块 1 任务（实测 13 模块→13 叶,
+#:   每叶 3~7 件事）⇒ **"拆解"这一环其实没拆**（expand.py 自述也承认 task_breakdown 是平的）。
+#:   现在: 每个 task 必须是【原子任务】（一工程师一次做完 + 可独立验收），同一 module 可多次出现,
+#:   且 acceptance 必填 —— 契约层就不允许"粗叶"出生。
+_TASK_KEYS: tuple[str, ...] = ("module", "task", "api_contract", "ui_guidance", "acceptance")
 
 #: task_breakdown 每项的【可选】键 —— ★ 2026-09-19 增 depends_on（M3 并行调度）:
 #:   该模块依赖的**模块名**数组（架构阶段还不知道任务树 id, 故用名字; 无依赖 → 空数组）。
@@ -253,6 +258,9 @@ def _validate_tasks(tasks: Any) -> list[str]:
                 errors.append(
                     f"task_breakdown[{i}].{key}: expected non-empty str"
                 )
+        # 注（2026-09-21 Founder 纠正）: 这里**不拦"粗"** —— 架构给的是**模块级种子**,
+        #   把种子拆到"最小实现单位"是【拆解环的递归职责】(expand_to_minimal), 不是架构的。
+        #   我第一版在这里加了粒度拦截 ⇒ 架构直接产不出（模块级种子被判"没拆到位"）✗ 已撤。
         # ★ 可选键 depends_on: 给了就必须是 str 列表（模块名; 不给 = 无依赖）
         if "depends_on" in task:
             dep = task.get("depends_on")
@@ -294,9 +302,18 @@ _ARCH_AGENT_PROMPT = (
     "产物给出 UI 实现指导)\n"
     "- backend_architecture: 后端架构 (字符串, 服务/模块)\n"
     "- task_breakdown: 任务拆分 (数组, 每项 task = {{module, task, "
-    "api_contract, ui_guidance, depends_on, required_capabilities}} — 模块/技术任务/"
-    "API 约定/UI 实现指导/先决模块/必需能力, "
+    "api_contract, ui_guidance, acceptance, depends_on, required_capabilities}} — 模块/技术任务/"
+    "API 约定/UI 实现指导/一句话验收/先决模块/必需能力, "
     "供 Developer 直接消费)\n"
+    "  ★★ 拆解 = 【递归】（Founder 口径; 老区 ee84bc18 实现过, 绞杀老区时随 10 万行丢失）: "
+    "任务**递归嵌套** —— 每项可带 `children`（结构与本项相同, 可再嵌）, "
+    "**层数不限, 按需求实际复杂度决定**; **没有 children 的项即叶子任务**。\n"
+    "  ★ 拆到【最小单位 / 最小实现】才停: 叶子必须是一个工程师**一次能做完**、"
+    "别人能**独立验收**的最小实现单元（能一句话写出验收）。"
+    "一个叶里塞 3 件事（顿号枚举, 如\"设计并创建 A、B、C 三张表\"）就是还没拆到位 ⇒ "
+    "继续拆成 children, 或拆成并列多项。宁可多几条, 不要一条包多件事。\n"
+    "  ★ acceptance = 该任务的**一句话验收标准**（怎么算做完, 可被别人独立核对; 必填; "
+    "禁止\"等/…/无\"这类兜底写法）\n"
     "  ★ required_capabilities = 该任务**需要什么能力**（角色名数组, 从下面清单里选; "
     "可多选）。清单: {roles}。不确定 → 空数组 []（不猜）。\n"
     "  ★ depends_on = 该模块依赖的**模块名数组**（无依赖 → 空数组 []）。"

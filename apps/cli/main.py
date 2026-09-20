@@ -3237,8 +3237,23 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
             raise CliError(f"拆解超边界: {exc}", exit_code=1) from exc
         except ValueError as exc:
             raise CliError(str(exc), exit_code=1) from exc
+
+        # ★ 2026-09-21（Founder 定: "我们采取的是递归的方式, 拆到最小单位, 最小实现"）:
+        #   拆解 = 【递归到最小单位】—— 收尾自动递归细拆, 不再依赖"另一条腿"(expand 单独跑)。
+        #   手工路径(tasktree decompose) 与 chain 第⑦步从此同源; 停止判据 = 粒度判据(不是层数)。
+        from ai_factory_os.services.work.expand import expand_to_minimal as _to_min
+
+        _pid_plan = str(tree.get("plan_id") or "")
+        _rec: dict = {"rounds": 0, "leaves": 0, "remaining": [], "split": [],
+                      "errors": [], "stopped_because": "未跑"}
+        try:
+            _rec = _to_min(ctx.root, _pid_plan, project_id, provider=_arch_provider())
+            tree = D.load_tree(ctx.root, _pid_plan, project_id) or tree
+        except Exception as exc:  # noqa: BLE001 — 递归不可用 ⇒ 响亮说, 不假装拆完
+            _rec["errors"] = [f"递归细拆未执行: {type(exc).__name__}: {str(exc)[:80]}"]
+            _rec["stopped_because"] = "递归细拆未执行（见 errors）"
         return {"ok": True, "command": "tasktree decompose", "tree": tree,
-                "summary": D.tree_summary(tree),
+                "summary": D.tree_summary(tree), "recursion": _rec,
                 "exit_code": 0, "args": args}
 
     if cmd == "confirm":

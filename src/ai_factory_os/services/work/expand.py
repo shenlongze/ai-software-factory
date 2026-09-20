@@ -93,3 +93,82 @@ def expand_module(          # noqa: N802 — 名字保留（对外已用）
     if not kids:
         raise ValueError("细拆输出不合规（不是 JSON 数组）—— 不产半成品; 可重试")
     return kids
+
+
+from pathlib import Path  # noqa: E402 — 局部补（本函数签名用）
+
+
+def expand_to_minimal(
+    root: Path | str,
+    plan_id: str,
+    project_id: str = "",
+    *,
+    provider: Any,
+    max_rounds: int = 6,
+    max_leaves: int = 400,
+) -> dict[str, Any]:
+    """★ 递归拆解到【最小单位】（Founder 定: "我们采取的是递归的方式, 拆到最小单位, 最小实现"）。
+
+    与"让模型一次吐细"的区别（我先前方向错了）: 拆解是**递归过程** ——
+      架构给的是【模块级种子】⇒ 拆解环**反复**把"还不是最小单位"的节点拆开,
+      直到每个叶都能一句话写出验收（= 到最小实现）为止。
+
+    停止判据（唯一）: `granularity.reasons_for(叶)` 为空 —— **不是**"层数用完"。
+    纪律: 轮次/叶数到上限 ⇒ 停下并**响亮报 remaining**（不静默放弃, 不假装拆完）;
+          单个节点细拆失败 ⇒ 记 errors 继续下一个（不因一个节点毁掉整轮）。
+    返回: {"rounds", "split", "remaining", "errors", "leaves", "stopped_because"}
+    """
+    from ai_factory_os.services.work import decomposition as D
+    from ai_factory_os.services.work import granularity as G
+
+    out: dict[str, Any] = {"rounds": 0, "split": [], "remaining": [], "errors": [],
+                           "leaves": 0, "stopped_because": ""}
+    tree = D.load_tree(root, plan_id, project_id) or {}
+
+    for rnd in range(1, max_rounds + 1):
+        nodes = tree.get("nodes") or []
+        leaves = [n for n in nodes if n.get("kind") == "task"]
+        todo = [n for n in leaves if G.reasons_for(n)]
+        if not todo:
+            out["stopped_because"] = "全部叶已到最小单位"
+            break
+        out["rounds"] = rnd
+        progressed = False
+        for node in todo:
+            if len([n for n in (tree.get("nodes") or []) if n.get("kind") == "task"]) >= max_leaves:
+                out["stopped_because"] = f"叶数到上限（{max_leaves}）⇒ 停止递归"
+                break
+            nid = str(node.get("id") or "")
+            try:
+                kids = expand_module(
+                    str(node.get("display_name") or node.get("title") or ""),
+                    desc=str(node.get("scope") or ""),
+                    acceptance=str(node.get("acceptance") or ""),
+                    caps=list(node.get("required_capabilities") or []),
+                    provider=provider,
+                )
+            except Exception as exc:  # noqa: BLE001 — 单节点失败不毁整轮
+                out["errors"].append(f"{nid}: 细拆失败 {type(exc).__name__}: {str(exc)[:60]}")
+                continue
+            if len(kids) < 2:
+                # LLM 判"已是一件事" ⇒ 这节点到底（但它没过粒度判据 ⇒ 收尾时进 remaining, 响亮）
+                continue
+            res = D.expand_domain(root, plan_id, node_id=nid, kids=kids, project_id=project_id)
+            tree = res.get("tree") or tree
+            out["split"].append({"node": nid, "kids": [str(k.get("title") or "")[:40] for k in kids]})
+            progressed = True
+        if not progressed:
+            out["stopped_because"] = out["stopped_because"] or "本轮没有节点可再拆（LLM 判定已是最小）"
+            break
+    else:
+        out["stopped_because"] = f"轮次到上限（{max_rounds}）⇒ 停止递归"
+
+    final = D.load_tree(root, plan_id, project_id) or tree
+    fnodes = final.get("nodes") or []
+    out["leaves"] = len([n for n in fnodes if n.get("kind") == "task"])
+    out["remaining"] = [
+        {"id": str(n.get("id") or ""), "title": str(n.get("display_name") or n.get("title") or "")[:60],
+         "reasons": G.reasons_for(n)}
+        for n in fnodes if n.get("kind") == "task" and G.reasons_for(n)
+    ]
+    return out

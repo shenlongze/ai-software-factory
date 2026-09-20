@@ -95,6 +95,8 @@ def _read(root: Path | str, plan_id: str, project_id: str = "") -> dict[str, Any
       （实测: run --plan 空转 50 轮）。报错信息里给出全部路径与修法。
     """
     base = Path(root)
+    # ★ 2026-09-21 修（误报）: 候选里同一文件会被列两次（显式路径 + `projects/*/tasks/` 通配）
+    #   ⇒ 加载器报"存在副本（权威在……同一路径）"这种自己指自己的假告警。去重即可。
     cands: list[Path] = []
     if project_id:
         cands.append(base / "projects" / project_id / "tasks" / f"{plan_id}.json")
@@ -105,7 +107,7 @@ def _read(root: Path | str, plan_id: str, project_id: str = "") -> dict[str, Any
 
     found: list[tuple[Path, dict[str, Any]]] = []
     seen: set[str] = set()
-    for p in cands:
+    for p in dict.fromkeys(cands):
         if not p.is_file() or str(p) in seen:
             continue
         seen.add(str(p))
@@ -146,7 +148,9 @@ def _save(root: Path | str, plan_id: str, tree: dict[str, Any], project_id: str 
     # ★ 副本告警: 有 pid 的树不该出现在回落位置
     if pid:
         stale = Path(root) / "task_trees" / f"{plan_id}.json"
-        if stale.is_file():
+        # 注: 只有【真的落在别处】才算副本 —— 项目目录不存在时树会落到回落位置,
+        #     那时 stale 与 p 是同一个文件, 报自己指自己的告警会误导（实测踩到）。
+        if stale.is_file() and stale != p:
             import sys as _sys
             print(f"⚠ 同一棵树存在副本: {stale}（权威在 {p}）—— 违反 R27, 请删掉副本后重试读树",
                   file=_sys.stderr)
@@ -341,42 +345,60 @@ def decompose_from_design(
         )
         nodes.append(leaf)
 
+    # ★ 2026-09-21 修（Founder 纠正: "任务拆解就不够细啊"）: 按【模块】归组 ——
+    #   一个模块 = 一个 domain; 该模块的 N 个原子任务 = N 个叶。
+    #   原实现是"每 seed = 1 domain + 1 leaf"（自述的向后兼容）⇒ 一个任务里塞 3~7 件事时
+    #   就变成 1 个粗叶（实测: 13 模块 → 13 粗叶; 那个"7 合 1"的叶 900 秒超时跑不完）。
+    #   现在: 同一 module 出现多次 ⇒ 归到一个 domain 下, 每个 seed 一个叶;
+    #        叶的 acceptance 取【种子自带的】(架构契约已必填); 没有 ⇒ **不编, 留空**让判据抓。
+    by_module: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
     for idx, seed in enumerate(seeds, 1):
         if not isinstance(seed, dict):
             continue
         module = str(seed.get("module") or f"module-{idx}").strip()
-        desc = str(seed.get("task") or "").strip()
-        contract = str(seed.get("api_contract") or "").strip()
-        seed_deps = [str(d).strip() for d in (seed.get("depends_on") or []) if str(d).strip()]
-        children = seed.get("children")
-        has_kids = isinstance(children, list) and bool(children)
+        if module not in by_module:
+            by_module[module] = []
+            order.append(module)
+        by_module[module].append(seed)
 
-        if has_kids:
-            _seed_node(seed, root_node["id"], idx)
-            continue
-
-        dom = _node("domain", f"模块 {idx}: {module}", parent=root_node["id"], scope=desc[:300])
-        # 域间依赖: 映射到那些被依赖模块的 domain 节点（此时已生成的在 seed_order 里）
-        dom["depends_on"] = [i for i in (seed_order.get(d, "") for d in seed_deps) if i]
+    for m_i, module in enumerate(order, 1):
+        group = by_module[module]
+        dom = _node("domain", f"模块 {m_i}: {module}", parent=root_node["id"],
+                    scope=str(group[0].get("task") or "").strip()[:300])
+        deps: list[str] = []
+        for seed in group:
+            for d in (seed.get("depends_on") or []):
+                did = seed_order.get(str(d).strip(), "")
+                if did and did not in deps:
+                    deps.append(did)
+        dom["depends_on"] = deps
         nodes.append(dom)
         seed_order[module] = dom["id"]           # 登记本模块 → 供后续模块引用
-
-        leaf = _node(
-            "task", desc or module, parent=dom["id"],
-            change_type="NEW_FILE",
-            expected_files=_files_for(module, f"{desc} {contract}", stack),
-            # 叶只依赖自己的域（层级归属）—— 模块间的先决在 domain 层表达
-            depends_on=[dom["id"]],
-            scope=contract[:300],
-            required_role=_DEFAULT_ROLE,
-            role_hint=_role_hint(module, desc),
-            # 架构种子给的必需能力（角色名）—— 不给就空（调度器会诚实报 UNRESOLVED, 不瞎派）
-            required_capabilities=[
-                str(c).strip() for c in (seed.get("required_capabilities") or []) if str(c).strip()
-            ],
-            acceptance=contract or f"{module} 实现完成且可验证",
-        )
-        nodes.append(leaf)
+        for seed in group:
+            kids = seed.get("children")
+            if isinstance(kids, list) and kids:
+                for k, kid in enumerate(kids, 1):
+                    if isinstance(kid, dict):
+                        _seed_node(kid, dom["id"], k)
+                continue
+            desc = str(seed.get("task") or "").strip()
+            contract = str(seed.get("api_contract") or "").strip()
+            leaf = _node(
+                "task", desc or module, parent=dom["id"],
+                change_type="NEW_FILE",
+                expected_files=_files_for(module, f"{desc} {contract}", stack),
+                # 叶只依赖自己的域（层级归属）—— 模块间的先决在 domain 层表达
+                depends_on=[dom["id"]],
+                scope=contract[:300],
+                required_role=_DEFAULT_ROLE,
+                role_hint=_role_hint(module, desc),
+                required_capabilities=[
+                    str(c).strip() for c in (seed.get("required_capabilities") or []) if str(c).strip()
+                ],
+                acceptance=str(seed.get("acceptance") or "").strip(),
+            )
+            nodes.append(leaf)
 
     leaves = [n for n in nodes if n["kind"] == "task"]
     # ── 边界纪律（超出 → 响亮拒绝, 不静默硬拆）

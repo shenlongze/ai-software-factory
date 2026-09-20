@@ -1870,6 +1870,118 @@ def test_provider_experience_learning() -> None:
     assert _check_provider_experience_learning() == []
 
 
+def _check_decompose_is_atomic() -> list[str]:
+    """★ 拆解一次就拆到"原子任务"（Founder 纠正: "任务拆解就不够细啊"）。
+
+    实测病（两头都错）:
+      · 契约: `task_breakdown` 每项 = {module, task, api_contract, ui_guidance}（无 acceptance,
+        语义上是"一模块一任务"）⇒ 架构天生只给模块级任务
+      · 构建: 自述"每 seed = 1 domain + 1 leaf"(向后兼容) ⇒ 13 模块 = 13 粗叶
+              且叶的 acceptance 竟然取 `api_contract`（我在真树里看到"验收=POST /login"）
+      ⇒ 结果: "拆解"这一环其实没拆（expand.py 自述承认）; 粗叶"7 合 1" 900 秒超时跑不完。
+    判据（缺一不算拆到位）:
+      ① 契约层: task_breakdown 带 acceptance + **接受递归嵌套**（children ⇒ 容器; 粗种子=合法输入）
+      ② 构建层: 同一 module 的多个原子任务 ⇒ 归到一个域下的多个叶（不是多个域）
+      ③ 验收: 叶的 acceptance 取种子自带的（没有 ⇒ 留空让判据抓, 不拿 api_contract 充数）
+      ④ 递归层: 拆解收尾【递归拆到最小单位】—— 粗叶被反复拆开直到过粒度判据; 触上限响亮报
+      ⑤ 判据互认: 建出来的树过 granularity 判据（0 个"没拆到位"）
+    """
+    import tempfile
+
+    from ai_factory_os.plugins.agents import architect as AR
+    from ai_factory_os.services.work import decomposition as D
+    from ai_factory_os.services.work import granularity as G
+
+    bad: list[str] = []
+    if "acceptance" not in AR._TASK_KEYS:
+        bad.append("架构契约 _TASK_KEYS 没要求 acceptance（拆解没有验收 ⇒ 判据判不了）")
+    coarse = [{"module": "m", "task": "设计并创建用户、宠物、门店三张核心表及索引",
+               "api_contract": "x", "ui_guidance": "y", "acceptance": "无（基础设施）"}]
+    fine = [{"module": "m", "task": "创建 users 表与唯一索引", "api_contract": "x",
+             "ui_guidance": "y", "acceptance": "迁移可跑通, 唯一约束生效"}]
+    # ★ 方向（Founder 纠正后的正确口径）: 架构给的是【模块级种子】, **粗种子是合法输入** ——
+    #   把它拆到最小单位是【拆解环的递归职责】, 不是架构的。⇒ 这里断言"粗种子放行、不误伤"。
+    if AR._validate_tasks(coarse):
+        bad.append(f"架构把模块级种子拦了（它只是种子, 该由递归拆）: {AR._validate_tasks(coarse)}")
+    if AR._validate_tasks(fine):
+        bad.append(f"架构误伤了原子任务: {AR._validate_tasks(fine)}")
+    # 嵌套种子（递归输出）必须被接受: 容器项带 children ⇒ 由构建递归物化
+    nested = [{"module": "用户与鉴权", "task": "用户与鉴权", "api_contract": "POST /login",
+               "ui_guidance": "登录页", "acceptance": "登录可用",
+               "children": [{"module": "用户与鉴权", "task": "创建 users 表", "api_contract": "SQL",
+                             "ui_guidance": "-", "acceptance": "迁移可跑通"},
+                            {"module": "用户与鉴权", "task": "实现 JWT 校验", "api_contract": "Bearer",
+                             "ui_guidance": "-", "acceptance": "过期 token 被拒"}]}]
+    if AR._validate_tasks(nested):
+        bad.append(f"嵌套种子（递归输出）被误拦: {AR._validate_tasks(nested)}")
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        seeds = [
+            {"module": "用户与鉴权", "task": "创建 users 表与唯一索引", "api_contract": "POST /login",
+             "ui_guidance": "登录页", "acceptance": "迁移可跑通, 唯一约束生效"},
+            {"module": "用户与鉴权", "task": "实现 JWT 签发与校验", "api_contract": "Bearer",
+             "ui_guidance": "-", "acceptance": "过期/篡改 token 都被拒"},
+            {"module": "预约", "task": "创建预约表", "api_contract": "POST /bookings",
+             "ui_guidance": "预约页", "acceptance": "并发下单不超卖"},
+            # ★ 再加一个【真粗叶】(枚举 3 件事 + 验收写不出) ⇒ 递归该把它拆开
+            {"module": "数据层", "task": "设计并创建宠物、门店、订单三张表及索引",
+             "api_contract": "SQL", "ui_guidance": "-", "acceptance": ""},
+        ]
+        tree = D.decompose_from_design(root, plan_id="PLAN-at", project_id="P-at",
+                                       design_metadata={"task_breakdown": seeds,
+                                                        "design_ref": "A-x"})
+        nodes = (tree or {}).get("nodes") or []
+        doms = [n for n in nodes if n.get("kind") == "domain"]
+        leaves = [n for n in nodes if n.get("kind") == "task"]
+        if len(doms) != 3 or len(leaves) != 4:
+            bad.append(f"同模块该归一个域: 期望 3 域 4 叶（含 1 个粗叶）, 实得 {len(doms)} 域 {len(leaves)} 叶")
+        if not G.oversized(nodes):
+            bad.append("夹具里的粗叶没被判据抓到（判据失灵 ⇒ 后面的递归断言就没意义）")
+        accs = {str(n.get("acceptance") or "") for n in leaves}
+        if "迁移可跑通, 唯一约束生效" not in accs:
+            bad.append(f"叶的验收没取种子自带的: {accs}")
+        if any(a.startswith("POST ") or a == "Bearer" for a in accs):
+            bad.append(f"验收还是拿 api_contract 充数: {accs}")
+        # ★ 递归拆到最小单位（Founder 口径: "递归的方式, 拆到最小单位/最小实现"）:
+        #   用假 provider（每次把粗叶拆成 2 个原子子任务）⇒ 递归后不应再有粗叶。
+        import types as _types
+
+        from ai_factory_os.services.work.expand import expand_to_minimal as _to_min
+
+        class _FakeProv:
+            def __init__(self):
+                self.calls = 0
+
+            def generate(self, req):
+                self.calls += 1
+                import json as _json
+
+                kids = [{"title": f"原子子任务 {self.calls}-1", "acceptance": "一句话验收 A"},
+                        {"title": f"原子子任务 {self.calls}-2", "acceptance": "一句话验收 B"}]
+                return _types.SimpleNamespace(ok=True, content=_json.dumps(kids, ensure_ascii=False),
+                                              error=None)
+
+        fp = _FakeProv()
+        rec = _to_min(root, "PLAN-at", "P-at", provider=fp, max_rounds=4, max_leaves=60)
+        tree2 = D.load_tree(root, "PLAN-at", "P-at") or {}
+        left = G.oversized(tree2.get("nodes") or [])
+        if left:
+            bad.append(f"递归拆完仍有粗叶（没到最小单位）: {[x['title'][:24] for x in left]}")
+        if rec.get("rounds", 0) < 1 or not rec.get("split"):
+            bad.append(f"递归没真的拆: {rec}")
+        # 触上限要响亮报（不假装拆完）
+        rec2 = _to_min(root, "PLAN-at", "P-at", provider=_FakeProv(), max_rounds=1, max_leaves=1)
+        if rec2.get("remaining") and not rec2.get("stopped_because"):
+            bad.append("触上限时没说清为什么停（该响亮报）")
+    return bad
+
+
+def test_decompose_is_atomic() -> None:
+    """拆解一次到位: 契约要验收 · 粗任务被拒 · 同模块归一个域 · 叶验收来自种子 · 过粒度判据。"""
+    assert _check_decompose_is_atomic() == []
+
+
 def test_conv_facts_reach_product_develop(tmp_path: Path) -> None:
     """接缝: 会话事实 → 想法文本（两种存法 + 跳过被推翻 + 缺了报错 + --idea 优先）。"""
     assert _check(tmp_path) == []
@@ -1908,6 +2020,7 @@ def main() -> int:
     results.append(("插件放下即用（丢清单即生效·坏清单响亮报错）", not _check_plugin_drop_in(), "；".join(_check_plugin_drop_in())))
     results.append(("学习自治（经验从真执行来·失败也记·幂等）", not _check_experience_learning(), "；".join(_check_experience_learning())))
     results.append(("provider 域经验（用量⇒经验⇒推荐引擎读得到）", not _check_provider_experience_learning(), "；".join(_check_provider_experience_learning())))
+    results.append(("拆解一次到位（原子任务·契约要验收·同模块归一域）", not _check_decompose_is_atomic(), "；".join(_check_decompose_is_atomic())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

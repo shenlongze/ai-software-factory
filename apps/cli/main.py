@@ -589,6 +589,12 @@ def build_parser() -> Any:
     json_opt(p_tt_tr)
     p_tt_tr.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
     p_tt_tr.add_argument("--project", default=None, help="项目 id")
+    p_tt_ex = ttsub.add_parser(
+        "expand", help="★ 细拆: 把模块展开成多个子任务（逐模块调 LLM —— 让树真的长出子任务）")
+    json_opt(p_tt_ex)
+    p_tt_ex.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
+    p_tt_ex.add_argument("--node", default="", help="只展开该模块（缺省=全部模块挨个展开）")
+    p_tt_ex.add_argument("--project", default=None, help="项目 id")
     p_tt_e.add_argument("--project", default=None, help="项目 id")
     p_tt_d = ttsub.add_parser("decompose", help="从 Design Artifact 生成任务树（候选态）")
     json_opt(p_tt_d)
@@ -2561,6 +2567,68 @@ def _tasktree_translate(ctx: FactoryContext, args: Any) -> dict:
             "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(r["tree"])),
                         "done": 0, "percent": "0"}}
 
+
+def _tasktree_expand(ctx: FactoryContext, args: Any) -> dict:
+    """`factory tasktree expand <plan> [--node <模块>]` —— ★ 细拆（逐模块展开成子任务）。
+
+    Founder 指出的核心问题: "这现在还是呈现的是大类啊, 没有细分任务, 没有拆解"。
+    ⇒ 本命令让树**真的长出子任务**: 对每个模块单独调一次 LLM 拆解
+      （输出体量小 ⇒ 不被 8192 截断; 模型精力集中 ⇒ 拆得细）。
+    """
+    from ai_factory_os.services.work import decomposition as _D
+    from ai_factory_os.services.work.expand import expand_module
+
+    plan_id = str(getattr(args, "plan_id", "") or "")
+    project = str(getattr(args, "project", "") or "")
+    per = str(getattr(args, "node", "") or "")
+    tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+    if not tree:
+        raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
+
+    doms = [n for n in (tree.get("nodes") or []) if n.get("kind") == "domain"]
+    if per:
+        doms = [d for d in doms
+                if str(d.get("id")) == per or str(d.get("id")).endswith(per)]
+        if not doms:
+            raise CliError(f"找不到模块: {per}", exit_code=1)
+    # ★ 跳过"已经被展开过"的（下面已有 ≥2 个 task）—— 幂等, 重复跑不会越拆越多
+    todo = []
+    for d in doms:
+        kids = [n for n in (tree.get("nodes") or [])
+                if str(n.get("parent_id")) == str(d.get("id")) and n.get("kind") == "task"]
+        if len(kids) < 2:
+            todo.append(d)
+    if not todo:
+        return {"ok": True, "action": "tasktree-expand", "done": 0, "skipped": len(doms),
+                "tree": tree, "results": [],
+                "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(tree)),
+                            "done": 0, "percent": "0"}}
+
+    prov = _arch_provider()
+    results: list[dict[str, Any]] = []
+    ok = 0
+    for d in todo:
+        name = str(d.get("display_name") or d.get("title") or "")
+        try:
+            kids = expand_module(
+                name,
+                desc=str(d.get("scope") or ""),
+                acceptance=str(d.get("acceptance") or ""),
+                caps=list(d.get("required_capabilities") or []),
+                provider=prov,
+            )
+            r = _D.expand_domain(ctx.root, plan_id, node_id=str(d.get("id")), kids=kids,
+                                 project_id=project)
+            ok += 1
+            results.append({"module": name, "kids": len(kids), "titles": [k["title"] for k in kids]})
+        except Exception as exc:  # noqa: BLE001 — 单个模块失败不拖垮整批（如实报告）
+            results.append({"module": name, "error": str(exc)[:120]})
+        tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+
+    return {"ok": True, "action": "tasktree-expand", "done": ok, "skipped": len(doms) - len(todo),
+            "total": len(todo), "results": results, "tree": tree,
+            "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(tree)), "done": 0, "percent": "0"}}
+
 def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
     """factory tasktree list|show|decompose|confirm —— 产品环 ⑤「任务拆解」。
 
@@ -2586,6 +2654,8 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
         return _tasktree_edit(ctx, args)
     if cmd == "translate":
         return _tasktree_translate(ctx, args)
+    if cmd == "expand":
+        return _tasktree_expand(ctx, args)
 
     if cmd == "list":
         trees = D.list_trees(ctx.root, project_id)
@@ -2866,6 +2936,20 @@ def _print_tasktree(args: Any, r: dict) -> None:
             if got < tot:
                 print(f"  ⚠ 有 {tot - got} 个没翻成（保持规则派生, 不影响显示）")
         print("  ★ 树已回到候选态, 需重新确认")
+    elif cmd == "expand":
+        print()
+        print(f"  细拆结果: {r.get('done')}/{r.get('total')} 个模块已展开"
+              f"（跳过 {r.get('skipped')} 个已展开的）")
+        print(f"  {'━' * 50}")
+        for x in r.get("results") or []:
+            if x.get("error"):
+                print(f"  ✗ {x['module'][:22]} — {x['error'][:60]}")
+            else:
+                print(f"  ✔ {x['module'][:22]}  →  {x['kids']} 个子任务")
+                for ttl in x.get("titles") or []:
+                    print(f"        · {ttl}")
+        print()
+        print("  ★ 树已回到候选态 —— 用 `tasktree todo` 看结果, `tasktree confirm` 确认")
     elif cmd == "decompose":
         t = r["tree"]
         s = r["summary"]

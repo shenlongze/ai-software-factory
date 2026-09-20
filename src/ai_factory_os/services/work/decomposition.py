@@ -867,6 +867,95 @@ def apply_display_names(
     tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
     return {"tree": tree, "action": f"写入人话名 {hit} 个", "applied": hit}
 
+def expand_domain(
+    root: Path | str,
+    plan_id: str,
+    *,
+    node_id: str,
+    kids: list[dict[str, Any]],
+    project_id: str = "",
+    drop_old: bool = True,
+) -> dict[str, Any]:
+    """★ 把一个 domain【展开】成多个子任务 —— 让树真的长出"子任务/子子任务"。
+
+    【为什么需要】实测: arch 产的种子是**平的**（每模块 1 个任务）⇒ 树只有
+    project→domain→task, 没有拆解。而"拆解"恰恰是这个平台的核心动作。
+    调用方用 `services/work/expand.expand_module`（LLM 逐模块细拆）产出 `kids`,
+    本函数负责把它们**落到树里**。
+
+    `drop_old=True`（默认）: 删掉该 domain 原来的单一 task ——
+      它是"模块级描述"（如"初始化 monorepo…"整段), 不是可执行任务;
+      留着会与子任务重复。
+    `kids[].depends_on_idx`: 同批序号（1-based）⇒ 翻译成真实 node id。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        raise FileNotFoundError(f"任务树不存在: {plan_id}")
+    nodes: list[dict[str, Any]] = tree.get("nodes") or []
+    dom = next((n for n in nodes if str(n.get("id") or "") == node_id
+                or str(n.get("id") or "").endswith(node_id)), None)
+    if dom is None:
+        raise ValueError(f"找不到模块节点: {node_id}")
+    if dom.get("kind") != "domain":
+        raise ValueError(f"只能展开【模块(domain)】节点; 该节点是 {dom.get('kind')}")
+
+    if len(kids) < 2:
+        raise ValueError("展开至少要 2 个子任务（一个不算拆）")
+    leaves = len(tree_leaves(tree))
+    if leaves + len(kids) > DECOMPOSE_LIMITS["max_leaves"]:
+        raise ValueError(
+            f"展开后叶子数 {leaves + len(kids)} 超过上限 {DECOMPOSE_LIMITS['max_leaves']}"
+            "（不静默丢弃 —— 请分批）"
+        )
+
+    tid = str(tree.get("plan_id") or plan_id)
+    dom_id = str(dom.get("id") or "")
+    # ① 删该 domain 下原有的 task（模块级描述, 非可执行）
+    removed: list[str] = []
+    if drop_old:
+        for n in list(nodes):
+            if str(n.get("parent_id") or "") == dom_id and n.get("kind") == "task":
+                removed.append(str(n.get("id") or ""))
+        nodes = [n for n in nodes if str(n.get("id") or "") not in removed]
+
+    # ② 建子任务（先建全部再连依赖 —— 依赖要引用真实 id）
+    new_ids: list[str] = []
+    for k in kids:
+        nid = f"{tid}-t-{uuid.uuid4().hex[:8]}"
+        new_ids.append(nid)
+        nodes.append({
+            "id": nid,
+            "kind": "task",
+            "title": str(k.get("title") or "")[: DECOMPOSE_LIMITS["max_title"]],
+            "parent_id": dom_id,
+            "prd_ref": str(dom.get("prd_ref") or ""),
+            "change_type": str(dom.get("change_type") or "NEW_FILE"),
+            "expected_files": [],
+            "depends_on": [dom_id] + [str(x) for x in (dom.get("depends_on") or [])],
+            "scope": "",
+            "required_role": str(dom.get("required_role") or _DEFAULT_ROLE),
+            "required_capabilities": list(dom.get("required_capabilities") or []),
+            "role_hint": str(dom.get("role_hint") or ""),
+            "acceptance": str(k.get("acceptance") or "")[:300],
+            "status": None,
+        })
+    # ③ 同批依赖（序号 → 真实 id）
+    for k, nid in zip(kids, new_ids):
+        extra = [new_ids[i - 1] for i in (k.get("depends_on_idx") or [])
+                 if isinstance(i, int) and 1 <= i <= len(new_ids)]
+        if extra:
+            node = next(n for n in nodes if str(n.get("id") or "") == nid)
+            node["depends_on"] = list(dict.fromkeys(node["depends_on"] + extra))
+
+    tree["nodes"] = nodes
+    tree["status"] = "candidate"                 # ★ 改完回候选态, 需重新确认
+    tree["edited_at"] = _now_iso()
+    tree.pop("_saved_to", None)
+    tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
+    return {"tree": tree, "node": dom, "new_ids": new_ids, "removed": removed,
+            "action": f"展开成 {len(new_ids)} 个子任务"}
+
+
 def tree_leaves(tree: dict[str, Any]) -> list[dict[str, Any]]:
     return [n for n in (tree.get("nodes") or []) if n.get("kind") == "task"]
 

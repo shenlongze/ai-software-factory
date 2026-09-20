@@ -2335,6 +2335,65 @@ def test_cli_chat() -> None:
     assert _check_cli_chat() == []
 
 
+def _check_prd_requirement_gate() -> list[str]:
+    """★ 需求 → PRD 的门（Founder 选 B: "防它自己加需求"）。
+
+    实测病: PRD 制品里就已经有 登录/通知/补课/爽约（用户没要过 ✗）—— 污染从这一环开始,
+      下游放大到 42/199 个任务。
+    判据:
+      ① 有出处表时: 出处必须是**需求原话的逐字片段**（≥6 字, 归一化后子串匹配）⇒ 保留
+      ② 出处缺失/编的 ⇒ 该特性**移出** feature_list, 进 out_of_scope_suggestions（给人看, 不做）
+      ③ 没有出处表（模型不配合/老载荷）⇒ **不移出**（不误杀）, 但用"与需求原话的最长公共子串 <3"
+         把可疑的**标出来**（只标不移 —— 不猜, 人是最终判据）
+      ④ 调用点: 产品环产出后**真的调了**这个门（不是只有函数没人用）
+    """
+    import importlib as _il
+    import inspect as _insp
+
+    from ai_factory_os.plugins.agents.pm import enforce_requirement_traces as E
+
+    bad: list[str] = []
+    req = ("我要做一个健身房私教排课与消课小程序: 教练设置可约时间段; 会员预约并在线付课时费; "
+           "到店后教练消课扣减课时; 会员能看剩余课时与消费记录; 店长能看每节课的到课率与教练课时统计")
+
+    # ①② 逐字引用 ⇒ 留; 编的 ⇒ 移出
+    p1 = {"feature_list": ["教练可约时段管理", "会员在线预约并付课时费", "微信登录"],
+          "feature_traces": {"教练可约时段管理": "教练设置可约时间段",
+                             "会员在线预约并付课时费": "会员预约并在线付课时费",
+                             "微信登录": "微信小程序登录与角色区分（会员/教练）"}}
+    r1 = E(p1, req)
+    if "微信登录" in p1["feature_list"]:
+        bad.append("编出处的特性没被移出 feature_list")
+    if len(p1["feature_list"]) != 2:
+        bad.append(f"真出处的特性被误移（剩 {len(p1['feature_list'])} 条）")
+    if not p1.get("out_of_scope_suggestions"):
+        bad.append("移出的特性没进 out_of_scope_suggestions（人看不到）")
+    if r1.get("kept") != 2:
+        bad.append("kept 计数不对")
+
+    # ③ 没有出处表 ⇒ 不移出, 但标记可疑
+    p2 = {"feature_list": ["私教排课", "微信登录", "订阅消息推送"]}
+    r2 = E(p2, req)
+    if len(p2["feature_list"]) != 3:
+        bad.append("没有出处表时被误移出（应只标不移）")
+    flagged = {x["feature"] for x in (r2.get("flagged") or [])}
+    if "微信登录" not in flagged or "订阅消息推送" not in flagged:
+        bad.append(f"可疑项没被标出（实得 {flagged}）")
+    if "私教排课" in flagged:
+        bad.append("在需求里的特性被误标为可疑")
+
+    # ④ 调用点
+    src = _insp.getsource(_il.import_module("apps.cli.main").cmd_product_develop)
+    if "enforce_requirement_traces" not in src:
+        bad.append("产品环产出后没调这个门（门是死的）")
+    return bad
+
+
+def test_prd_requirement_gate() -> None:
+    """需求→PRD 的门: 逐字出处才留 · 编的移出并另列 · 没出处表只标不移 · 调用点真的接了。"""
+    assert _check_prd_requirement_gate() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2373,6 +2432,7 @@ def main() -> int:
     results.append(("启动 AI Factory OS（factory start 进交互式 CLI·敲命令真跑·exit 退出）", not _check_cli_shell(), "；".join(_check_cli_shell())))
     results.append(("任务出处那一栏（无出处的挡在树外·单列给人看）", not _check_task_traces_to(), "；".join(_check_task_traces_to())))
     results.append(("CLI 会话（说话=会话 · /命令=执行 · 写命令不自动跑）", not _check_cli_chat(), "；".join(_check_cli_chat())))
+    results.append(("需求→PRD 的门（无出处的功能不进 PRD·标出可疑）", not _check_prd_requirement_gate(), "；".join(_check_prd_requirement_gate())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

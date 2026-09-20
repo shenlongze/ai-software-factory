@@ -139,6 +139,72 @@ def _local_validate(payload: dict[str, Any]) -> list[str]:
     return errors
 
 
+def enforce_requirement_traces(payload: dict[str, Any], requirement: str) -> dict[str, Any]:
+    """★ 需求 → PRD 的门（Founder 选 B: "防它自己加需求"）。
+
+    实测病: PRD 制品里就已经有用户没要过的东西（登录/通知/补课/爽约 ✗）—— 污染从这一环开始,
+      下游的架构/拆解只是接着放大（实测 42/199 个任务是没要过的）。
+    判据（**可核对, 不是靠模型自觉**）: feature_list 每项都要在 feature_traces 里给一条
+      **逐字片段**（≥6 字）; 该片段必须**原样出现在用户需求原话里** ⇒ 才算"用户要的"。
+      - 给不出片段 / 片段是编的 ⇒ 该功能**移出 feature_list**, 进 out_of_scope_suggestions（待老板确认）
+      - 老载荷（完全没有 feature_traces）⇒ 不过滤（向后兼容）, 但记一条提示
+    返回 {"kept": n, "moved": [...], "checked": n, "skipped": bool}
+    """
+    import json as _json
+
+    from ai_factory_os.services.work.decomposition import _norm
+
+    out: dict[str, Any] = {"kept": 0, "moved": [], "checked": 0, "skipped": False}
+    fl = payload.get("feature_list")
+    if not isinstance(fl, list) or not fl:
+        return out
+    traces = payload.get("feature_traces")
+    if not isinstance(traces, dict) or not traces:
+        # 老/不配合载荷: 没有出处表 ⇒ **不误杀**（不移出）, 但用"与需求原话的最长公共子串"
+        # 把**可疑的**标出来给人看（只标不移 —— 不猜 ✗, 人是最终判据 ✓）
+        out["skipped"] = True
+        out["kept"] = len(fl)
+        req0 = _norm(requirement)
+        if req0:
+            from difflib import SequenceMatcher as _SM
+
+            flagged = []
+            for f in fl:
+                s = _norm(f)
+                if not s:
+                    continue
+                if s in req0:                      # 整条都在需求里 ⇒ 铁定是要的
+                    continue
+                m = _SM(None, s, req0).find_longest_match(0, len(s), 0, len(req0))
+                if m.size < 3:                     # 与需求原话几乎没有共同文字 ⇒ 可疑
+                    flagged.append({"feature": str(f)[:80], "overlap": int(m.size)})
+            if flagged:
+                payload["_suspected_self_added"] = flagged
+                out["flagged"] = flagged
+        return out
+    req = _norm(requirement)
+    kept, moved = [], []
+    for f in fl:
+        key = str(f).strip()
+        cite = str(traces.get(key) or "").strip()
+        cn = _norm(cite)
+        out["checked"] += 1
+        if len(cn) >= 6 and cn in req:
+            kept.append(f)
+        else:
+            moved.append({"feature": key,
+                          "why": ("需求里没有这条（没给出处）" if not cite
+                                  else f"出处「{cite[:40]}」在需求原话里查不到（编的）")})
+    if moved:
+        payload["feature_list"] = kept
+        payload["out_of_scope_suggestions"] = list(payload.get("out_of_scope_suggestions") or []) + moved
+        payload["_traces_enforced_at"] = _json.dumps({"kept": len(kept), "moved": len(moved)},
+                                                     ensure_ascii=False)
+    out["kept"] = len(kept)
+    out["moved"] = moved
+    return out
+
+
 # ------------------------------------------------------------------ prompt
 
 
@@ -154,7 +220,11 @@ _PM_AGENT_PROMPT = (
     "- user_persona: 用户画像 (目标用户/特征/痛点)\n"
     "- user_journey: 用户旅程 (关键场景/步骤/触点)\n"
     "- problem_statement: 问题定义 (核心问题/影响)\n"
-    "- feature_list: 功能清单 (数组, 每项一个功能)\n"
+    "- feature_list: 功能清单 (数组, 每项一个功能 —— ★ 每项**必须**能在用户想法里找到原话依据)\n"
+    "- feature_traces: 出处表 (对象: 功能原文 → 用户想法里的**逐字片段**, 至少 6 个字, 要照抄)\n"
+    "  ★ 凡是在用户想法里**找不到原话依据**的功能, 一律**不要**放进 feature_list"
+    "（放到 out_of_scope_suggestions 里另列）—— 需求范围由用户定, 不许自己加功能。\n"
+    "- out_of_scope_suggestions: 建议但**用户没提**的功能 (数组; 可空)\n"
     "- mvp_scope: MVP 范围 (对象, 必含 in/out 两个数组: 范围内/范围外)\n"
     "- user_stories: 用户故事 (数组, 每项含 as-a/i-want/so-that)\n\n"
     "用户想法:\n{idea}\n\n"

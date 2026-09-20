@@ -2551,6 +2551,32 @@ def cmd_product_develop(ctx: FactoryContext, args: Any) -> dict:
     except ProductManagerError as exc:
         raise CliError(f"产品分析失败: {exc}", exit_code=1) from exc
     meta = art.to_dict()
+    # ★ 2026-09-21 需求 → PRD 的门（Founder 选 B: "防它自己加需求"）:
+    #   每条特性必须**逐字引用**需求原话里的片段（≥6 字, 可核对）; 引不出的 = 模型自己加的功能 ⇒
+    #   移出 feature_list, 进 out_of_scope_suggestions 另列给人看（不做）。
+    #   实测病: PRD 制品里就已经有 登录/通知/补课/爽约（用户没要过）⇒ 下游被放大到 42/199 个任务。
+    try:
+        from ai_factory_os.plugins.agents.pm import enforce_requirement_traces
+        from ai_factory_os.services.work.decomposition import prd_text as _req_text
+
+        _gate = enforce_requirement_traces(meta, _req_text(ctx.root, {"project_id": project_id}))
+        if _gate.get("skipped"):
+            print("  ⚠ 这份 PRD 没带「出处表」⇒ 本次**没有过滤**（不误杀）; 但把可疑的标出来给你看:")
+            for _f in (_gate.get("flagged") or [])[:10]:
+                print(f"      ? {str(_f.get('feature'))[:50]}  （与需求原话共同文字仅 {_f.get('overlap')} 字）")
+            if not _gate.get("flagged"):
+                print("      （没有可疑项：每条特性都能在需求原话里找到依据）")
+        elif _gate.get("moved"):
+            print(f"  ⚠ 需求→PRD 门: 移出 {len(_gate['moved'])} 条【你需求里没有的】功能"
+                  f"（已另列 out_of_scope_suggestions, 不做）:")
+            for _m in _gate["moved"][:8]:
+                print(f"      - {str(_m.get('feature'))[:52]} —— {str(_m.get('why'))[:40]}")
+            if len(_gate["moved"]) > 8:
+                print(f"      … 还有 {len(_gate['moved']) - 8} 条")
+        elif _gate.get("checked"):
+            print(f"  ✓ 需求→PRD 门: {_gate['kept']}/{_gate['checked']} 条特性都能对回你的需求原话")
+    except Exception as _exc:  # noqa: BLE001 — 门本身出问题不许挡产出（但要说出来）
+        print(f"  ⚠ 需求→PRD 门没跑成: {type(_exc).__name__}: {str(_exc)[:80]}")
     store = ProjectStore(ctx.root / "org")
     from ai_factory_os.infrastructure.ids import new_id
     rec = Artifact(id=new_id("A"), stage_id="", type=ArtifactType.PRODUCT,

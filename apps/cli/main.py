@@ -2318,8 +2318,34 @@ def _prod_provider() -> Any:
     return provs[0]
 
 
+def _iter_facts(conv: dict) -> list[dict]:
+    """★ 会话里的事实 —— 兼容两种存法（只认一种 = 就是下面那个 bug）。
+
+      · 现网: `conv["understanding"]["facts"]`（dict: 事实 id → 事实）
+      · 兼容: `conv["facts"]`（list）
+    ★ 跳过非活动态（SUPERSEDED/REJECTED）—— 被推翻的想法不能当依据。
+    """
+    out: list[dict] = []
+    und = conv.get("understanding")
+    nested = und.get("facts") if isinstance(und, dict) else None
+    if isinstance(nested, dict):
+        out.extend(x for x in nested.values() if isinstance(x, dict))
+    elif isinstance(nested, list):
+        out.extend(x for x in nested if isinstance(x, dict))
+    legacy = conv.get("facts")
+    if isinstance(legacy, list):
+        out.extend(x for x in legacy if isinstance(x, dict))
+    active = ("SUPERSEDED", "REJECTED")
+    return [f for f in out if str(f.get("status") or "").upper() not in active]
+
+
 def _prod_idea_text(ctx: FactoryContext, project_id: str, explicit: str | None) -> str:
-    """想法文本: 显式 --idea > 项目 PRD 的 overview > 会话最近 human 消息（诚实缺口 → 报错）。"""
+    """想法文本: 显式 --idea > 项目 PRD 的 overview > 会话里的 IDEA 事实（诚实缺口 → 报错）。
+
+    ★ 实测踩到（全链路实跑）: 这段原来读 `conv["facts"]`（顶层 list）——
+      而事实实际存在 `conv["understanding"]["facts"]`（嵌套 dict）⇒ **永远取不到**,
+      `product develop` 不带 --idea 必报"无想法文本"（chain.py 里那句注释就是当年绕过去的痕迹）。
+    """
     if explicit:
         return str(explicit)
     from ai_factory_os.services.organization.projects import ProjectStore
@@ -2331,7 +2357,7 @@ def _prod_idea_text(ctx: FactoryContext, project_id: str, explicit: str | None) 
             for k in ("overview", "problem_statement", "title"):
                 if meta.get(k):
                     return str(meta[k])
-    # 2) 会话事实里的 IDEA
+    # 2) 会话事实里的 IDEA（★ 走 _iter_facts: 两种存法都认）
     conv_dir = ctx.root / "projects" / project_id / "conversations"
     if conv_dir.is_dir():
         import json as _json
@@ -2340,7 +2366,9 @@ def _prod_idea_text(ctx: FactoryContext, project_id: str, explicit: str | None) 
                 d = _json.loads(f.read_text())
             except Exception:  # noqa: BLE001
                 continue
-            for fact in (d.get("facts") or []):
+            if not isinstance(d, dict):
+                continue
+            for fact in _iter_facts(d):
                 if str(fact.get("type") or "").upper() == "IDEA" and fact.get("content"):
                     return str(fact["content"])
     raise CliError(

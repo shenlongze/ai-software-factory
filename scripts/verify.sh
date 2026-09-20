@@ -72,6 +72,7 @@ run "执行面 调度依赖"    "$PY" scripts/smoke_exec_dispatch.py
 run "关键路径 判据"      "$PY" scripts/smoke_keypath.py
 run "优先级 判据"        "$PY" scripts/smoke_priority.py
 run "派工 判据"          "$PY" scripts/smoke_staffing.py
+run "链路接缝"          "$PY" scripts/smoke_chain_links.py
 
 echo
 echo "═══ ③ 守卫扫仓库（= 当前债务清单，非工具故障）═══"

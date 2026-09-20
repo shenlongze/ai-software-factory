@@ -47,6 +47,15 @@
   .row.d1{padding-left:26px}
   .row.d2{padding-left:52px}
   .row.d3{padding-left:78px}
+  /* ★ 跨视图联动: 选中态 / 命中块 / 落选变灰 */
+  .row{cursor:default}
+  #todo .row[data-kind="domain"].d0{cursor:pointer}
+  #todo .row[data-kind="domain"].d0:hover{background:#f5f5f7;border-radius:8px}
+  .row.sel{background:#eef5ff;border-radius:8px;box-shadow:inset 3px 0 0 var(--brand)}
+  .row.sel-kid{background:#f7faff}
+  .row.dimsel{opacity:.3}
+  .node.sel rect{stroke:var(--brand);stroke-width:2.6}
+  .node.sel .nm{font-weight:600}
   /* 功能链路图（★ 真图: 节点 + 连线。第 N 批 = 第 N 行, 自上而下做） */
   #flow svg{display:block;max-width:100%;height:auto;overflow:visible}
   .band{fill:#fafafc}
@@ -123,6 +132,7 @@
   </div>
   <div class="prog"><span id="bar" style="width:0%"></span></div>
   <div id="msg"></div>
+  <p class="sub" id="selhint" style="margin:0 0 14px"></p>
 
   <div class="cols">
     <!-- 投影 B: 功能链路图（看关系） -->
@@ -134,7 +144,7 @@
     <!-- 投影 A: 层级待办清单（看进度） -->
     <section class="card">
       <h2><span class="dot"></span>层级待办清单</h2>
-      <p class="sub">要做的活、谁在做、做到哪了</p>
+      <p class="sub">要做的活、谁在做、做到哪了（★ 点模块名 ⇒ 三张图联动定位）</p>
       <div id="todo"></div>
     </section>
   </div>
@@ -164,10 +174,12 @@ async function api(path){
 
 function renderTodo(d){
   if(!d.lines || !d.lines.length) return `<div class="empty">暂无任务</div>`;
+  // ★ data-id/data-kind/data-depth = 跨视图联动的"键"（服务层早就给了 id, 之前没用上）
   return d.lines.map(l => {
     const who = l.who ? `<span class="who">${esc(l.who)}</span>` : "";
     const pg  = l.kind === "domain" ? `<span class="pg">${l.done}/${l.total}</span>` : "";
-    return `<div class="row d${Math.min(l.depth,3)}">
+    return `<div class="row d${Math.min(l.depth,3)}" data-id="${esc(l.id)}"
+      data-kind="${esc(l.kind)}" data-depth="${l.depth}">
       <span class="mark">${MARK[l.mark]||"☐"}</span>
       <span class="nm ${l.depth===0?"d0":""}">${esc(l.name)}</span>${pg}${who}</div>`;
   }).join("");
@@ -291,39 +303,111 @@ function renderFlow(d){
       <span><b>箭头</b> = 前置关系: 上面先做完, 才能做下面</span>
       <span><b>★</b> = 核心（被最多模块依赖）</span>
       <span><b>鼠标移到模块</b> = 高亮它整条上下游链</span>
-      <span><b>点模块</b> = 看它的子模块</span>
+      <span><b>点模块</b> = 选中 ⇒ ★ 另外两张图一起亮/滚（再点或 Esc 取消）</span>
     </div>
     <div id="kids"></div>`;
+}
+
+// ── ★★ 跨视图联动（Founder: "页面上有很多视图，数据是联动的么"）──────────
+//   三个投影读同一份树 ⇒ 用 **module id** 互相定位:
+//     点任一处的模块 ⇒ 三张图一起亮（功能链路图亮上下游链 · 数据流程图亮它碰的实体 ·
+//     待办清单滚到那一块并连同子树点亮）; 再点一次 / 按 Esc 取消。
+//   悬停仍只是【本图内部】追链 —— 不跨图, 免得鼠标一动三屏乱跳。
+let SELECTED = null;
+
+function flowAdj(){
+  const UP = new Map(), DN = new Map();
+  const push = (m, k, v) => { if(!m.has(k)) m.set(k, []); m.get(k).push(v); };
+  (FLOW.edges || []).forEach(e => { push(UP, e.to, e.from); push(DN, e.from, e.to); });
+  return {UP, DN};
+}
+
+function paintFlow(id){
+  const svg = document.querySelector("#flow svg");
+  if(!svg) return;
+  const {UP, DN} = flowAdj();
+  const up = id ? _closure(id, UP) : null, dn = id ? _closure(id, DN) : null;
+  const hot = x => !id || x === id || up.has(x) || dn.has(x);
+  svg.querySelectorAll(".node").forEach(n => {
+    const i = n.dataset.id;
+    n.classList.toggle("dim", !!id && !hot(i));
+    n.classList.toggle("hot", !!id && hot(i));
+    n.classList.toggle("up", !!id && up.has(i));
+    n.classList.toggle("sel", !!id && i === id);
+  });
+  svg.querySelectorAll(".edge").forEach(p => {
+    const on = !id || (hot(p.dataset.f) && hot(p.dataset.t));
+    p.classList.toggle("dim", !!id && !on);
+    p.classList.toggle("hot", !!id && on);
+    p.classList.toggle("up", !!id && on
+      && (up.has(p.dataset.f) || p.dataset.f === id)
+      && (up.has(p.dataset.t) || p.dataset.t === id));
+  });
+}
+
+function paintDf(id){
+  const svg = document.querySelector("#df svg");   // 只动第①张（模块↔实体）; 实体关系图与模块无关
+  if(!svg) return;
+  const touch = new Set();
+  if(id){
+    svg.querySelectorAll(".edge").forEach(e => {
+      if(e.dataset.f === id) touch.add(e.dataset.t);
+      if(e.dataset.t === id) touch.add(e.dataset.f);
+    });
+  }
+  svg.querySelectorAll(".node").forEach(n => {
+    const i = n.dataset.id, on = !id || i === id || touch.has(i);
+    n.classList.toggle("dim", !!id && !on);
+    n.classList.toggle("hot", !!id && on);
+    n.classList.toggle("sel", !!id && i === id);
+  });
+  svg.querySelectorAll(".edge").forEach(e => {
+    const on = !id || e.dataset.f === id || e.dataset.t === id;
+    e.classList.toggle("dim", !!id && !on);
+    e.classList.toggle("hot", !!id && on);
+  });
+}
+
+// 待办清单: 行是【扁平序 + data-depth】⇒ 模块的子树 = 它后面那些更深的行
+function paintTodo(id){
+  const rows = [...document.querySelectorAll("#todo .row")];
+  rows.forEach(r => r.classList.remove("sel", "sel-kid", "dimsel"));
+  if(!id) return;
+  const idx = rows.findIndex(r => r.dataset.id === id);
+  if(idx < 0) return;
+  const base = Number(rows[idx].dataset.depth || 0);
+  rows.forEach(r => r.classList.add("dimsel"));
+  rows[idx].classList.add("sel");
+  rows[idx].classList.remove("dimsel");
+  for(let k = idx + 1; k < rows.length; k++){
+    if(Number(rows[k].dataset.depth || 0) <= base) break;
+    rows[k].classList.add("sel-kid");
+    rows[k].classList.remove("dimsel");
+  }
+  rows[idx].scrollIntoView({block: "center", behavior: "smooth"});
+}
+
+function selectModule(id){
+  SELECTED = (SELECTED === id) ? null : id;
+  paintFlow(SELECTED);
+  paintDf(SELECTED);
+  paintTodo(SELECTED);
+  const hint = document.getElementById("selhint");
+  if(hint){
+    hint.textContent = SELECTED
+      ? "已选中一个模块 —— 三张图都跟着亮/滚了；再点一次 或 按 Esc 取消"
+      : "";
+  }
 }
 
 function wireFlow(){
   const svg = document.querySelector("#flow svg");
   if(!svg || !FLOW) return;
-  const UP = new Map(), DN = new Map();
-  const push = (m, k, v) => { if(!m.has(k)) m.set(k, []); m.get(k).push(v); };
-  (FLOW.edges || []).forEach(e => { push(UP, e.to, e.from); push(DN, e.from, e.to); });
-  const nodes = [...svg.querySelectorAll(".node")], edges = [...svg.querySelectorAll(".edge")];
-  const paint = id => {
-    const up = id ? _closure(id, UP) : null, dn = id ? _closure(id, DN) : null;
-    const hot = x => !id || x === id || up.has(x) || dn.has(x);
-    nodes.forEach(n => {
-      const i = n.dataset.id, on = hot(i);
-      n.classList.toggle("dim", !!id && !on);
-      n.classList.toggle("hot", !!id && on);
-      n.classList.toggle("up", !!id && up.has(i));
-    });
-    edges.forEach(p => {
-      const f = p.dataset.f, t = p.dataset.t, on = !id || (hot(f) && hot(t));
-      p.classList.toggle("dim", !!id && !on);
-      p.classList.toggle("hot", !!id && on);
-      p.classList.toggle("up", !!id && on && (up.has(f) || f === id) && (up.has(t) || t === id));
-    });
-  };
-  nodes.forEach(n => {
-    n.addEventListener("mouseenter", () => paint(n.dataset.id));
-    n.addEventListener("focus", () => paint(n.dataset.id));
-    n.addEventListener("mouseleave", () => paint(null));
-    n.addEventListener("click", () => showKids(n.dataset.id));
+  svg.querySelectorAll(".node").forEach(n => {
+    n.addEventListener("mouseenter", () => paintFlow(n.dataset.id));
+    n.addEventListener("focus", () => paintFlow(n.dataset.id));
+    n.addEventListener("mouseleave", () => paintFlow(SELECTED));
+    n.addEventListener("click", () => { showKids(n.dataset.id); selectModule(n.dataset.id); });
   });
 }
 
@@ -403,36 +487,32 @@ function renderDataFlow(d){
       <span><b>蓝实线</b> = 产线声明（模块读/写这些实体）</span>
       <span><b>绿线</b> = 真实外键（DDL 的 @relation）</span>
       <span><b>灰掉</b> = 没有任何模块碰它</span>
+      <span><b>点模块</b> = 选中 ⇒ 另外两张图一起亮（再点或 Esc 取消）</span>
     </div>
     ${(d.coverage.missing || []).length ? `<div class="gap">未覆盖的模块（${d.coverage.missing.length} 个）: ${esc(d.coverage.missing.join("、"))} —— ${d.declared_count ? "产线声明为空（拿不准就不瞎标）" : "它们的文案里没出现任何实体名（还没声明过）"} ⇒ 图上没有它们的线（不编）</div>` : ""}
     ${d.hint ? `<div class="gap">${esc(d.hint)}</div>` : ""}`;
 }
 
-function wireDataflow(){
-  if(!DFLOW) return;
-  document.querySelectorAll("#df svg").forEach(svg => {
-    const nodes = [...svg.querySelectorAll(".node")], edges = [...svg.querySelectorAll(".edge")];
-    const paint = id => {
-      const touch = new Set();
-      if(id) edges.forEach(e => {
-        if(e.dataset.f === id) touch.add(e.dataset.t);
-        if(e.dataset.t === id) touch.add(e.dataset.f);
-      });
-      nodes.forEach(n => {
-        const i = n.dataset.id, on = !id || i === id || touch.has(i);
-        n.classList.toggle("dim", !!id && !on);
-        n.classList.toggle("hot", !!id && on);
-      });
-      edges.forEach(e => {
-        const on = !id || e.dataset.f === id || e.dataset.t === id;
-        e.classList.toggle("dim", !!id && !on);
-        e.classList.toggle("hot", !!id && on);
-      });
-    };
-    nodes.forEach(n => {
-      n.addEventListener("mouseenter", () => paint(n.dataset.id));
-      n.addEventListener("mouseleave", () => paint(null));
+function wireSelection(){
+  const df = document.querySelector("#df svg");        // 只给第①张挂联动（模块↔实体那张）
+  if(df && DFLOW){
+    df.querySelectorAll(".node").forEach(n => {
+      const isMod = !String(n.dataset.id || "").startsWith("E:");
+      n.addEventListener("mouseenter", () => paintDf(n.dataset.id));
+      n.addEventListener("mouseleave", () => paintDf(SELECTED));
+      if(isMod){
+        n.style.cursor = "pointer";
+        n.addEventListener("click", () => selectModule(n.dataset.id));
+      }
     });
+  }
+  // 待办清单: 只有【顶层模块行】当模块可点（子任务行是"活", 不是"模块"）
+  document.querySelectorAll('#todo .row[data-kind="domain"]').forEach(r => {
+    if(Number(r.dataset.depth || 0) !== 0) return;
+    r.addEventListener("click", () => selectModule(r.dataset.id));
+  });
+  document.addEventListener("keydown", e => {
+    if(e.key === "Escape" && SELECTED) selectModule(SELECTED);
   });
 }
 
@@ -448,7 +528,7 @@ async function load(planId){
   wireFlow();
   DFLOW = both.dataflow || null;
   $("df").innerHTML = renderDataFlow(DFLOW);
-  wireDataflow();
+  wireSelection();
   $("msg").innerHTML = `<p class="sub" style="margin:0 0 18px">进度 ${t.done}/${t.total}（${t.percent}%）· 共 ${(both.flow||{}).modules||0} 个模块</p>`;
 }
 

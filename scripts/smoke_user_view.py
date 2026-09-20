@@ -142,6 +142,12 @@ def _check(root: Path, plan_id: str, tree: dict, results: list) -> None:
     for m in flow["root"]:
         if m["name"] not in names:
             bad.append(f"链路图的模块在清单里点不到: {m['name']}")
+    # ★ 跨视图联动的【键】: 两个投影必须共享同一批模块 id
+    #   （界面上点链路图的模块要能定位到清单那一块 —— 靠的就是这个 id; 缺了就只能靠名字猜）
+    todo_ids = {str(ln.get("id") or "") for ln in todo.get("lines") or []}
+    miss_id = [m["id"] for m in flow["root"] if m["id"] not in todo_ids]
+    if miss_id:
+        bad.append(f"链路图的模块 id 不在清单里（界面无法联动）: {miss_id[:3]}")
     results.append((f"{plan_id} 不变式", not bad, "；".join(sorted(set(bad)))))
 
     # 无环树: 边必须是严格向下（同层边只在有环时才允许）

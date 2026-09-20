@@ -984,6 +984,29 @@
       （那时 token 充裕, 可展开多级）② 让 decompose 侧<b>按验收标准规则驱动拆分</b>
       （不依赖 LLM 自觉）③ 先做 cr-12, 再评估（截断修好后 token 充裕可能自然改善）。<br>
       <b>注</b>: 消费侧（decompose 支持嵌套）已完成, 实测能物化出"子子任务"。</span></span></label>
+    <label class="item item--done">
+      <input type="checkbox" id="cr-14" checked>
+      <span><b>cr-14</b> ✅ arch design 截断解决 —— 逐节生成 + api_design 分片</span>
+      <span class="tag">P0 关闭</span>
+      <span class="note">实测: A-c91213250f · 7 节 7/7 · api_design 39 个端点 · generated_by=sliced ·
+        一次成功。真因: （a）一次生成 7 节 ≈ 12k tokens &gt; deepseek 单次上限 8192;
+        （b）"分节 4 组"把 database+api 合并 ⇒ 单组仍超（LLM 会把该组预算用满）;
+        （c）只分片 api、其余 6 节仍一次生成 ⇒ 总量仍超。
+        正解: ① 每节各自一次调用 ② api_design 再分片（先端点清单 →
+        每批 ≤8 个写 contract → 程序合并）③ 失败回落一次生成
+        ④ prompt 按校验器 schema（端点必含 contract; task 必含 api_contract/ui_guidance）</span>
+    </label>
+    <label class="item">
+      <input type="checkbox" id="cr-15">
+      <span><b>cr-15</b> ⬜ ux（交互设计）同样会截断 —— 待做（Founder: "ux先记录，晚点在做"）</span>
+      <span class="tag">P0 待做</span>
+      <span class="note">实测: chain 跑到 ⑤ 时 ux 报 truncated（27536 字符）—— 根因与 arch 完全相同。
+        ★ 这不是个别问题, 是【通用规律】: 任何"一次生成大量结构化内容"的 LLM 调用都可能超
+        8192 tokens 上限。⇒ 修法**不该**就地在 ux 的 prompt 上打补丁（R25 重复造轮子）,
+        而该: ① 把已验证的机制抽到服务层（llm/sliced.py: 逐节调用 + 大节分片 +
+        按 schema 校验 + 失败回落）② arch 改调它（行为不变）③ ux 改调它（解决截断）。
+        一处机制, 多处方受益; 以后新的大产物直接复用。</span>
+    </label>
   </div>
 
   <h2><span class="n">17</span>需求流程与用户视图（Founder 定的设计 · 本次不含执行）</h2>

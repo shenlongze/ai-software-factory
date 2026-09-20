@@ -191,6 +191,11 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
     from ai_factory_os.services.execution.runtime.store import open_runtime_store
 
     root = Path(getattr(ports.work, "_root", "."))
+    # ★ 2026-09-19（实测修正）: claim/release 也必须带 project_id ——
+    #   否则 `decomposition._read` 会走"全局优先"读到 `task_trees/` 那份**影子树**
+    #   （实测: 我重置了项目内那棵, claim 却说 "status=claimed" —— 因为动的是另一份）。
+    #   与 cmd_run_plan 取 project_id 是同一个修法（读写必须锁定同一份）。
+    project_id = str(getattr(ports.work, "_project_id", "") or "")
     node_id, task_id, who = "", "", ""
     try:
         store = open_runtime_store(root)
@@ -207,7 +212,8 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
         return run_execution(execution_id)
 
     if node_id and task_id:
-        got = D.claim_leaf(root, task_id, node_id, member_id=who or f"exec:{execution_id}")
+        got = D.claim_leaf(root, task_id, node_id, member_id=who or f"exec:{execution_id}",
+                           project_id=project_id)
         if not got.get("ok"):
             # 已被别人领 ⇒ 本执行作废（不跑）—— 这正是 CAS 的意义
             # ★ 2026-09-19（实测修正）: 作废必须【落盘成终态】+【不动叶】——
@@ -220,7 +226,8 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
         result = run_execution(execution_id)
     except Exception:
         if node_id and task_id:
-            D.release_leaf(root, task_id, node_id, status="pending")   # 回滚, 供重认
+            D.release_leaf(root, task_id, node_id, status="pending",
+                           project_id=project_id)   # 回滚, 供重认
         raise
     # ★ 2026-09-19（cr-4 修正）: 返回值为 FAILED ⇒ **把叶标为 cancelled（终止）**。
     #   原先归还为 "pending"（供重认）—— 但实测: 失败多为**环境性**（如 runtime 未注册）,
@@ -231,7 +238,8 @@ def _claim_and_run(ports: Ports, execution_id: str, run_execution: Callable[[str
     #     `_TERMINAL = {completed, cancelled}`; 用 cancelled 才能让调度器真正停下。
     #     语义 = "该叶终止, 不再自动重试（需人工介入/修环境后重跑）" —— 失败要显式, 不空转。
     if node_id and task_id and _looks_failed(result):
-        D.release_leaf(root, task_id, node_id, status="cancelled")
+        D.release_leaf(root, task_id, node_id, status="cancelled",
+                       project_id=project_id)
     return result
 
 

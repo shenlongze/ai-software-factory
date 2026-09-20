@@ -1915,6 +1915,22 @@ def _check_decompose_is_atomic() -> list[str]:
         bad.append("task_breakdown 分片函数不存在 ⇒ 递归嵌套输出会撞单次上限")
     elif "_gen_task_breakdown_sliced" not in _insp2.getsource(_archmod._gen_sections_individually):
         bad.append("分节生成没给 task_breakdown 挂分片（实测会截断）")
+    # ★ 取设计必须取【最新】的（真 bug: 原来 cands[-1] 取列表最后一个 ⇒ 拿旧图干活）
+
+    _dsrc = _insp2.getsource(_il2.import_module("apps.cli.main")._dispatch_tasktree)
+    # 注: 断言【代码行】而不是任意出现 —— 我第一版用 "cands[-1]" in src, 结果被我自己的
+    #     注释里那句 `cands[-1]` 骗了（假红）✗ 教训: 断言要能区分注释与代码。
+    if "design = cands[-1]" in _dsrc or "max(cands" not in _dsrc:
+        bad.append("拆解取设计不是按 created_at 取最新（会拿旧设计生成树 —— 实测踩到）")
+    # ★ 能力标注: 纯后端叶不该带 ui-designer（构建期过滤）
+    if hasattr(D, "prune_caps"):
+        if "ui-designer" in D.prune_caps("实现消课记录接口 GET /admin/consumption",
+                                        ["developer", "ui-designer"]):
+            bad.append("纯后端接口叶仍带 ui-designer（派活会去找 UI 设计师）")
+        if "ui-designer" not in D.prune_caps("设计并实现我的预约页面UI", ["developer", "ui-designer"]):
+            bad.append("界面类叶的 ui-designer 被误删")
+    else:
+        bad.append("缺 prune_caps（能力标注过滤）")
     # 嵌套种子（递归输出）必须被接受: 容器项带 children ⇒ 由构建递归物化
     nested = [{"module": "用户与鉴权", "task": "用户与鉴权", "api_contract": "POST /login",
                "ui_guidance": "登录页", "acceptance": "登录可用",

@@ -159,6 +159,23 @@ def _save(root: Path | str, plan_id: str, tree: dict[str, Any], project_id: str 
 
 # ------------------------------------------------------------------ 角色/文件 推导
 
+#: ★ 2026-09-21（Founder 看树时指出"能力标得偏"）: 界面词的判据。
+#:   叶标题里**没有**这些词 ⇒ 它是后端/数据/脚本类, 不该标 ui-designer。
+#:   真树实测: 52/83 叶标了 ui-designer, 连 "实现消课记录接口 GET /admin/consumption" 这种
+#:   纯后端接口也标 ⇒ 派活会去找 UI 设计师（人找错 = 白等一轮）。
+_UI_WORDS: tuple[str, ...] = (
+    "页面", "界面", "UI", "视图", "表单", "弹窗", "日历展示", "前端", "小程序端", "组件",
+)
+
+
+def prune_caps(title: str, caps: list[str]) -> list[str]:
+    """按标题把明显标错的能力去掉（判据可解释; 只去不增 —— 不猜该加什么）。"""
+    t = str(title or "")
+    if any(w in t for w in _UI_WORDS):
+        return list(caps)
+    return [c for c in caps if str(c) != "ui-designer"]
+
+
 #: 模块名 → 承担角色（诚实规则, 不是猜测: 按【词边界】判定, 防 "ui" 命中 "rout/e" 之类子串）
 _ROLE_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(test|tests|testing|spec|verify|verification|check)\b"), "tester"),
@@ -338,9 +355,10 @@ def decompose_from_design(
             scope=contract[:300],
             required_role=_DEFAULT_ROLE,
             role_hint=_role_hint(module, desc),
-            required_capabilities=[
-                str(c).strip() for c in (seed.get("required_capabilities") or []) if str(c).strip()
-            ],
+            required_capabilities=prune_caps(
+                desc or module,
+                [str(c).strip() for c in (seed.get("required_capabilities") or []) if str(c).strip()],
+            ),
             acceptance=str(seed.get("acceptance") or contract or f"{module} 实现完成且可验证"),
         )
         nodes.append(leaf)
@@ -364,7 +382,15 @@ def decompose_from_design(
 
     for m_i, module in enumerate(order, 1):
         group = by_module[module]
-        dom = _node("domain", f"模块 {m_i}: {module}", parent=root_node["id"],
+        # ★ 2026-09-21 修（Founder 看树时指出"层级冗余"）:
+        #   该模块只有【一个种子】且它自带 children ⇒ 那个种子**就是本模块的容器** ——
+        #   直接用它自己的标题当模块层（不再套一层"模块 N: …"）⇒ 少一层同义容器。
+        #   真树实测的冗余链: 模块 1: 基础设施与脚手架 → 初始化微信小程序与后端服务仓库结构… → 叶
+        _solo_container = (len(group) == 1 and isinstance(group[0].get("children"), list)
+                           and bool(group[0].get("children")))
+        _title = (str(group[0].get("task") or module).strip()[:80] if _solo_container
+                  else f"模块 {m_i}: {module}")
+        dom = _node("domain", _title, parent=root_node["id"],
                     scope=str(group[0].get("task") or "").strip()[:300])
         deps: list[str] = []
         for seed in group:
@@ -378,6 +404,11 @@ def decompose_from_design(
         for seed in group:
             kids = seed.get("children")
             if isinstance(kids, list) and kids:
+                # ★ 2026-09-21 修（Founder 看树时指出: 层级冗余）:
+                #   该模块只有这一个种子, 且它自带 children ⇒ 它**就是本模块的容器** ——
+                #   直接把叶挂到"模块 N"这一层, 不再套一层同名容器。
+                #   （真树实测: "模块 1: 基础设施与脚手架" → "初始化微信小程序与后端服务仓库结构…" → 叶,
+                #     同一个模块出现两层, 用户视图很难读）
                 for k, kid in enumerate(kids, 1):
                     if isinstance(kid, dict):
                         _seed_node(kid, dom["id"], k)
@@ -393,9 +424,10 @@ def decompose_from_design(
                 scope=contract[:300],
                 required_role=_DEFAULT_ROLE,
                 role_hint=_role_hint(module, desc),
-                required_capabilities=[
-                    str(c).strip() for c in (seed.get("required_capabilities") or []) if str(c).strip()
-                ],
+                required_capabilities=prune_caps(
+                    desc or module,
+                    [str(c).strip() for c in (seed.get("required_capabilities") or []) if str(c).strip()],
+                ),
                 acceptance=str(seed.get("acceptance") or "").strip(),
             )
             nodes.append(leaf)

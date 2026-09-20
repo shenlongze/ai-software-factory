@@ -692,6 +692,8 @@ def build_parser() -> Any:
     p_tt_d.add_argument("--conversation", default=None,
                         help="会话 id（★ 读①定位结果: 类型/承接 —— 影响拆解粒度）")
     p_tt_d.add_argument("--plan", default=None, help="指定 plan_id（缺省自动生成）")
+    p_tt_d.add_argument("--design", default=None,
+                        help="用哪份设计产物（缺省=该项目最新一份; 想复现旧树就指定 id）")
     p_tt_c = ttsub.add_parser("confirm", help="人工确认（候选 → 已确认, 进入执行的前置门）")
     json_opt(p_tt_c)
     p_tt_c.add_argument("plan_id", help="计划 id")
@@ -3209,7 +3211,16 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
             raise CliError(
                 f"项目 {project_id} 内无 design 产物 —— 先跑 arch design（任务拆解需要架构产出作输入）",
                 exit_code=2)
-        design = cands[-1]
+        # ★ 2026-09-21 修（真 bug）: `cands[-1]` 是**列表顺序的最后一个, 不是最新生成的** ——
+        #   实测: 项目里同时有 11:26 的旧设计与 18:54 的新设计, 拆解取了**旧**的 ⇒ 拿旧图干活。
+        #   现在: 缺省取 created_at 最新的一份; 要指定就 `--design <id>`（找不到 ⇒ 响亮拒绝）。
+        _want = str(getattr(args, "design", "") or "")
+        if _want:
+            design = next((a for a in cands if str(getattr(a, "id", "")) == _want), None)
+            if design is None:
+                raise CliError(f"指定的设计不存在或不属于本项目: {_want}", exit_code=2)
+        else:
+            design = max(cands, key=lambda a: str(getattr(a, "created_at", "") or ""))
         # ★ 读①定位结果（若给了 --conversation）—— 传给 decompose, 影响拆解
         #   （设计: 承接决定拆解粒度; intent=问答 ⇒ decompose 会拒绝生成树）
         _loc_intent = _loc_role = ""

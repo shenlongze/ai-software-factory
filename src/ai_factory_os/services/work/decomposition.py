@@ -823,6 +823,35 @@ def merge_nodes(
     return {"tree": tree, "node": keeper, "action": f"合并 {len(ids)} 个节点（保留 {keep[-8:]}）"}
 
 
+
+def apply_display_names(
+    root: Path | str,
+    plan_id: str,
+    names: dict[str, str],
+    *,
+    project_id: str = "",
+) -> dict[str, Any]:
+    """★ 批量把 LLM 翻好的人话名写进节点的 `display_name` 字段。
+
+    只写**翻成功的**（没翻到的保持空 ⇒ 用户视图自动回落规则派生 —— 不显示空白）。
+    为什么写字段而不只在显示时算: ① 用户可在 `tasktree edit --display-name` 里改
+    ② 两个投影（todo/flow）读同一份 ⇒ 一处翻译、两处生效（一数据一权威源）。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        raise FileNotFoundError(f"任务树不存在: {plan_id}")
+    hit = 0
+    for n in tree.get("nodes") or []:
+        nm = names.get(str(n.get("id") or ""))
+        if nm:
+            n["display_name"] = str(nm)[:60]
+            hit += 1
+    tree["status"] = "candidate"
+    tree["edited_at"] = _now_iso()
+    tree.pop("_saved_to", None)
+    tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
+    return {"tree": tree, "action": f"写入人话名 {hit} 个", "applied": hit}
+
 def tree_leaves(tree: dict[str, Any]) -> list[dict[str, Any]]:
     return [n for n in (tree.get("nodes") or []) if n.get("kind") == "task"]
 

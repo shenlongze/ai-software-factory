@@ -580,6 +580,11 @@ def build_parser() -> Any:
     p_tt_e.add_argument("--merge", nargs="+", default=None, dest="merge_ids",
                         help="★ 合并多个节点（给节点 id, 保留第一个）")
     p_tt_e.add_argument("--drop", action="store_true", help="删除该节点及其子树")
+    p_tt_tr = ttsub.add_parser(
+        "translate", help="★ 用 LLM 把技术标题翻成人话名（写进 display_name）")
+    json_opt(p_tt_tr)
+    p_tt_tr.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
+    p_tt_tr.add_argument("--project", default=None, help="项目 id")
     p_tt_e.add_argument("--project", default=None, help="项目 id")
     p_tt_d = ttsub.add_parser("decompose", help="从 Design Artifact 生成任务树（候选态）")
     json_opt(p_tt_d)
@@ -2470,6 +2475,40 @@ def _tasktree_edit(ctx: FactoryContext, args: Any) -> dict:
             "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(r["tree"])),
                         "done": 0, "percent": "0"}}
 
+
+def _tasktree_translate(ctx: FactoryContext, args: Any) -> dict:
+    """`factory tasktree translate <plan>` —— ★ 用 LLM 把技术标题翻成"人话名"。
+
+    写进节点的 `display_name` 字段（用户视图优先读它, 没有才规则派生）。
+    ★ 分批 + 限长: deepseek 单次输出上限 8192 tokens, 一次翻太多会被截断
+    （本仓实测踩过 arch design 截断）。失败的那批【跳过并如实报告】。
+    """
+    from ai_factory_os.services.work import decomposition as _D
+    from ai_factory_os.services.work.name_translate import translate_titles
+
+    plan_id = str(getattr(args, "plan_id", "") or "")
+    project = str(getattr(args, "project", "") or "")
+    tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+    if not tree:
+        raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
+
+    # 只翻"还没人话名"的（已有 display_name 的不覆盖 —— 用户改过的不该被冲掉）
+    items = [(str(n.get("id") or ""), str(n.get("title") or ""))
+             for n in (tree.get("nodes") or [])
+             if n.get("kind") in ("domain", "task") and not n.get("display_name")]
+    if not items:
+        return {"ok": True, "action": "tasktree-translate", "applied": 0, "total": 0,
+                "hit": 0, "tree": tree,
+                "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(tree)), "done": 0, "percent": "0"}}
+
+    prov = _arch_provider()
+    names = translate_titles(items, provider=prov)
+    r = _D.apply_display_names(ctx.root, plan_id, names, project_id=project)
+    return {"ok": True, "action": "tasktree-translate", "applied": r["applied"],
+            "total": len(items), "hit": r["applied"], "tree": r["tree"],
+            "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(r["tree"])),
+                        "done": 0, "percent": "0"}}
+
 def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
     """factory tasktree list|show|decompose|confirm —— 产品环 ⑤「任务拆解」。
 
@@ -2493,6 +2532,8 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
         return _tasktree_flow(ctx, args)
     if cmd == "edit":
         return _tasktree_edit(ctx, args)
+    if cmd == "translate":
+        return _tasktree_translate(ctx, args)
 
     if cmd == "list":
         trees = D.list_trees(ctx.root, project_id)
@@ -2746,6 +2787,16 @@ def _print_tasktree(args: Any, r: dict) -> None:
         st = r.get("status") or (r.get("tree") or {}).get("status") or "candidate"
         print(f"  ★ 树已回到【候选态】（{st}）—— 需重新确认:")
         print(f"     factory tasktree confirm {r['tree'].get('plan_id')}")
+    elif cmd == "translate":
+        tot = r.get("total", 0)
+        got = r.get("applied", 0)
+        if not tot:
+            print("  · 无需翻译（都有 display_name 了 —— 用户改过的不覆盖）")
+        else:
+            print(f"  ✔ 人话名: {got}/{tot} 个已写入 display_name")
+            if got < tot:
+                print(f"  ⚠ 有 {tot - got} 个没翻成（保持规则派生, 不影响显示）")
+        print("  ★ 树已回到候选态, 需重新确认")
     elif cmd == "decompose":
         t = r["tree"]
         s = r["summary"]

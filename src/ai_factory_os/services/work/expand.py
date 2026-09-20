@@ -27,8 +27,10 @@ _MAX_TITLE = 60                   #: 子任务标题长度上限
 
 def _prompt(module: str, desc: str, acceptance: str, caps: list[str]) -> str:
     return (
-        "你是资深技术负责人。把下面这【一个模块】拆成可执行的任务清单。\n"
-        f"要求:\n· 拆成 {_MIN_KIDS}-{_MAX_KIDS} 个任务, 每个任务是【一件事】, 一个工程师能独立做完;\n"
+        "你是资深技术负责人。判断下面这项工作是【一件事】还是【多件事】。\n"
+        "★ 判据（唯一标准）: 一个工程师**一次能做完**、且能被**独立验收** ⇒ 就是一件事。\n"
+        f"· 是【多件事】⇒ 拆成 {_MIN_KIDS}-{_MAX_KIDS} 个子任务（每个仍要满足上述判据）;\n"
+        "· 若它【已经是一件事】⇒ 只返回一个元素的数组（原文照抄标题即可）, 不要硬凑;\n"
         "· 每个任务必须能让别人【独立验收】（写明验收标准）;\n"
         f"· 任务名 ≤{_MAX_TITLE} 字, 用中文, 说清做什么;\n"
         "· 不要重复、不要\"其他\"、不要\"杂项\";\n"
@@ -69,10 +71,10 @@ def _parse(content: str) -> list[dict[str, Any]] | None:
             # ★ 依赖用【同批序号】表示（1-based）—— 由调用方翻译成真实 node id
             "depends_on_idx": [int(x) for x in deps if str(x).strip().isdigit()],
         })
-    return out if len(out) >= _MIN_KIDS else None
+    return out or None     # ★ 允许只返回 1 个（= "已经是一件事, 不该再拆"）
 
 
-def expand_module(
+def expand_module(          # noqa: N802 — 名字保留（对外已用）
     module_title: str,
     *,
     desc: str = "",
@@ -89,7 +91,5 @@ def expand_module(
         raise ValueError(f"细拆失败: {getattr(resp, 'error', '') or '空响应'}")
     kids = _parse(resp.content)
     if not kids:
-        raise ValueError(
-            "细拆输出不合规（不是 JSON 数组 / 少于 2 个任务）—— 不产半成品; 可重试"
-        )
+        raise ValueError("细拆输出不合规（不是 JSON 数组）—— 不产半成品; 可重试")
     return kids

@@ -898,11 +898,10 @@ def expand_domain(
                 or str(n.get("id") or "").endswith(node_id)), None)
     if dom is None:
         raise ValueError(f"找不到模块节点: {node_id}")
-    if dom.get("kind") != "domain":
-        raise ValueError(f"只能展开【模块(domain)】节点; 该节点是 {dom.get('kind')}")
-
     if len(kids) < 2:
-        raise ValueError("展开至少要 2 个子任务（一个不算拆）")
+        # ★ 1 个 = LLM 判定"已经是一件事" ⇒ 不是错误, 是"到底了"（调用方据此停止递归）
+        return {"tree": tree, "node": dom, "new_ids": [], "removed": [],
+                "action": "已是一件事（到底）"}
     leaves = len(tree_leaves(tree))
     if leaves + len(kids) > DECOMPOSE_LIMITS["max_leaves"]:
         raise ValueError(
@@ -912,13 +911,16 @@ def expand_domain(
 
     tid = str(tree.get("plan_id") or plan_id)
     dom_id = str(dom.get("id") or "")
-    # ① 删该 domain 下原有的 task（模块级描述, 非可执行）
+    # ① 删该节点下原有的 task（被替换成更细的子任务）
+    #    ★ 对 domain: 删它的模块级描述; 对 task: 这个 task 自身【升级为容器】
     removed: list[str] = []
     if drop_old:
         for n in list(nodes):
             if str(n.get("parent_id") or "") == dom_id and n.get("kind") == "task":
                 removed.append(str(n.get("id") or ""))
         nodes = [n for n in nodes if str(n.get("id") or "") not in removed]
+    if dom.get("kind") == "task":
+        dom["kind"] = "domain"        # 它从"一件事"变成"一组事" ⇒ 升级为容器
 
     # ② 建子任务（先建全部再连依赖 —— 依赖要引用真实 id）
     new_ids: list[str] = []

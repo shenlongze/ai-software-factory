@@ -593,7 +593,11 @@ def build_parser() -> Any:
         "expand", help="★ 细拆: 把模块展开成多个子任务（逐模块调 LLM —— 让树真的长出子任务）")
     json_opt(p_tt_ex)
     p_tt_ex.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
-    p_tt_ex.add_argument("--node", default="", help="只展开该模块（缺省=全部模块挨个展开）")
+    p_tt_ex.add_argument("--node", default="", help="只展开该节点（缺省=全部顶层模块挨个展开）")
+    p_tt_ex.add_argument("--deep", action="store_true",
+        help="★ 递归拆到底: 拆完的子任务若仍是多件事, 继续拆（判据: 一个 agent 一次能做完+能独立验收）")
+    p_tt_ex.add_argument("--max-depth", dest="max_depth", type=int, default=3,
+        help="递归深度上限（默认 3; 防无限拆）")
     p_tt_ex.add_argument("--project", default=None, help="项目 id")
     p_tt_e.add_argument("--project", default=None, help="项目 id")
     p_tt_d = ttsub.add_parser("decompose", help="从 Design Artifact 生成任务树（候选态）")
@@ -2581,16 +2585,29 @@ def _tasktree_expand(ctx: FactoryContext, args: Any) -> dict:
     plan_id = str(getattr(args, "plan_id", "") or "")
     project = str(getattr(args, "project", "") or "")
     per = str(getattr(args, "node", "") or "")
+    deep = bool(getattr(args, "deep", False))
+    max_depth = int(getattr(args, "max_depth", 3) or 3)
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
         raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
 
-    doms = [n for n in (tree.get("nodes") or []) if n.get("kind") == "domain"]
+    # ★ 目标节点: 默认顶层模块; --node 指定任意节点（含 task —— 递归拆要靠它）
+    #   --deep 时把 task 也纳入候选（逐层往下走）
+    def _candidates(tr: dict) -> list[dict]:
+        ns = tr.get("nodes") or []
+        if deep:
+            return [n for n in ns if n.get("kind") in ("domain", "task")]
+        return [n for n in ns if n.get("kind") == "domain"]
+
+    doms = _candidates(tree)
     if per:
-        doms = [d for d in doms
+        # ★ --node 指定时**不限 kind** —— 递归拆要靠它指定 task 节点
+        #   （之前这里只从 domain 里找 ⇒ 指定 task 就报"找不到模块"）
+        allns = tree.get("nodes") or []
+        doms = [d for d in allns
                 if str(d.get("id")) == per or str(d.get("id")).endswith(per)]
         if not doms:
-            raise CliError(f"找不到模块: {per}", exit_code=1)
+            raise CliError(f"找不到节点: {per}", exit_code=1)
     # ★ 跳过"已经被展开过"的（下面已有 ≥2 个 task）—— 幂等, 重复跑不会越拆越多
     todo = []
     for d in doms:
@@ -2607,26 +2624,56 @@ def _tasktree_expand(ctx: FactoryContext, args: Any) -> dict:
     prov = _arch_provider()
     results: list[dict[str, Any]] = []
     ok = 0
-    for d in todo:
-        name = str(d.get("display_name") or d.get("title") or "")
-        try:
-            kids = expand_module(
-                name,
-                desc=str(d.get("scope") or ""),
-                acceptance=str(d.get("acceptance") or ""),
-                caps=list(d.get("required_capabilities") or []),
-                provider=prov,
-            )
-            r = _D.expand_domain(ctx.root, plan_id, node_id=str(d.get("id")), kids=kids,
-                                 project_id=project)
-            ok += 1
-            results.append({"module": name, "kids": len(kids), "titles": [k["title"] for k in kids]})
-        except Exception as exc:  # noqa: BLE001 — 单个模块失败不拖垮整批（如实报告）
-            results.append({"module": name, "error": str(exc)[:120]})
-        tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+    stops = 0
 
-    return {"ok": True, "action": "tasktree-expand", "done": ok, "skipped": len(doms) - len(todo),
-            "total": len(todo), "results": results, "tree": tree,
+    def _expand_one(d: dict, depth: int) -> None:
+        """拆一个节点; 返回后由调用方决定是否再扫（递归）。"""
+        nonlocal ok, stops, tree
+        name = str(d.get("display_name") or d.get("title") or "")
+        kids = expand_module(
+            name,
+            desc=str(d.get("scope") or ""),
+            acceptance=str(d.get("acceptance") or ""),
+            caps=list(d.get("required_capabilities") or []),
+            provider=prov,
+        )
+        r = _D.expand_domain(ctx.root, plan_id, node_id=str(d.get("id")), kids=kids,
+                            project_id=project)
+        tree = r["tree"]
+        if len(kids) < 2:                       # ★ LLM 判定"已是一件事" ⇒ 到底
+            stops += 1
+            results.append({"module": name, "depth": depth, "kids": 1,
+                            "titles": ["（已是一件事, 到底）"]})
+        else:
+            ok += 1
+            results.append({"module": name, "depth": depth, "kids": len(kids),
+                            "titles": [k["title"] for k in kids]})
+
+    # 逐层往下（--deep 才递归）; 每层重扫"还没拆到一件事"的节点
+    for depth in range(1, (max_depth if deep else 1) + 1):
+        tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
+        ns = tree.get("nodes") or []
+        if per:
+            todo = [n for n in ns if str(n.get("id")) == per or str(n.get("id")).endswith(per)]
+        elif depth == 1:
+            todo = [n for n in _candidates(tree)
+                    if len([x for x in ns if str(x.get("parent_id")) == str(n.get("id"))
+                            and x.get("kind") == "task"]) < 2]
+        else:
+            # ★ 递归: 只看"上一轮刚拆出来的"子任务（它们是叶子且还没拆过）
+            todo = [n for n in ns if n.get("kind") == "task"
+                    and not any(x.get("parent_id") == n.get("id") for x in ns)]
+        if not todo:
+            break
+        for d in todo:
+            try:
+                _expand_one(d, depth)
+            except Exception as exc:  # noqa: BLE001 — 单个失败不拖垮整批（如实报告）
+                results.append({"module": str(d.get("display_name") or d.get("title") or "")[:24],
+                                "depth": depth, "error": str(exc)[:100]})
+
+    return {"ok": True, "action": "tasktree-expand", "done": ok, "stopped": stops,
+            "results": results, "tree": tree,
             "summary": {"kinds": {}, "leaves": len(_D.tree_leaves(tree)), "done": 0, "percent": "0"}}
 
 def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
@@ -2938,14 +2985,14 @@ def _print_tasktree(args: Any, r: dict) -> None:
         print("  ★ 树已回到候选态, 需重新确认")
     elif cmd == "expand":
         print()
-        print(f"  细拆结果: {r.get('done')}/{r.get('total')} 个模块已展开"
-              f"（跳过 {r.get('skipped')} 个已展开的）")
+        print(f"  细拆结果: {r.get('done')} 个节点已展开 · {r.get('stopped', 0)} 个判定为一件事（到底）")
         print(f"  {'━' * 50}")
         for x in r.get("results") or []:
             if x.get("error"):
                 print(f"  ✗ {x['module'][:22]} — {x['error'][:60]}")
             else:
-                print(f"  ✔ {x['module'][:22]}  →  {x['kids']} 个子任务")
+                lv = f"[第{x.get('depth')}层] " if x.get('depth') else ""
+                print(f"  ✔ {lv}{x['module'][:22]}  →  {x['kids']} 个子任务")
                 for ttl in x.get("titles") or []:
                     print(f"        · {ttl}")
         print()

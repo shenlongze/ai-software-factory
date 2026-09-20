@@ -56,7 +56,9 @@ CHANGE_TYPES = ("NEW_FILE", "MODIFY")
 #: ★ 边界纪律（借老区 decomposer 的智慧: depth≤5 / tasks≤64 / 环检测）
 DECOMPOSE_LIMITS = {
     "max_depth": 5,        # 树深上限
-    "max_leaves": 64,      # 叶子数上限（超限 → 需求该重新审视, 不硬拆）
+    "max_leaves": 200,     # 叶子数上限（★ 2026-09-19 由 64 提高: 实测 13 模块
+                        #   × 6-8 子任务 = 80+ 就撞顶了 —— 64 是"未拆解时代的
+                        #   默认值"; 提高后既有保护又有空间, 仍不算无界）
     "max_title": 200,
 }
 

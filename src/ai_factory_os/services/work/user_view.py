@@ -170,10 +170,12 @@ def build_flow(tree: dict[str, Any]) -> dict[str, Any]:
 
     返回 {
       plan_id, modules(顶层模块数), domains(全部 domain 数),
-      root:    [模块节点（含 children 递归）]
+      root:    [模块节点（含 children 递归; 每个带 level=第几批）]
       batches: [{level, nodes:[模块节点]}]  ← ★ 先后: 只对顶层模块分层
+      edges:   [{from, to}]  ← ★ 边（前置 → 后续）, 渲染方据此画线
+      external_deps: [{from, to_name}]  ← 依赖指向子模块的（不静默丢, 提示展开看）
     }
-    模块节点 = {id, name, status, depended_by, core, deps:[前置名], kids, children:[...]}。
+    模块节点 = {id, name, status, level, depended_by, core, deps:[前置名], kids, children:[...]}。
     """
     nodes = tree.get("nodes") or []
     doms = [n for n in nodes if n.get("kind") == "domain"]
@@ -235,6 +237,17 @@ def build_flow(tree: dict[str, Any]) -> dict[str, Any]:
         done_set.update(ready)
         remaining = [x for x in remaining if x not in done_set]
 
+    # ★ 图要画线: 必须给【id】和【方向】—— 名字会重名; 且 depends_on 的语义是
+    #   "我依赖谁", 所以边要从【前置】指向【后续】(上面先做 ⇒ 箭头朝下)。
+    top_level = {x: i for i, layer in enumerate(batches, 1) for x in layer}
+    edges = [{"from": d, "to": t}
+             for t in sorted(top_set) for d in tdep.get(t, [])]
+    # 依赖指向子模块/非顶层的: 不静默丢 —— 单列出来, 渲染方提示"展开模块看"
+    external = [{"from": by_top[x]["name"], "to_name": node_name(by_id[d])}
+                for x in sorted(top_set) for d in deps_of.get(x, []) if d not in top_set]
+    for m in roots:
+        m["level"] = top_level.get(m["id"], 0)
+
     return {
         "plan_id": str(tree.get("plan_id") or ""),
         "modules": len(roots),
@@ -244,4 +257,6 @@ def build_flow(tree: dict[str, Any]) -> dict[str, Any]:
             {"level": i, "nodes": [by_top[x] for x in layer if x in by_top]}
             for i, layer in enumerate(batches, 1)
         ],
+        "edges": edges,
+        "external_deps": external,
     }

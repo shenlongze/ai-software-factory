@@ -47,20 +47,37 @@
   .row.d1{padding-left:26px}
   .row.d2{padding-left:52px}
   .row.d3{padding-left:78px}
-  /* 功能链路图（★ 流动视图: 一批一行; 模块点开看子模块） */
-  .layer{margin-bottom:14px}
-  .layer .lv{font-size:12px;color:var(--ink2);margin-bottom:6px}
-  .mods{display:flex;flex-direction:column;gap:2px}
-  .mod.flat{padding:5px 0 5px 12px;border-left:2px solid var(--line);
-            display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  /* 功能链路图（★ 真图: 节点 + 连线。第 N 批 = 第 N 行, 自上而下做） */
+  #flow svg{display:block;max-width:100%;height:auto;overflow:visible}
+  .band{fill:#fafafc}
+  .band-lb{font-size:11px;fill:var(--ink2)}
+  .node{cursor:pointer}
+  .node rect{fill:#fff;stroke:var(--line);stroke-width:1.2}
+  .node .nm{font-size:12.5px;fill:var(--ink);font-weight:500}
+  .node .mt{font-size:10.5px;fill:var(--ink2)}
+  .node.core rect{stroke:var(--brand);stroke-width:1.8}
+  .node.core .nm{fill:#0058b0;font-weight:600}
+  .node.dim{opacity:.25}
+  .node.hot rect{stroke-width:2}
+  .node.hot.up rect{stroke:var(--warn)}
+  .edge{fill:none;stroke:#c7c7cc;stroke-width:1.3;marker-end:url(#ar)}
+  .edge.dim{opacity:.15}
+  .edge.hot{stroke:var(--brand);stroke-width:2;marker-end:url(#arB)}
+  .edge.hot.up{stroke:var(--warn);marker-end:url(#arO)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;color:var(--ink2);font-size:12px;margin-top:16px}
+  .legend b{color:var(--ink);font-weight:600}
+  #kids{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+  #kids .kt{font-size:12.5px;color:var(--ink2);margin-bottom:8px}
+  /* 子模块列表（点模块后展开） */
   details.mod{border-left:2px solid var(--line)}
-  details.mod[open]{border-left-color:#0071e3}
+  details.mod[open]{border-left-color:var(--brand)}
   details.mod>summary{list-style:none;cursor:pointer;padding:5px 0 5px 12px;
     display:flex;align-items:center;gap:9px;flex-wrap:wrap}
   details.mod>summary::-webkit-details-marker{display:none}
-  details.mod>summary:hover{background:#f5f5f7;border-radius:8px}
   details.mod>summary::before{content:"▸";color:var(--ink2);font-size:11px;flex:none}
   details.mod[open]>summary::before{content:"▾"}
+  .mod.flat{padding:5px 0 5px 12px;border-left:2px solid var(--line);
+            display:flex;align-items:center;gap:9px;flex-wrap:wrap}
   .mod .mark{width:16px;text-align:center;flex:none;font-size:14px}
   .mod .nm{font-size:13.5px}
   .mod .nm.sub{font-size:12.5px;color:var(--ink2)}
@@ -146,16 +163,125 @@ function renderMod(m, depth){
        + `<div class="kids">${m.children.map(c => renderMod(c, depth+1)).join("")}</div></details>`;
 }
 
+// ── 功能链路图: 真图（节点 + 连线）────────────────────────────────
+// ★ Founder: "还是堆砌，没有形式流程图，功能和功能之间看不到任何关系"
+//   ⇒ 列表读不出关系, 必须是图: 节点 = 模块, 连线 = 前置关系。
+let FLOW = null;                       // 当前 flow 数据（悬停/点击时要用）
+
+const _trunc = (s, n) => (s || "").length > n ? s.slice(0, n - 1) + "…" : (s || "");
+
+// 传递闭包: 顺着 adj 能走到的全部节点 —— 用来"追一条链"
+function _closure(id, adj){
+  const seen = new Set(), q = [...(adj.get(id) || [])];
+  while(q.length){
+    const x = q.pop();
+    if(x === id || seen.has(x)) continue;
+    seen.add(x);
+    (adj.get(x) || []).forEach(y => q.push(y));
+  }
+  return seen;
+}
+
 function renderFlow(d){
-  if(!d.batches || !d.batches.length) return `<div class="empty">暂无模块</div>`;
-  const core = (d.root||[]).filter(m => m.core).map(m => m.name);
-  const subs = d.domains > d.modules ? `（另有 ${d.domains - d.modules} 个细拆子模块，点开模块看）` : "";
-  const head = `${d.modules} 个模块 · 按 ${d.batches.length} 批做（同一批可并行）${subs}`
-             + (core.length ? ` · 核心: ${esc(core.join("、"))}` : "");
-  const rows = d.batches.map(b =>
-      `<div class="layer"><div class="lv">第 ${b.level} 批 · ${b.level === 1 ? "可先做" : "等前面做完"}</div>`
-    + `<div class="mods">${b.nodes.map(m => renderMod(m, 0)).join("")}</div></div>`).join("");
-  return `<p class="sub" style="margin:0 0 14px">${head}</p>` + rows;
+  const mods = d.root || [];
+  if(!mods.length) return `<div class="empty">暂无模块</div>`;
+  const BW = 128, BH = 40, GX = 16, GY = 48, PADX = 50, PADY = 30;
+  const byLv = {};
+  mods.forEach(m => { const L = m.level || 1; (byLv[L] = byLv[L] || []).push(m); });
+  const levels = Object.keys(byLv).map(Number).sort((a, b) => a - b);
+  const maxN = Math.max(...levels.map(L => byLv[L].length));
+  const W = PADX * 2 + maxN * BW + (maxN - 1) * GX;
+  const H = PADY * 2 + levels.length * BH + (levels.length - 1) * GY;
+  const pos = {};                      // id → {x,y}
+  levels.forEach((L, li) => {
+    const row = byLv[L], w = row.length * BW + (row.length - 1) * GX;
+    const x0 = PADX + (W - PADX * 2 - w) / 2;
+    row.forEach((m, i) => { pos[m.id] = {x: x0 + i * (BW + GX), y: PADY + li * (BH + GY)}; });
+  });
+  // 第 N 批 = 第 N 行（Kahn 分层保证: 箭头只会从上往下, 不会倒流）
+  const bands = levels.map((L, li) => {
+    const y = PADY + li * (BH + GY) - 10;
+    return `<rect class="band" x="0" y="${y}" width="${W}" height="${BH + 20}" rx="10"></rect>
+            <text class="band-lb" x="8" y="${y + BH / 2 + 4}">第 ${L} 批</text>`;
+  }).join("");
+  const edges = (d.edges || []).map(e => {
+    const a = pos[e.from], b = pos[e.to];
+    if(!a || !b) return "";
+    const x1 = a.x + BW / 2, y1 = a.y + BH, x2 = b.x + BW / 2, y2 = b.y, my = (y1 + y2) / 2;
+    return `<path class="edge" data-f="${esc(e.from)}" data-t="${esc(e.to)}"
+             d="M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}"></path>`;
+  }).join("");
+  const nodes = mods.map(m => {
+    const p = pos[m.id]; if(!p) return "";
+    const bits = [];
+    if(m.core) bits.push("★ 核心");
+    else if(m.depended_by) bits.push(`被 ${m.depended_by} 个依赖`);
+    if(m.kids) bits.push(`${m.kids} 个子模块`);
+    const tip = [m.name, (m.deps || []).length ? "前置: " + m.deps.join(" / ") : "无前置（可先做）",
+                 `第 ${m.level} 批`].join("｜");
+    return `<g class="node${m.core ? " core" : ""}" data-id="${esc(m.id)}"><title>${esc(tip)}</title>
+      <rect x="${p.x}" y="${p.y}" width="${BW}" height="${BH}" rx="12"></rect>
+      <text class="nm" x="${p.x + 10}" y="${p.y + 17}">${MARK[m.status] || "☐"} ${esc(_trunc(m.name, 9))}</text>
+      <text class="mt" x="${p.x + 10}" y="${p.y + 31}">${esc(bits.join(" · "))}</text></g>`;
+  }).join("");
+  const arw = (id, fill) => `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5"
+      markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${fill}"></path></marker>`;
+  const ext = (d.external_deps || []).length
+    ? ` · 另有 ${d.external_deps.length} 条依赖指向子模块（点模块展开看）` : "";
+  return `<p class="sub" style="margin:0 0 10px">${d.modules} 个模块 · ${(d.edges || []).length} 条关系 · ${levels.length} 批（自上而下做）${ext}</p>
+    <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="功能链路图: 模块与前置关系">
+      <defs>${arw("ar", "#c7c7cc")}${arw("arB", "#0071e3")}${arw("arO", "#ff9f0a")}</defs>
+      ${bands}${edges}${nodes}
+    </svg>
+    <div class="legend">
+      <span><b>箭头</b> = 前置关系: 上面先做完, 才能做下面</span>
+      <span><b>★</b> = 核心（被最多模块依赖）</span>
+      <span><b>鼠标移到模块</b> = 高亮它整条上下游链</span>
+      <span><b>点模块</b> = 看它的子模块</span>
+    </div>
+    <div id="kids"></div>`;
+}
+
+function wireFlow(){
+  const svg = document.querySelector("#flow svg");
+  if(!svg || !FLOW) return;
+  const UP = new Map(), DN = new Map();
+  const push = (m, k, v) => { if(!m.has(k)) m.set(k, []); m.get(k).push(v); };
+  (FLOW.edges || []).forEach(e => { push(UP, e.to, e.from); push(DN, e.from, e.to); });
+  const nodes = [...svg.querySelectorAll(".node")], edges = [...svg.querySelectorAll(".edge")];
+  const paint = id => {
+    const up = id ? _closure(id, UP) : null, dn = id ? _closure(id, DN) : null;
+    const hot = x => !id || x === id || up.has(x) || dn.has(x);
+    nodes.forEach(n => {
+      const i = n.dataset.id, on = hot(i);
+      n.classList.toggle("dim", !!id && !on);
+      n.classList.toggle("hot", !!id && on);
+      n.classList.toggle("up", !!id && up.has(i));
+    });
+    edges.forEach(p => {
+      const f = p.dataset.f, t = p.dataset.t, on = !id || (hot(f) && hot(t));
+      p.classList.toggle("dim", !!id && !on);
+      p.classList.toggle("hot", !!id && on);
+      p.classList.toggle("up", !!id && on && (up.has(f) || f === id) && (up.has(t) || t === id));
+    });
+  };
+  nodes.forEach(n => {
+    n.addEventListener("mouseenter", () => paint(n.dataset.id));
+    n.addEventListener("focus", () => paint(n.dataset.id));
+    n.addEventListener("mouseleave", () => paint(null));
+    n.addEventListener("click", () => showKids(n.dataset.id));
+  });
+}
+
+// 点模块 ⇒ 展开它的子模块（同一份数据, 只是换一层看）
+function showKids(id){
+  const m = (FLOW.root || []).find(x => x.id === id), box = document.getElementById("kids");
+  if(!m || !box) return;
+  const pre = (m.deps || []).length ? `前置: ${esc(m.deps.join(" / "))}` : "无前置（可先做）";
+  const kids = m.children || [];
+  box.innerHTML = `<div class="kt"><b>${esc(m.name)}</b> · ${pre} · 子模块 ${kids.length} 个</div>`
+    + (kids.length ? kids.map(c => renderMod(c, 0)).join("")
+                   : `<div class="kt">（还没细拆到子模块）</div>`);
 }
 
 async function load(planId){
@@ -165,7 +291,9 @@ async function load(planId){
   $("status").textContent = t.status === "candidate" ? "候选态（待确认）" : (t.status || "");
   $("bar").style.width = (t.percent||0) + "%";
   $("todo").innerHTML = renderTodo(t);
-  $("flow").innerHTML = renderFlow(both.flow || {});
+  FLOW = both.flow || {};
+  $("flow").innerHTML = renderFlow(FLOW);
+  wireFlow();
   $("msg").innerHTML = `<p class="sub" style="margin:0 0 18px">进度 ${t.done}/${t.total}（${t.percent}%）· 共 ${(both.flow||{}).modules||0} 个模块</p>`;
 }
 

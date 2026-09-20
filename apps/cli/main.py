@@ -480,10 +480,22 @@ def build_parser() -> Any:
     _dom_governance.register(sub, json_opt)
 
     # factory project <sub> (Phase 5A: Example Layer, 只读)
-    p_project = sub.add_parser("project", help="项目配置 (只读: examples/*/project.yaml)")
+    p_project = sub.add_parser("project", help="项目 (缺省读 org 项目库 —— 与 status 同源)")
     json_opt(p_project)
+    # ★ 2026-09-21: `project list --source org|workspace|examples`（缺省 org = 权威源）
+    for _child in getattr(p_project, "_actions", []):
+        if hasattr(_child, "choices") and isinstance(_child.choices, dict) and "list" in _child.choices:
+            _child.choices["list"].add_argument("--source", default="", choices=["", "org", "workspace", "examples"],
+                                                help="数据源（缺省 org 项目库, 与 status 同源）")
+            break
     prsub = p_project.add_subparsers(dest="project_command", required=True)
-    p_pr_list = prsub.add_parser("list", help="项目列表 (发 project.viewed)")
+    p_pr_list = prsub.add_parser(
+        "list",
+        help="项目列表 (缺省读 org 项目库 —— 与 status 同源)", 
+        description="列项目。★ 缺省数据源 = **org 项目库**（与 status 同一处, 两边必然一致）;"
+                    "想看工作区/示例那份用 --source workspace|examples。")
+    p_pr_list.add_argument("--source", default="", choices=["", "org", "workspace", "examples"],
+                           help="数据源（缺省 org 项目库 = 权威源）")
     json_opt(p_pr_list)
     p_pr_show = prsub.add_parser("show", help="项目详情: 技术栈/Agent/技能/工作流映射 (发 project.viewed)")
     json_opt(p_pr_show)
@@ -4710,7 +4722,8 @@ def _print_status(r: dict) -> None:
     print(f"✔ 工厂状态 (root: {r['root']})")
     print(f"  projects  {r['projects_count']}  {r['projects']}")
     print(f"  tasks     {r['tasks_count']}  {r['tasks_by_status']}")
-    print(f"  agents    {r['agents_count']}  {r['agents']}")
+    # ★ 2026-09-21: 这行是 **agent 注册表**（插件域）, 与"舰队 N 人"(agents.json) 不是一回事 ⇒ 标签说清
+    print(f"  agent注册表 {r['agents_count']}  {r['agents']}")
     print(f"  events    {r['events_count']}")
     # ★ 开发任务（任务树 = 执行的真实账本）+ 舰队 —— 原来这里看不到, 工厂干着活却显示 0
     dt = r.get("dev_tasks") or {}

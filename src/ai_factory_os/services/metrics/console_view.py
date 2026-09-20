@@ -74,7 +74,9 @@ class ConsoleView:
     def _list(self, store: Any) -> list[Any]:
         if store is None:
             return []
-        for name in ("list_all", "list", "load_all", "recent"):
+        # ★ 2026-09-21 修: org 的 ProjectStore 公开名是 list_projects —— 原探针里没有它 ⇒ 读不到 ⇒
+        #   项目数一直来自目录扫描那个补丁源（4 个 ✗）。加上它就回到唯一权威源（org 项目库）。
+        for name in ("list_projects", "list_all", "list", "load_all", "recent"):
             fn = getattr(store, name, None)
             if callable(fn):
                 got = self._safe(lambda: fn(), [])
@@ -93,12 +95,11 @@ class ConsoleView:
             if pid:
                 out[pid] = {"id": pid, "name": getattr(p, "name", "") or pid,
                             "status": str(getattr(p, "state", "") or getattr(p, "status", "") or "")}
-        if self._root is not None:
-            pj = self._root / "projects"
-            if pj.is_dir():
-                for d in pj.iterdir():
-                    if d.is_dir() and d.name not in out:
-                        out[d.name] = {"id": d.name, "name": d.name, "status": "active"}
+        # ★ 2026-09-21 修（Founder 实测: 同一问题两个答案 —— 这里 4 个 / status 3 个）:
+        #   原实现除了 org 项目库, **又扫了一遍** `<root>/projects/*` 目录按目录名补一遍 ⇒
+        #   而目录名（gym-coach）与项目 id（P-019cc935）是同一个项目的两个名字 ⇒ 重复计数 ✗。
+        #   现在只认一个源: **org 项目库**（要进这个清单 ⇒ 就得是真项目, 见 `project adopt/create`）。
+        #   一数据一权威源 —— 这个数字以后只可能和 status 一致。
         return list(out.values())
 
     def list_approvals(self) -> list[dict[str, Any]]:

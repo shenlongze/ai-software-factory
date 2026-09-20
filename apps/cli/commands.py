@@ -2105,6 +2105,26 @@ def cmd_project_list(ctx: FactoryContext, args: Any) -> dict:
     status/runtime_preferences 增强字段); 无 workspace → 回落扫描 examples
     (Phase 5A 兼容行为)。配置损坏 → 退出码 1 (不静默跳过)。
     """
+    # ★ 2026-09-21 统一权威源（Founder 实测: `project list` 说 1 个(markpad, 示例源),
+    #   `status` 说 3 个(org 项目库) ⇒ 同一问题两个答案 ✗ 违反"一数据一权威源"）。
+    #   现在: 默认读 **org 项目库**（与 status 同源 ⇒ 两边必然一致）;
+    #   想看工作区/示例那份, 显式 `--source workspace|examples`。
+    _src = str(getattr(args, "source", "") or "").strip().lower()
+    if _src in ("", "org"):
+        from ai_factory_os.services.organization.projects import ProjectStore
+
+        rows = ProjectStore(ctx.root / "org").list_projects() or []
+        out_rows = [{
+            "name": str(getattr(r, "name", "") or getattr(r, "id", "")),
+            "id": str(getattr(r, "id", "")),
+            "status": str(getattr(r, "status", "") or "active"),
+            "language": str(getattr(r, "language", "") or getattr(r, "project_type", "") or "-"),
+            "repository": str(getattr(r, "repo_path", "") or ""),
+            "tech_stack": [str(getattr(r, "project_type", "") or "")] if getattr(r, "project_type", "") else [],
+        } for r in rows]
+        return {"ok": True, "command": "project list", "count": len(out_rows),
+                "source": "org 项目库（与 status 同源）", "projects": out_rows,
+                "exit_code": 0, "args": args}
     manager = _open_workspace_manager(ctx)
     try:
         workspace = manager.load_workspace()

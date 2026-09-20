@@ -18,7 +18,7 @@ from typing import Any
 #: 会话里可以**自动执行**的只读命令（白名单; 想加就加只读的, 别加会写数据的 ✗）
 READONLY_PREFIXES: tuple[str, ...] = (
     "status", "metrics", "dashboard", "kanban", "console dashboard", "console approvals",
-    "tasktree show", "tasktree todo", "tasktree flow",
+    "project list", "project show", "tasktree show", "tasktree todo", "tasktree flow",
     "tasktree dataflow", "tasktree priority", "agent list", "approval list",
     "intelligence experience list", "intelligence experience evaluate", "intelligence recommend",
     "provider list", "memory list", "knowledge status", "plugin list", "execution list",

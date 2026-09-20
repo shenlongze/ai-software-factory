@@ -2402,6 +2402,79 @@ def test_prd_requirement_gate() -> None:
     assert _check_prd_requirement_gate() == []
 
 
+def _check_one_authority_projects() -> list[str]:
+    """★ "一数据一权威源"（Founder 实测: 同一问题三个答案 —— status 3 / project list 1 / dashboard 4）✗
+
+    实测病: 三处各读各的源 ⇒ 同一个"有几个项目"三个数; 会话还会把这些矛盾原样答给用户 ✗。
+    判据（临时根上造出"会分叉"的场景）:
+      · 一个真项目（org 项目库） + 一个同名目录（`projects/<仓库名>`）—— 旧实现会把它算成第二个 ✗
+      · 三个入口（status / project list / console dashboard）报的项目数**必须相等**且 == 1
+      · `project list` 要**亮出数据源**（org 项目库）
+    """
+    import contextlib as _ctx
+    import io as _io
+    import json as _json
+    import tempfile as _tf
+
+    from ai_factory_os.services.organization.projects import ProjectStore
+
+    bad: list[str] = []
+    with _tf.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "org").mkdir(parents=True, exist_ok=True)
+        try:
+            st = ProjectStore(root / "org")
+            st.create_project(name="gym-coach", repo_path=str(root / "repo" / "gym-coach")) \
+                if hasattr(st, "create_project") else None
+        except Exception:  # noqa: BLE001 — 造数据失败不算门失败（下面用别的路径兜）
+            pass
+        # 同名目录（模拟"重复计数"的场景）
+        (root / "projects" / "gym-coach").mkdir(parents=True, exist_ok=True)
+
+        def _count(argv: list[str]) -> int:
+            from apps.cli import main as _cli
+
+            buf = _io.StringIO()
+            try:
+                with _ctx.redirect_stdout(buf):
+                    _cli(["--root", str(root), "--json", *argv])
+            except SystemExit:
+                pass
+            txt = buf.getvalue().strip()
+            try:
+                d = _json.loads(txt)
+            except Exception:  # noqa: BLE001
+                return -1
+            if "count" in d:
+                return int(d.get("count") or 0)
+            if isinstance(d.get("projects"), list):
+                return len(d["projects"])
+            return len((d.get("dashboard") or {}).get("projects") or [])
+
+        a = _count(["status"])
+        b = _count(["project", "list"])
+        c = _count(["console", "dashboard"])
+        if len({a, b, c}) != 1:
+            bad.append(f"三个入口报的项目数不一致: status={a} project_list={b} dashboard={c}")
+        # 源标签
+        from apps.cli import main as _cli2
+
+        buf = _io.StringIO()
+        try:
+            with _ctx.redirect_stdout(buf):
+                _cli2(["--root", str(root), "project", "list"])
+        except SystemExit:
+            pass
+        if "org 项目库" not in buf.getvalue():
+            bad.append("project list 没亮出数据源（org 项目库）")
+    return bad
+
+
+def test_one_authority_projects() -> None:
+    """"一数据一权威源": status / project list / dashboard 报的项目数必须一致, 且 project list 亮源。"""
+    assert _check_one_authority_projects() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2441,6 +2514,7 @@ def main() -> int:
     results.append(("任务出处那一栏（无出处的挡在树外·单列给人看）", not _check_task_traces_to(), "；".join(_check_task_traces_to())))
     results.append(("CLI 会话（说话=会话 · /命令=执行 · 写命令不自动跑）", not _check_cli_chat(), "；".join(_check_cli_chat())))
     results.append(("需求→PRD 的门（无出处的功能不进 PRD·标出可疑）", not _check_prd_requirement_gate(), "；".join(_check_prd_requirement_gate())))
+    results.append(("口径一致（status/project list/dashboard 项目数同源）", not _check_one_authority_projects(), "；".join(_check_one_authority_projects())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

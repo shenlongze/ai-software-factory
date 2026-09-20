@@ -2417,7 +2417,7 @@ def _tasktree_flow(ctx: FactoryContext, args: Any) -> dict:
             "domains": len(doms),
             "layers": layers,
             "dep_count": dep_count,
-            "names": {str(n.get("id") or ""): str(n.get("title") or "") for n in doms},
+            "names": {str(n.get("id") or ""): n for n in doms},
             "deps": {str(n.get("id") or ""): [str(x) for x in (n.get("depends_on") or [])]
                      for n in doms},
         },
@@ -2555,6 +2555,18 @@ def _todo_display_name(title: str) -> str:
     return s[:24] + ("…" if len(s) > 24 else "")
 
 
+def _node_name(node: dict) -> str:
+    """节点的显示名 —— ★ 优先 `display_name` 字段（用户在 `tasktree edit` 里改过的）,
+    没有才用 title 规则派生。
+
+    ★ 为什么必须有这个函数: 之前视图直接 `_todo_display_name(title)` 派生,
+    于是 `tasktree edit --display-name` 改的值**根本不显示** ⇒ 用户以为改了其实没用
+    （实测踩到: 改 domain 的 display_name 后视图仍显示旧派生名）。
+    """
+    got = str(node.get("display_name") or "").strip()
+    return got or _todo_display_name(node.get("title"))
+
+
 #: 能力名 → 人话（用户视图里不出现 developer/architect 这种词）
 _CAP_WORDS = {
     "developer": "开发", "architect": "架构", "tester": "测试", "devops": "部署",
@@ -2639,7 +2651,7 @@ def _print_tasktree(args: Any, r: dict) -> None:
                     caps = n.get("required_capabilities") or []
                     who = f"待派（需要: {_cap_word(caps[0])}）" if caps else "待派"
                 indent = "  " * (depth + 2)
-                name = _todo_display_name(n.get("title"))
+                name = _node_name(n)
                 line = f"{indent}{mark} {name}   [{str(n.get('id'))[-8:]}]"
                 if depth > 0 and who:
                     line += f"    {who}"
@@ -2652,7 +2664,7 @@ def _print_tasktree(args: Any, r: dict) -> None:
     elif cmd == "flow":
         # ★ 功能链路图（看关系）: 有哪些功能 · 谁依赖谁 · 先做哪层
         f = r["flow"]
-        names = f["names"]
+        names = f["names"]      # id → 节点（取 display_name 用）
         print()
         print(f"  功能链路    {r['tree'].get('plan_id')}    {f['domains']} 个模块")
         print(f"  {'━' * 52}")
@@ -2663,7 +2675,7 @@ def _print_tasktree(args: Any, r: dict) -> None:
                 continue
             print(f"  第 {i} 层" + ("（可先做）" if i == 1 else "（等上一层）"))
             for nid in doms:
-                nm = _todo_display_name(names[nid])
+                nm = _node_name(names[nid])
                 cnt = f["dep_count"].get(nid, 0)
                 tail = f"    ← 被 {cnt} 个模块依赖" if cnt else ""
                 print(f"    · {nm}{tail}")
@@ -2672,8 +2684,8 @@ def _print_tasktree(args: Any, r: dict) -> None:
         for nid, deps in f["deps"].items():
             if not deps or nid not in names:
                 continue
-            src = " / ".join(_todo_display_name(names.get(d, "?")) for d in deps if d in names)
-            print(f"    {_todo_display_name(names[nid]):<20} ← {src}")
+            src = " / ".join(_node_name(names[d]) for d in deps if d in names)
+            print(f"    {_node_name(names[nid]):<20} ← {src}")
         print()
         print("  （同层可并行 · 层间有前后依赖）")
     elif cmd == "edit":

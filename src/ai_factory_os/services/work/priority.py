@@ -62,8 +62,32 @@ def auto_from_keypath(nodes: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
     return out
 
 
+def _module_priority(nodes: list[dict[str, Any]], leaf_id: str) -> dict[str, str] | None:
+    """叶的【模块级】声明优先级（产线声明在模块上, 叶继承）—— 往上找祖先里第一个有 priority 的。"""
+    by_id = {str(n.get("id") or ""): n for n in nodes}
+    cur = leaf_id
+    for _ in range(16):
+        node = by_id.get(cur) or {}
+        par = str(node.get("parent_id") or "")
+        if not par or par == cur:
+            return None
+        parent = by_id.get(par) or {}
+        pv = str(parent.get("priority") or "").strip().upper()
+        src = str(parent.get("priority_source") or "").strip()
+        if pv in VALID and src in SOURCE_RANK:
+            return {"priority": pv, "source": src,
+                    "reason": str(parent.get("priority_reason") or "")}
+        cur = par
+    return None
+
+
 def effective(nodes: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
-    """★ 仲裁后的生效优先级 —— 人工 > 产线声明 > 关键路径自动。
+    """★ 仲裁后的生效优先级 —— 人工 > 产线声明 > 关键路径自动（叶级 > 模块级）。
+
+    优先级链（从上到下, 先命中先用）:
+      ① 叶自己的 priority（manual / declared / keypath）
+      ② 叶所属【模块】声明的 priority（产线声明在模块上, 叶继承 —— 否则要写 199 个叶）
+      ③ 关键路径自动兜底（未落盘, 只是"临时算给你看"）
 
     返回值: {叶 id: {priority, source, reason}}（只含叶任务）。
     """
@@ -78,8 +102,12 @@ def effective(nodes: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
         if stored in VALID and src in SOURCE_RANK:
             out[nid] = {"priority": stored, "source": src,
                         "reason": str(n.get("priority_reason") or "")}
-        else:
-            out[nid] = auto.get(nid) or {"priority": "P2", "source": "keypath", "reason": ""}
+            continue
+        inherited = _module_priority(nodes, nid)
+        if inherited:
+            out[nid] = {**inherited, "reason": inherited["reason"] or "继承所属模块的声明"}
+            continue
+        out[nid] = auto.get(nid) or {"priority": "P2", "source": "keypath", "reason": ""}
     return out
 
 

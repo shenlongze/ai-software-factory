@@ -17,42 +17,57 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ai_factory_os.services.work.priority import VALID as VALID_PRIORITIES
+
 _MAX_ENTS = 8          #: 一个模块最多声明几个实体（防一次倒一堆）
 
 
 def _prompt(module: str, desc: str, acceptance: str, entities: list[str]) -> str:
     return (
-        "你是资深后端负责人。下面是一个开发模块, 请判断它【读/写】哪些数据实体。\n"
+        "你是资深技术负责人。下面是开发计划里的一个模块, 请判断它【读/写】哪些数据实体,"
+        "并给它一个【优先级】。\n"
         "★ 硬约束:\n"
-        f"· 只能从这份清单里选, 不许出现清单外的名字: {', '.join(entities)}\n"
+        f"· 实体只能从这份清单里选, 不许出现清单外的名字: {', '.join(entities)}\n"
         f"· 最多选 {_MAX_ENTS} 个; 拿不准就返回空数组 []（宁可没有, 不要瞎标）;\n"
         "· access 只能是 read / write / both（只读查询=read, 建表或写入=write, 两者都=both）;\n"
-        "· 只输出 JSON 数组, 不要解释、不要 markdown。格式:\n"
-        '[{"name":"Order","access":"write"},{"name":"User","access":"read"}]\n'
+        "· priority 只能是 P0 / P1 / P2 / P3: 越挡着别人做、越影响整体完工 ⇒ 越靠前（P0 最先）;"
+        " 拿不准给 P2; 旁边支线给 P3;\n"
+        "· reason 一句话说清为什么（≤40 字）;\n"
+        "· 只输出 JSON 对象, 不要解释、不要 markdown。格式:\n"
+        '{"entities":[{"name":"Order","access":"write"},{"name":"User","access":"read"}],'
+        '"priority":"P1","reason":"下单主流程，后面支付与对账都等它"}\n'
         f"\n模块: {module}\n"
         f"模块说明: {desc or '（无）'}\n"
         f"验收要求: {acceptance or '（无）'}\n"
     )
 
 
-def _parse(content: str, allowed: set[str]) -> tuple[list[dict[str, Any]], int]:
-    """解析 LLM 输出 ⇒ (声明的实体, 被丢弃的名字数)。★ 清单外的一律丢, 并计数。"""
+def _parse_full(content: str, allowed: set[str]) -> dict[str, Any]:
+    """解析 LLM 输出 ⇒ {entities, dropped, priority, reason}。
+
+    · 实体: ★ 清单外的一律丢, 并计数（不静默）
+    · 优先级: 只收 P0~P3（非法/缺失 ⇒ 空串, 由调用方决定不写 —— 不猜）
+    容忍三种形态: 裸数组 / {"entities":[...]} / {"data_entities":[...]}
+    """
     s = str(content or "").strip()
     if s.startswith("```"):
         s = "\n".join(ln for ln in s.splitlines() if not ln.strip().startswith("```")).strip()
     try:
         got = json.loads(s)
     except Exception:  # noqa: BLE001 — 解析不了 ⇒ 当作"没声明", 由调用方决定重试
-        return [], 0
-    if isinstance(got, dict):                       # 容忍 {"entities": [...]} 形态
-        got = got.get("entities") or got.get("data_entities") or []
-    if not isinstance(got, list):
-        return [], 0
+        return {"entities": [], "dropped": 0, "priority": "", "reason": ""}
+    raw_priority, reason = "", ""
+    if isinstance(got, dict):
+        raw_priority = str(got.get("priority") or "").strip().upper()
+        reason = str(got.get("reason") or "").strip()[:200]
+    items = (got.get("entities") or got.get("data_entities") or []) if isinstance(got, dict) else got
+    if not isinstance(items, list):
+        items = []
 
     out: list[dict[str, Any]] = []
     dropped = 0
     seen: set[str] = set()
-    for it in got:
+    for it in items:
         name = str(it.get("name") if isinstance(it, dict) else it or "").strip()
         if not name:
             continue
@@ -66,7 +81,15 @@ def _parse(content: str, allowed: set[str]) -> tuple[list[dict[str, Any]], int]:
         out.append({"name": name, "access": access if access in ("read", "write", "both") else "both"})
         if len(out) >= _MAX_ENTS:
             break
-    return out, dropped
+    return {"entities": out, "dropped": dropped,
+            "priority": raw_priority if raw_priority in VALID_PRIORITIES else "",
+            "reason": reason}
+
+
+def _parse(content: str, allowed: set[str]) -> tuple[list[dict[str, Any]], int]:
+    """兼容旧签名（只关心实体）—— 判据仍只有 _parse_full 一份。"""
+    r = _parse_full(content, allowed)
+    return r["entities"], r["dropped"]
 
 
 def parse_entity_spec(items: list[str], allowed: set[str]) -> list[dict[str, Any]]:
@@ -103,16 +126,17 @@ def parse_entity_spec(items: list[str], allowed: set[str]) -> list[dict[str, Any
     return out
 
 
-def declare_module_entities(       # noqa: N802 — 与 expand_module 同族命名
+def declare_module(                # noqa: N802 — 与 expand_module 同族命名
     module_title: str,
     *,
     desc: str = "",
     acceptance: str = "",
     entities: list[str],
     provider: Any,
-) -> tuple[list[dict[str, Any]], int]:
-    """让 LLM 为一个模块声明读/写的实体。返回 (声明, 被丢弃的名字数)。
+) -> dict[str, Any]:
+    """让 LLM 为一个模块声明【读/写的实体 + 优先级】—— 一次调用两个产出（不额外烧 token）。
 
+    返回 {entities, dropped, priority, reason}（priority 可能为空串 = LLM 没给/给了非法值 ⇒ 不写）。
     失败 ⇒ 抛错（不产半成品, 与 expand_module 同一纪律）。
     """
     from ai_factory_os.infrastructure.llm.provider import ProviderRequest
@@ -123,4 +147,4 @@ def declare_module_entities(       # noqa: N802 — 与 expand_module 同族命�
     resp = provider.generate(ProviderRequest(task_context=ctx, max_tokens=1024))
     if not getattr(resp, "ok", False):
         raise ValueError(f"声明失败: {getattr(resp, 'error', '') or '调用失败'}")
-    return _parse(resp.content, set(entities))
+    return _parse_full(resp.content, set(entities))

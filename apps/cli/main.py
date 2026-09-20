@@ -2543,7 +2543,7 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
 
     from ai_factory_os.services.work import data_flow as _DF
     from ai_factory_os.services.work import decomposition as _D
-    from ai_factory_os.services.work.declare import declare_module_entities, parse_entity_spec
+    from ai_factory_os.services.work.declare import declare_module, parse_entity_spec
 
     plan_id = str(getattr(args, "plan_id", "") or "")
     project = str(getattr(args, "project", "") or "")
@@ -2594,24 +2594,31 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
                    if str(n.get("id") or "") == only or str(n.get("id") or "").endswith(only)]
         if not targets:
             raise CliError(f"找不到节点: {only}", exit_code=1)
-    todo = [n for n in targets if not n.get("data_entities")]     # ★ 幂等: 已声明的跳过
+    todo = [n for n in targets if not n.get("data_entities") or not n.get("priority")]
     dry = bool(getattr(args, "dry_run", False))
 
     prov = _arch_provider()
     rows: list[dict[str, Any]] = []
     dropped_total = 0
     for n in todo:
-        got, dropped = declare_module_entities(
+        res = declare_module(
             str(n.get("display_name") or n.get("title") or ""),
             desc=str(n.get("scope") or ""),
             acceptance=str(n.get("acceptance") or ""),
             entities=names, provider=prov)
+        got, dropped = res["entities"], res["dropped"]
         dropped_total += dropped
         if not dry:
             _D.declare_node_entities(ctx.root, plan_id, node_id=str(n.get("id") or ""),
                                      entities=got, project_id=project)
+            # ★ C 产线声明优先级（来源记 declared ⇒ 只有人工能盖过它）
+            if res["priority"]:
+                _D.set_node_priority(ctx.root, plan_id, node_id=str(n.get("id") or ""),
+                                     priority=res["priority"], source="declared",
+                                     reason=res.get("reason") or "", project_id=project)
         rows.append({"node": str(n.get("display_name") or n.get("title") or ""),
-                     "entities": got, "dropped": dropped})
+                     "entities": got, "dropped": dropped,
+                     "priority": res["priority"], "reason": res.get("reason") or ""})
     return {"ok": True, "action": "tasktree-declare", "tree": tree,
             "entities_available": names, "declared": rows,
             "skipped": len(targets) - len(todo), "dropped_total": dropped_total,
@@ -3301,8 +3308,10 @@ def _print_tasktree(args: Any, r: dict) -> None:
         for row in rows:
             got = ("  ".join(f"{e['name']}({e['access']})" for e in row["entities"])
                    if row["entities"] else "（拿不准 ⇒ 空数组, 不瞎标）")
+            pri = f"    优先级 {row['priority']}" if row.get("priority") else "    优先级（没给）"
+            why = f" —— {row['reason'][:30]}" if row.get("reason") else ""
             extra = f"    ⚠ 丢弃清单外名字 {row['dropped']} 个" if row["dropped"] else ""
-            print(f"    {row['node']:<14} → {got}{extra}")
+            print(f"    {row['node']:<14} → {got}{pri}{why}{extra}")
         print()
         if r.get("dropped_total"):
             print(f"  ⚠ 共丢弃清单外的名字 {r['dropped_total']} 个（LLM 编的, 没写进树）")

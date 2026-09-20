@@ -107,6 +107,15 @@ def _index(tree: dict[str, Any]) -> dict[str, list]:
     return out
 
 
+def _sources_of(eff: dict[str, dict[str, str]]) -> dict[str, int]:
+    """优先级来源分布（人工/产线声明/关键路径）—— 视图必须能说清"这优先级是谁定的"。"""
+    out: dict[str, int] = {}
+    for v in eff.values():
+        k = str(v.get("source") or "")
+        out[k] = out.get(k, 0) + 1
+    return out
+
+
 def build_todo(tree: dict[str, Any]) -> dict[str, Any]:
     """★ 投影 A: 层级待办清单（看进度）—— 数据形态。
 
@@ -131,6 +140,11 @@ def build_todo(tree: dict[str, Any]) -> dict[str, Any]:
     kp = _kp.critical_path(_nodes, _names, _leafmod)
     crit_ids = set(kp.get("critical_ids") or [])
 
+    # ★ 优先级（ABC 三来源 + 人为最高）—— 判据见 services/work/priority.py
+    from ai_factory_os.services.work import priority as _pri
+
+    eff = _pri.effective(_nodes)
+
     def _walk(parent: str, depth: int) -> None:
         for n in by_parent.get(parent, []):
             if n.get("kind") == "project":
@@ -152,6 +166,13 @@ def build_todo(tree: dict[str, Any]) -> dict[str, Any]:
                 "kind": str(n.get("kind") or ""),
                 # ★ 在关键路径上（这条决定整体完工 —— 推迟它就会拖整棵树）
                 "critical": str(n.get("id") or "") in crit_ids,
+                # ★ 优先级（叶: 仲裁后生效值; 模块: 自己声明的值, 供清单展示）
+                "priority": (eff.get(str(n.get("id") or "")) or {}).get("priority")
+                            or str(n.get("priority") or ""),
+                "priority_source": (eff.get(str(n.get("id") or "")) or {}).get("source")
+                                   or str(n.get("priority_source") or ""),
+                "priority_reason": (eff.get(str(n.get("id") or "")) or {}).get("reason")
+                                   or str(n.get("priority_reason") or ""),
             })
             _walk(str(n.get("id") or ""), depth + 1)
 
@@ -173,6 +194,16 @@ def build_todo(tree: dict[str, Any]) -> dict[str, Any]:
             "blockers": kp.get("blockers") or [],
             "blockers_note": kp.get("blockers_note") or "",
             "chain_head": (kp.get("chain") or [])[:3],
+        },
+        # ★ 优先级（分布 + 落盘情况 —— 让人一眼看出"哪些最要紧"和"谁定的"）
+        #   ★ 口径与上面 lines 完全一致（列表显示什么, 汇总就算什么）——
+        #     踩过: 汇总只统计叶任务 ⇒ 只有模块的树显示全 0, 与列表自相矛盾。
+        "priority": {
+            "distribution": {p: sum(1 for ln in lines if ln.get("priority") == p)
+                             for p in _pri.VALID},
+            "sources": _sources_of({ln["id"]: {"source": ln.get("priority_source") or ""}
+                                    for ln in lines if ln.get("priority")}),
+            "stored": _pri.stored_stats(_nodes),
         },
     }
 

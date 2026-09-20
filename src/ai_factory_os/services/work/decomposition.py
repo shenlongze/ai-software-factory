@@ -1027,11 +1027,12 @@ def set_node_priority(
     if node is None:
         raise ValueError(f"找不到节点: {node_id}")
     node["priority"] = val
+    old_src = str(node.get("priority_source") or "")
     node["priority_source"] = src
     if reason:
         node["priority_reason"] = str(reason)[:200]
-    elif src != "manual":
-        node.pop("priority_reason", None)      # 自动来源不带理由 ⇒ 不留旧理由（免得张冠李戴）
+    elif old_src != src:
+        node.pop("priority_reason", None)      # ★ 换了来源又没给新理由 ⇒ 不留旧理由（免得张冠李戴）
     tree["status"] = "candidate"               # 与 edit_node 同纪律: 改完回候选态
     tree["edited_at"] = _now_iso()
     tree.pop("_saved_to", None)
@@ -1082,6 +1083,36 @@ def set_priorities(
         tree.pop("_saved_to", None)
         tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
     return {"tree": tree, "written": written, "missing": missing, "invalid": invalid}
+
+
+def clear_node_priority(
+    root: Path | str,
+    plan_id: str,
+    *,
+    node_id: str,
+    project_id: str = "",
+) -> dict[str, Any]:
+    """★ 清除人工/声明的优先级 ⇒ 回到"自动兜底"（关键路径导出）。
+
+    用途: 人工改错了要退回、或想让这条重新跟随关键路径（页面点一圈回到"自动"）。
+    ★ 只清 priority_source 属于本人为/声明的值; 不动别的字段。
+    """
+    tree = _read(root, plan_id, project_id)
+    if tree is None:
+        raise FileNotFoundError(f"任务树不存在: {plan_id}")
+    nodes: list[dict[str, Any]] = tree.get("nodes") or []
+    node = next((n for n in nodes if str(n.get("id") or "") == node_id
+                 or str(n.get("id") or "").endswith(node_id)), None)
+    if node is None:
+        raise ValueError(f"找不到节点: {node_id}")
+    before = {"priority": node.get("priority"), "source": node.get("priority_source")}
+    for k in ("priority", "priority_source", "priority_reason"):
+        node.pop(k, None)
+    tree["status"] = "candidate"
+    tree["edited_at"] = _now_iso()
+    tree.pop("_saved_to", None)
+    tree["_saved_to"] = str(_save(root, plan_id, tree, tree.get("project_id", "") or project_id))
+    return {"tree": tree, "node": node, "before": before}
 
 
 def tree_leaves(tree: dict[str, Any]) -> list[dict[str, Any]]:

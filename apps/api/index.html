@@ -58,6 +58,15 @@
   .node.crit rect{stroke:#ff9f0a;stroke-width:2.2}
   .edge.k-crit{stroke:#ff9f0a;stroke-width:2.2;marker-end:url(#arO)}
   .row .star{display:inline-block;width:13px;color:#ff9f0a;font-size:12px}
+  /* ★ 优先级徽标（人工改的点这里 —— 点一下循环 P0→P1→P2→P3→自动） */
+  .pri{display:inline-block;min-width:26px;text-align:center;font-size:11px;font-weight:600;
+       border-radius:6px;padding:1px 5px;margin-right:6px;border:1.5px solid transparent}
+  .pri.P0{background:#ffe9e6;color:#c0261a}
+  .pri.P1{background:#fff3e0;color:#a85b00}
+  .pri.P2{background:#f0f0f2;color:#5b5b60}
+  .pri.P3{background:#f7f7f9;color:#9a9aa0}
+  .pri.manual{border-color:#0071e3}                 /* 人工定的加蓝框 */
+  .pri:hover{filter:brightness(.96);cursor:pointer}
   .kpline{background:#fff8e6;border:1px solid #ffe2a8;color:#7a5b00;border-radius:10px;
           padding:8px 12px;font-size:12.5px;margin:0 0 12px;line-height:1.7}
   .kpline b{color:#4a3600}
@@ -187,15 +196,55 @@ function renderTodo(d){
     ? `<div class="kpline">★ <b>关键路径</b>: <b>${kp.total}</b> 条在链上（就是标 ★ 的这些 —— 推迟其中任一条 = 整棵完不成）
         　链外的是可并行的旁支·可以晚做<br/>判定依据: ${esc(kp.basis)}${kp.note ? "<br/>口径: " + esc(kp.note) : ""}</div>`
     : (kp.reason ? `<div class="kpline">⚠ 关键路径算不出: ${esc(kp.reason)}（★ 不硬给一条假的）</div>` : "");
+  // ★ 优先级说明行（三个来源 + 点徽标可改）
+  const pr = d.priority || {}, dist = pr.distribution || {}, srcs = pr.sources || {};
+  const srcName = {manual: "人工", declared: "产线声明", keypath: "关键路径"};
+  const total = ["P0","P1","P2","P3"].map(p => dist[p] || 0).reduce((a, b) => a + b, 0);
+  const prline = total
+    ? `<p class="srcline">优先级: ${["P0","P1","P2","P3"].map(p => `<b>${p} ${dist[p] || 0}</b>`).join(" · ")}
+        · 谁定的: ${Object.keys(srcs).sort().map(k => `${esc(srcName[k] || k)} ${srcs[k]}`).join(" · ")}
+        <br/>点徽标可改（循环 P0→P1→P2→P3→自动）—— ★ 人工最高: 定了之后自动导出不再覆盖它</p>`
+    : "";
   // ★ data-id/data-kind/data-depth = 跨视图联动的"键"（服务层早就给了 id, 之前没用上）
-  return kpline + d.lines.map(l => {
+  return kpline + prline + d.lines.map(l => {
     const who = l.who ? `<span class="who">${esc(l.who)}</span>` : "";
     const pg  = l.kind === "domain" ? `<span class="pg">${l.done}/${l.total}</span>` : "";
+    const tip = l.priority
+      ? `优先级 ${l.priority}（${srcName[l.priority_source] || l.priority_source || "自动"}）${l.priority_reason || ""}｜点一下换下一档`
+      : "还没定优先级｜点一下从 P0 开始";
+    const badge = `<span class="pri ${l.priority || ""}${l.priority_source === "manual" ? " manual" : ""}"
+      data-node="${esc(l.id)}" title="${esc(tip)}">${l.priority || "··"}</span>`;
     return `<div class="row d${Math.min(l.depth,3)}" data-id="${esc(l.id)}"
       data-kind="${esc(l.kind)}" data-depth="${l.depth}">
-      <span class="mark">${MARK[l.mark]||"☐"}</span><span class="star">${l.critical ? "★" : ""}</span>
+      <span class="mark">${MARK[l.mark]||"☐"}</span><span class="star">${l.critical ? "★" : ""}</span>${badge}
       <span class="nm ${l.depth===0?"d0":""}">${esc(l.name)}</span>${pg}${who}</div>`;
   }).join("");
+}
+
+// ★ 人工改优先级（Founder: "支持人为干预"）—— 点徽标循环 P0→P1→P2→P3→自动
+//   写口只有 API 那一个, 它再转到服务层（本函数不自己拼数据、不碰文件）
+const PRI_CYCLE = ["P0", "P1", "P2", "P3", "auto"];
+function wirePriority(planId){
+  document.querySelectorAll("#todo .pri[data-node]").forEach(el => {
+    el.addEventListener("click", async ev => {
+      ev.stopPropagation();
+      const cur = (el.textContent || "").trim();
+      const i = PRI_CYCLE.indexOf(cur);
+      const next = PRI_CYCLE[(i + 1) % PRI_CYCLE.length];
+      el.style.opacity = ".5";
+      try{
+        const r = await fetch(`/api/trees/${encodeURIComponent(planId)}/priority`, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({node_id: el.dataset.node, priority: next})
+        });
+        if(!r.ok) throw new Error((await r.json()).detail || r.status);
+        await load(planId);
+      }catch(err){
+        el.style.opacity = "1";
+        alert("改优先级失败: " + err.message);
+      }
+    });
+  });
 }
 
 // ★ 一个模块一行; 有子模块的用 <details> 原生折叠（不写 JS 状态机 —— 少一处能坏的地方）
@@ -554,6 +603,7 @@ async function load(planId){
   DFLOW = both.dataflow || null;
   $("df").innerHTML = renderDataFlow(DFLOW);
   wireSelection();
+  wirePriority(planId);
   $("msg").innerHTML = `<p class="sub" style="margin:0 0 18px">进度 ${t.done}/${t.total}（${t.percent}%）· 共 ${(both.flow||{}).modules||0} 个模块</p>`;
 }
 

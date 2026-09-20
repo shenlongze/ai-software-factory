@@ -1,19 +1,23 @@
-"""Factory API —— 只读视图接口（供 Web/HTML 调用）。
+"""Factory API —— 视图接口（供 Web/HTML 调用）。
 
 ★ 原则（Founder 定的）:
   · **CLI 是地基; API 由 CLI 派生** —— 本服务不重写业务逻辑, 只把
-    `services/work/user_view` 已经算好的**视图数据**序列化出去。
-  · 一能力一处: 视图逻辑归服务层（`user_view`）, CLI 与 API 共用 —— 不各写一套。
+    `services/work/*` 已经算好的**视图数据**序列化出去。
+  · 一能力一处: 视图逻辑归服务层（`user_view` / `data_flow` / `keypath` / `priority`）,
+    CLI 与 API 共用 —— 不各写一套。
+  · ★ 唯一例外（也是同一条原则）: `POST …/priority` —— 人工改优先级要能从页面点
+    （Founder: "支持人为干预"）; 它同样只是**薄代理**到服务层函数, 不新造规则、不落第二份数据。
 
 接口:
-  GET /                         → HTML 页面（用户视图演示）
-  GET /api/health               → {"ok": true}
-  GET /api/trees                → 任务树列表
-  GET /api/trees/{plan_id}      → 任务树原始数据
-  GET /api/trees/{plan_id}/todo → ★ 投影 A: 层级待办清单（看进度）
-  GET /api/trees/{plan_id}/flow → ★ 投影 B: 功能链路图（看关系）
-  GET /api/trees/{plan_id}/dataflow → ★ 投影 C: 数据流程图（看数据: 实体 + 谁碰它 + 实体间关系）
-  GET /api/trees/{plan_id}/both → 三个投影一起（页面一次拉完）
+  GET  /                        → HTML 页面（用户视图演示）
+  GET  /api/health               → {"ok": true}
+  GET  /api/trees                → 任务树列表
+  GET  /api/trees/{plan_id}      → 任务树原始数据
+  GET  /api/trees/{plan_id}/todo → ★ 投影 A: 层级待办清单（看进度）
+  GET  /api/trees/{plan_id}/flow → ★ 投影 B: 功能链路图（看关系）
+  GET  /api/trees/{plan_id}/dataflow → ★ 投影 C: 数据流程图（看数据: 实体 + 谁碰它 + 实体间关系）
+  GET  /api/trees/{plan_id}/both → 三个投影一起（页面一次拉完）
+  POST /api/trees/{plan_id}/priority → ★ 唯一写口: 人工改优先级（P0~P3 / "auto"=回到自动）
 
 运行:
   .venv/bin/python -m apps.api.main                    # 默认 127.0.0.1:8787
@@ -95,6 +99,36 @@ def get_dataflow(plan_id: str) -> JSONResponse:
     tree = _find_tree(plan_id)
     pid = str(tree.get("project_id") or "")
     return JSONResponse(DF.build_data_flow(tree, (_ROOT / "projects" / pid) if pid else None))
+
+
+@app.post("/api/trees/{plan_id}/priority")
+def set_priority(plan_id: str, payload: dict[str, Any]) -> JSONResponse:
+    """★ 唯一的【写】接口: 人工改优先级（Founder: "支持人为干预"）。
+
+    与 CLI 同源 —— 走同一个服务层函数（`decomposition.set_node_priority` / `clear_node_priority`）,
+    本接口不重写规则、不落第二份数据（API 由 CLI 派生 —— 这条原则对写接口同样成立）。
+    payload: {"node_id": "…", "priority": "P0"|"P1"|"P2"|"P3"|"auto", "reason": "…"}
+      priority="auto" ⇒ 清除人工值, 回到自动兜底（关键路径）。
+    """
+    tree = _find_tree(plan_id)
+    pid = str(tree.get("project_id") or "")
+    node_id = str(payload.get("node_id") or "")
+    want = str(payload.get("priority") or "").strip()
+    if not node_id or not want:
+        raise HTTPException(status_code=400, detail="需要 node_id 与 priority")
+    try:
+        if want.lower() == "auto":
+            D.clear_node_priority(_ROOT, plan_id, node_id=node_id, project_id=pid)
+        else:
+            D.set_node_priority(_ROOT, plan_id, node_id=node_id, priority=want,
+                                source="manual", reason=str(payload.get("reason") or ""),
+                                project_id=pid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    fresh = _find_tree(plan_id)
+    return JSONResponse({"ok": True, "todo": UV.build_todo(fresh)})
 
 
 @app.get("/api/trees/{plan_id}/both")

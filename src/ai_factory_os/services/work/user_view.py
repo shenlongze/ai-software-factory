@@ -119,6 +119,18 @@ def build_todo(tree: dict[str, Any]) -> dict[str, Any]:
     total = len(leaves)
     lines: list[dict[str, Any]] = []
 
+    # ★ 关键路径（Founder: "待办清单中没有关键路径的说明, 需要如何判断"）——
+    #   判据原文见服务层 keypath.py（= 老能力 M3b 的恢复, 非自造）。
+    from ai_factory_os.services.work import keypath as _kp
+
+    _nodes = list(tree.get("nodes") or [])
+    _names = {str(n.get("id") or ""): node_name(n) for n in _nodes}
+    _domname = {str(n.get("id") or ""): node_name(n) for n in _nodes if n.get("kind") == "domain"}
+    _leafmod = {str(n.get("id") or ""): _domname.get(str(n.get("parent_id") or ""), "")
+                for n in _nodes if n.get("kind") == "task"}
+    kp = _kp.critical_path(_nodes, _names, _leafmod)
+    crit_ids = set(kp.get("critical_ids") or [])
+
     def _walk(parent: str, depth: int) -> None:
         for n in by_parent.get(parent, []):
             if n.get("kind") == "project":
@@ -138,6 +150,8 @@ def build_todo(tree: dict[str, Any]) -> dict[str, Any]:
                 "done": d_,
                 "total": t_,
                 "kind": str(n.get("kind") or ""),
+                # ★ 在关键路径上（这条决定整体完工 —— 推迟它就会拖整棵树）
+                "critical": str(n.get("id") or "") in crit_ids,
             })
             _walk(str(n.get("id") or ""), depth + 1)
 
@@ -149,6 +163,17 @@ def build_todo(tree: dict[str, Any]) -> dict[str, Any]:
         "total": total,
         "percent": (done * 100 // total) if total else 0,
         "lines": lines,
+        # ★ 关键路径说明（怎么判、依据什么、哪些在链上、谁最卡人）
+        "critical_path": {
+            "available": kp.get("available"),
+            "reason": kp.get("reason") or "",
+            "total": kp.get("total") or 0,
+            "basis": kp.get("basis") or "",
+            "note": kp.get("merges_note") or "",
+            "blockers": kp.get("blockers") or [],
+            "blockers_note": kp.get("blockers_note") or "",
+            "chain_head": (kp.get("chain") or [])[:3],
+        },
     }
 
 
@@ -204,6 +229,15 @@ def build_flow(tree: dict[str, Any]) -> dict[str, Any]:
             dep_count[d] = dep_count.get(d, 0) + 1
     core_max = max(dep_count.values(), default=0)
 
+    # ★ 模块级关键路径（Founder: "待办清单/链路图里没有关键路径的说明, 需要如何判断"）
+    #   判据 = 老能力 M3b（CHANGELOG v1.1.12）: 最长链; 权重用叶数当工作量代理（树里没工时字段）。
+    from ai_factory_os.services.work import keypath as _kp
+
+    mc = _kp.module_chain(nodes)
+    crit_mods = set(mc.get("critical_ids") or [])
+    crit_pairs = [(str(mc["critical_ids"][i]), str(mc["critical_ids"][i + 1]))
+                  for i in range(len(mc.get("critical_ids") or []) - 1)]
+
     def _mk(n: dict[str, Any], seen: tuple[str, ...] = ()) -> dict[str, Any]:
         nid = str(n.get("id") or "")
         # 兜底: parent_id 成环 ⇒ 不再下钻（不递归爆栈; 不静默丢节点, 照样输出本节点）
@@ -214,6 +248,8 @@ def build_flow(tree: dict[str, Any]) -> dict[str, Any]:
             "status": todo_mark(n.get("status")),
             "depended_by": dep_count.get(nid, 0),
             "core": bool(core_max and dep_count.get(nid, 0) == core_max),
+            # ★ 在【模块级关键路径】上（整体完工由这条链决定 —— 判定依据见 keypath.module_chain）
+            "critical": nid in crit_mods,
             "deps": [node_name(by_id[d]) for d in deps_of.get(nid, []) if d in by_id],
             "kids": len(kids),
             "children": kids,
@@ -259,4 +295,13 @@ def build_flow(tree: dict[str, Any]) -> dict[str, Any]:
         ],
         "edges": edges,
         "external_deps": external,
+        # ★ 关键路径（模块级）: 渲染方据此把这条链【高亮成一条链】—— 关系类内容要能被看见
+        "critical_path": {
+            "available": mc.get("available"),
+            "reason": mc.get("reason") or "",
+            "basis": mc.get("basis") or "",
+            "modules": mc.get("chain") or [],
+            "total_leaves": mc.get("total") or 0,
+            "edges": [{"from": a, "to": b} for a, b in crit_pairs],
+        },
     }

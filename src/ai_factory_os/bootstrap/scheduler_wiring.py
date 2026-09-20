@@ -131,55 +131,13 @@ class TaskTreeWork:
     def _schedulable_deps(self, leaf_id: str) -> list[str]:
         """把一个叶的依赖解析成【其它叶的 id】（摊掉 domain 层）。
 
-        规则:
-          · 遍历所有节点, 凡是"本叶或本叶的祖先"声明的 depends_on:
-              指向 domain/project 节点 ⇒ 摊成该节点下的**全部叶**
-              指向叶 ⇒ 原样
-          · 去掉自己; 去重; 保持确定性顺序
+        ★ 判据只有一份实现 —— 与关键路径（`services/work/keypath`) 同源:
+          规则、以及"归属不是先决"那条铁律都写在 `keypath.schedulable_deps` 里。
+          这里只负责喂树（本适配器缓存的那份）。
         """
-        nodes = list(self._tree().get("nodes") or [])
-        by_id = {str(n.get("id") or ""): n for n in nodes}
+        from ai_factory_os.services.work import keypath as _kp
 
-        def leaves_under(nid: str) -> list[str]:
-            out: list[str] = []
-            for n in nodes:
-                cur = str(n.get("id") or "")
-                for _ in range(16):                      # 上溯到根, 深度上限兜底
-                    if cur == nid:
-                        if n.get("kind") == "task":
-                            out.append(str(n.get("id") or ""))
-                        break
-                    par = str((by_id.get(cur) or {}).get("parent_id") or "")
-                    if not par or par == cur:
-                        break
-                    cur = par
-            return out
-
-        chain: list[str] = []
-        cur = leaf_id
-        for _ in range(16):                              # 叶 → domain → project
-            chain.append(cur)
-            par = str((by_id.get(cur) or {}).get("parent_id") or "")
-            if not par or par == cur:
-                break
-            cur = par
-        chain_set = set(chain)
-
-        deps: list[str] = []
-        for cid in chain:
-            for d in ((by_id.get(cid) or {}).get("depends_on") or []):
-                d = str(d).strip()
-                # ★★ 2026-09-20 修（实跑执行暴露的硬伤）:
-                #   叶的 depends_on 里【指向自己或自己祖先】的那条是**归属**, 不是可调度先决。
-                #   不跳过它 ⇒ leaves_under(自己的域) 摊成"全部兄弟" ⇒ 每个叶依赖自己所有兄弟
-                #   ⇒ 同域内两两互相依赖 = 环 ⇒ 199/199 全 BLOCKED, 执行永远起不来。
-                #   （实测: 真树摊平后 185 条边 → 9158 条, 13 个环, 全树卡死。）
-                if d in chain_set:
-                    continue
-                for t in leaves_under(d):
-                    if t and t != leaf_id and t not in chain_set and t not in deps:
-                        deps.append(t)
-        return sorted(deps)
+        return _kp.schedulable_deps(list(self._tree().get("nodes") or []), leaf_id)
 
     def list_nodes(self, task_id: str = "") -> list[TaskNode]:
         """列出叶（task_id 给了就只看该计划 —— 刀1 只支持单计划）。"""

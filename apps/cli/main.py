@@ -2449,6 +2449,7 @@ def _tasktree_todo(ctx: FactoryContext, args: Any) -> dict:
     ⇒ 同一份数据, 两个投影 ⇒ 不会不一致。
     """
     from ai_factory_os.services.work import decomposition as _D
+    from ai_factory_os.services.work import user_view as _UV
 
     plan_id = str(getattr(args, "plan_id", "") or "")
     project = str(getattr(args, "project", "") or "")
@@ -2467,6 +2468,8 @@ def _tasktree_todo(ctx: FactoryContext, args: Any) -> dict:
             "done": done,
             "percent": f"{done * 100 // total}",
         },
+        # ★ 视图数据仍由服务层给（CLI 只排版）—— 关键路径标注就在里面
+        "todo": _UV.build_todo(tree),
     }
 
 
@@ -3115,6 +3118,24 @@ def _print_tasktree(args: Any, r: dict) -> None:
         print(f"  {'━' * 46}  进度 {s['done']}/{s['leaves']} ({s['percent']}%)")
         if t.get("status") == "candidate":
             print("  ⚠ 还没确认（候选态）—— 确认后才会开始做")
+        # ★ 关键路径说明（Founder: "待办清单中没有关键路径的说明, 需要如何判断"）
+        todo = r.get("todo") or {}
+        kp = todo.get("critical_path") or {}
+        crit_ids = {ln.get("id") for ln in (todo.get("lines") or []) if ln.get("critical")}
+        if kp.get("available"):
+            head = " → ".join(str(x.get("name"))[:10] for x in (kp.get("chain_head") or []))
+            print(f"  ★ 关键路径: {kp.get('total')} 条在链上（推迟它们 = 拖整棵树）")
+            print(f"    判定依据: {kp.get('basis')}")
+            if head:
+                print(f"    链开头: {head} …")
+            if kp.get("blockers"):
+                b = "、".join(f"{x['name'][:12]}（等它 {x['waiting']} 条）" for x in kp["blockers"][:3])
+                print(f"    谁最卡人: {b}")
+            if kp.get("note"):
+                print(f"    口径: {kp['note']}")
+        elif kp.get("reason"):
+            print(f"  ⚠ 关键路径算不出: {kp['reason']}（★ 不硬给一条假的）")
+        print("  （★ = 在关键路径上; 其余是可并行的旁支）")
         print()
         by_parent: dict[str, list] = {}
         for n in nodes:
@@ -3135,7 +3156,8 @@ def _print_tasktree(args: Any, r: dict) -> None:
                 name = _node_name(n)
                 _show_id = bool(getattr(args, "ids", False))
                 _idpart = f"   [{str(n.get('id'))[-8:]}]" if _show_id else ""
-                line = f"{indent}{mark} {name}{_idpart}"
+                _star = "★" if str(n.get("id")) in crit_ids else " "
+                line = f"{indent}{mark} {_star} {name}{_idpart}"
                 if n.get("kind") == "domain":
                     dd, tt = _node_progress(n, by_parent)
                     line += f"    {dd}/{tt}"

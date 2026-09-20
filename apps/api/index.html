@@ -54,6 +54,13 @@
   .row.sel{background:#eef5ff;border-radius:8px;box-shadow:inset 3px 0 0 var(--brand)}
   .row.sel-kid{background:#f7faff}
   .row.dimsel{opacity:.3}
+  /* ★ 关键路径: 节点/边/清单条目的专属样式（核心=被依赖最多; 关键路径=决定整体完工） */
+  .node.crit rect{stroke:#ff9f0a;stroke-width:2.2}
+  .edge.k-crit{stroke:#ff9f0a;stroke-width:2.2;marker-end:url(#arO)}
+  .row .star{display:inline-block;width:13px;color:#ff9f0a;font-size:12px}
+  .kpline{background:#fff8e6;border:1px solid #ffe2a8;color:#7a5b00;border-radius:10px;
+          padding:8px 12px;font-size:12.5px;margin:0 0 12px;line-height:1.7}
+  .kpline b{color:#4a3600}
   .node.sel rect{stroke:var(--brand);stroke-width:2.6}
   .node.sel .nm{font-weight:600}
   /* 功能链路图（★ 真图: 节点 + 连线。第 N 批 = 第 N 行, 自上而下做） */
@@ -174,13 +181,19 @@ async function api(path){
 
 function renderTodo(d){
   if(!d.lines || !d.lines.length) return `<div class="empty">暂无任务</div>`;
+  // ★ 关键路径说明（Founder: "待办清单中没有关键路径的说明, 需要如何判断"）—— 说清判据, 不写个 ★ 就完事
+  const kp = d.critical_path || {};
+  const kpline = kp.available
+    ? `<div class="kpline">★ <b>关键路径</b>: <b>${kp.total}</b> 条在链上（就是标 ★ 的这些 —— 推迟其中任一条 = 整棵完不成）
+        　链外的是可并行的旁支·可以晚做<br/>判定依据: ${esc(kp.basis)}${kp.note ? "<br/>口径: " + esc(kp.note) : ""}</div>`
+    : (kp.reason ? `<div class="kpline">⚠ 关键路径算不出: ${esc(kp.reason)}（★ 不硬给一条假的）</div>` : "");
   // ★ data-id/data-kind/data-depth = 跨视图联动的"键"（服务层早就给了 id, 之前没用上）
-  return d.lines.map(l => {
+  return kpline + d.lines.map(l => {
     const who = l.who ? `<span class="who">${esc(l.who)}</span>` : "";
     const pg  = l.kind === "domain" ? `<span class="pg">${l.done}/${l.total}</span>` : "";
     return `<div class="row d${Math.min(l.depth,3)}" data-id="${esc(l.id)}"
       data-kind="${esc(l.kind)}" data-depth="${l.depth}">
-      <span class="mark">${MARK[l.mark]||"☐"}</span>
+      <span class="mark">${MARK[l.mark]||"☐"}</span><span class="star">${l.critical ? "★" : ""}</span>
       <span class="nm ${l.depth===0?"d0":""}">${esc(l.name)}</span>${pg}${who}</div>`;
   }).join("");
 }
@@ -253,7 +266,7 @@ function svgBand(nodes, edges, opts){
   const boxes = nodes.map(n => {
     const p = pos[n.id]; if(!p) return "";
     const bits = (n.meta || []).join(" · ");
-    return `<g class="node${n.core ? " core" : ""}${n.faded ? " dimstatic" : ""}" data-id="${esc(n.id)}"><title>${esc(n.tip || n.name)}</title>
+    return `<g class="node${n.core ? " core" : ""}${n.crit ? " crit" : ""}${n.faded ? " dimstatic" : ""}" data-id="${esc(n.id)}"><title>${esc(n.tip || n.name)}</title>
       <rect x="${p.x}" y="${p.y}" width="${G.BW}" height="${G.BH}" rx="12"></rect>
       <text class="nm" x="${p.x + 10}" y="${p.y + 17}">${esc(n.pre || "")}${esc(_trunc(n.name, 9))}</text>
       ${bits ? `<text class="mt" x="${p.x + 10}" y="${p.y + 31}">${esc(_trunc(bits, 17))}</text>` : ""}</g>`;
@@ -284,23 +297,35 @@ function levelsOf(ids, edges){
 function renderFlow(d){
   const mods = d.root || [];
   if(!mods.length) return `<div class="empty">暂无模块</div>`;
+  const kp = d.critical_path || {};
+  const critPairs = new Set((kp.edges || []).map(e => `${e.from}>${e.to}`));
   const nodes = mods.map(m => {
     const bits = [];
     if(m.core) bits.push("★ 核心");
     else if(m.depended_by) bits.push(`被 ${m.depended_by} 个依赖`);
     if(m.kids) bits.push(`${m.kids} 个子模块`);
+    if(m.critical) bits.push("★ 关键路径");
     return {id: m.id, name: m.name, level: m.level || 1, core: !!m.core,
-            pre: (MARK[m.status] || "☐") + " ", meta: bits,
+            crit: !!m.critical, pre: (MARK[m.status] || "☐") + " ", meta: bits,
             tip: [m.name, (m.deps || []).length ? "前置: " + m.deps.join(" / ") : "无前置（可先做）",
                   `第 ${m.level} 批`].join("｜")};
   });
-  const g = svgBand(nodes, d.edges || [], {bandLabel: L => `第 ${L} 批`});
+  // ★ 把关键路径那条链的边单独标出来（橙线）—— 关系要看得见, 不是写一句"有关键路径"
+  const edges = (d.edges || []).map(e => ({from: e.from, to: e.to,
+    kind: critPairs.has(`${e.from}>${e.to}`) ? "crit" : ""}));
+  const g = svgBand(nodes, edges, {bandLabel: L => `第 ${L} 批`});
+  const kpline = kp.available
+    ? `<div class="kpline">★ <b>关键路径</b>=橙色那条链（图中加粗的模块与连线）: <b>${(kp.modules||[]).length}</b> 个模块 ·
+        链上 <b>${kp.total_leaves}</b> 个任务 —— 推迟链上任一条 = 拖整棵树; 链外模块可并行<br/>判定依据: ${esc(kp.basis)}</div>`
+    : (kp.reason ? `<div class="kpline">⚠ 关键路径算不出: ${esc(kp.reason)}（★ 不硬给一条假的）</div>` : "");
   const ext = (d.external_deps || []).length
     ? ` · 另有 ${d.external_deps.length} 条依赖指向子模块（点模块展开看）` : "";
   return `<p class="sub" style="margin:0 0 10px">${d.modules} 个模块 · ${(d.edges || []).length} 条关系 · ${g.levels} 批（自上而下做）${ext}</p>
+    ${kpline}
     ${g.svg}
     <div class="legend">
       <span><b>箭头</b> = 前置关系: 上面先做完, 才能做下面</span>
+      <span><b>橙色</b> = 关键路径（决定整体完工的那条链）</span>
       <span><b>★</b> = 核心（被最多模块依赖）</span>
       <span><b>鼠标移到模块</b> = 高亮它整条上下游链</span>
       <span><b>点模块</b> = 选中 ⇒ ★ 另外两张图一起亮/滚（再点或 Esc 取消）</span>

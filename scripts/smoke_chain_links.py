@@ -2039,7 +2039,7 @@ def _check_cli_welcome() -> list[str]:
         bad.append(f"空参退出码该是 0, 实得 {rc}")
     if "required: command" in out or "usage:" in out:
         bad.append("空参还是甩 argparse 英文报错（等于进不去）")
-    for kw in ("AI Factory OS", "直接说人话", "经验", "help"):
+    for kw in ("AI Factory OS", "直接说人话", "经验", "帮助"):
         if kw not in out:
             bad.append(f"首屏缺「{kw}」")
     # 非终端不该挂住: 上面 main([]) 在非 TTY 下已跑完 ⇒ 若它读 stdin 会 EOFError/挂住 ⇒ 视为坏
@@ -3073,7 +3073,7 @@ def _check_three_marks() -> list[str]:
         bad.append("会话里没用工具块（结果还是堆砌 ✗）")
     if "_code_fingerprint" not in src or "代码已更新" not in src:
         bad.append("没有「窗口跑着旧代码」的提醒（改了却看不到效果 ✗）")
-    if "执行{'完成" not in src and "执行{'" not in src:
+    if "执行完成（改动已落盘）" not in src and "没成功" not in src:
         bad.append("点头执行后没有结果行（看起来像没执行 ✗ —— Founder 实测踩到）")
     return bad
 

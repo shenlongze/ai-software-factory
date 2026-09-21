@@ -135,12 +135,12 @@ def _system_prompt(root: Path | str) -> str:
         "6 ★ 你念出 RUN: 命令时, 正文里**再用一句人话说清它会改什么**（例: 「会往你的数据目录写一个\n"
         "   备份包」「会给这个项目建一棵任务树, 不会动代码」）—— 老板点头前要知道后果。\n"
         "5 会改数据的命令(run/chain/confirm/decompose/backup/create 等)也**必须**用 RUN: 格式写出来"
-        "（写成 \`RUN: backup create\` 这种一行）, 系统会自动挂起、问老板要不要跑 —— 不要只在正文里描述命令。\n"
+        "（写成 `RUN: backup create` 这种一行）, 系统会自动挂起、问老板要不要跑 —— 不要只在正文里描述命令。\n"
     )
 
 
 def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[dict[str, str]] | None = None,
-              on_run: Any = None) -> tuple[str, str, dict[str, Any]]:
+              on_run: Any = None, on_progress: Any = None) -> tuple[str, str, dict[str, Any]]:
     """一轮会话: 返回 (回答文本, 会话 id)。
 
     on_run(argv) 用于"把这行 RUN 命令真的跑掉并把结果拿回来"——由调用方注入（CLI 里 = 跑命令）。
@@ -190,13 +190,23 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
                 results.append(f"`{r}` → 这条会改数据: **已挂起, 等用户点头**（不要重复列出, 一句话问他要不要跑）")
                 continue
             try:
-                results.append(f"`{r}` → " + str(on_run(argv))[:1500])
+                import time as _t2
+
+                _s = _t2.monotonic()
+                _out = on_run(argv)
+                if on_progress is not None:      # Hermes 那样的过程行
+                    on_progress("factory " + " ".join(argv), _t2.monotonic() - _s)
+                results.append(f"`{r}` → " + str(_out)[:1500])
             except Exception as exc:  # noqa: BLE001 — 查询失败不该打断对话
                 results.append(f"`{r}` → 出错: {type(exc).__name__}: {str(exc)[:100]}")
         _meta["pending"] = list(dict.fromkeys(_pending))
         msgs.append({"role": "assistant", "content": answer})
         msgs.append({"role": "human", "content": "（命令结果）\n" + "\n".join(results) + "\n请据此回答我。"})
+    import re as _re
+
+    # ★ RUN: 是给系统的指令, **不该露给用户** —— 行内的也清掉（保留命令本身, 用反引号包住）
     answer = "\n".join(ln for ln in answer.splitlines() if not ln.strip().startswith("RUN:")).strip()
+    answer = _re.sub(r"`?RUN:\s*([^`\n]+)`?", lambda m: f"`{m.group(1).strip()}`", answer).strip()
     if conv:
         U.append_message(root, conv, role="assistant", content=answer)
     _meta["elapsed"] = round(_time.monotonic() - _t0, 2)

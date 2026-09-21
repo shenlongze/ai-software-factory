@@ -180,6 +180,85 @@ def run_welcome(root: Path | str, *, interactive: bool | None = None) -> int:
         print()
 
 
+def _term_width(default: int = 100) -> int:
+    try:
+        import shutil
+
+        return max(60, min(120, shutil.get_terminal_size((default, 24)).columns - 2))
+    except Exception:  # noqa: BLE001
+        return default
+
+
+def box(title: str, text: str, *, width: int = 0) -> str:
+    """Hermes 那样把一段话装进圆角框（标题在顶栏, 中文字宽算 2）。"""
+    # ★ 宽度必须**三条线一致**（实测踩到: 差 1-2 列 ⇒ 框看着是歪的 ✗）
+    #   三条线各自的目标宽度都是 W: 顶 `  ╭─ T ` + dash + `╮`; 内容 `  │ ` + 文本 + space + `│`;
+    #   底 `  ╰` + dash + `╯`（_dw 按显示宽度算, 中文=2）
+    w = width or _term_width()
+    head = f"  ╭─ {title} "
+    lines = [head + "─" * max(0, w - _dw(head) - 1) + "╮"]
+    for raw in (text or "").splitlines() or [""]:
+        for seg in _wrap(raw, w - 6):
+            lines.append("  │ " + seg + " " * max(0, w - _dw(seg) - 5) + "│")
+    lines.append("  ╰" + "─" * max(0, w - 4) + "╯")
+    return "\n".join(lines)
+
+
+def _tokens(para: str) -> list[str]:
+    """按空格切词, 但**反引号里的内容不拆**（`project show` 要整块走, 不然框里看着像坏了）。"""
+    out: list[str] = []
+    cur, in_tick = "", False
+    for ch in para:
+        if ch == "`":
+            in_tick = not in_tick
+            cur += ch
+        elif ch == " " and not in_tick:
+            if cur:
+                out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    if cur:
+        out.append(cur)
+    return out or [""]
+
+
+def _wrap(s: str, width: int) -> list[str]:
+    """按**显示宽度**折行（中文算 2）; **优先在空格处断** —— 命令名/英文词不再被拆开。"""
+    out: list[str] = []
+    for para in (str(s) or "").splitlines() or [""]:
+        cur = ""
+        for word in _tokens(para):
+            cand = word if not cur else cur + " " + word
+            if _dw(cand) <= width:
+                cur = cand
+                continue
+            if cur:
+                out.append(cur)
+                cur = ""
+            # 单"词"就超宽（长中文句 / 长 URL）⇒ 按显示宽度硬折
+            piece = ""
+            for ch in word:
+                if _dw(piece + ch) > width:
+                    out.append(piece)
+                    piece = ch
+                else:
+                    piece += ch
+            cur = piece
+        out.append(cur)
+    return out or [""]
+
+
+def process_line(cmd: str, seconds: float | None = None, *, n: int = 1) -> str:
+    """Hermes 风格的过程行: `┊ 💻 $ <命令>  <耗时>`。"""
+    tail = []
+    if n > 1:
+        tail.append(f"+{n - 1} commands")
+    if seconds is not None:
+        tail.append(f"{seconds:.1f}s")
+    return "  ┊ 💻 $ " + cmd + ("  " + "  ".join(tail) if tail else "")
+
+
 def _top_commands() -> set[str]:
     """全部顶层命令名（从解析器里读, 不写死 —— 命令表变了它跟着变）。"""
     try:
@@ -327,6 +406,9 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             # ── 会话路径
             from apps.cli.domains import chat as _chat
 
+            def _on_progress(cmd: str, seconds: float) -> None:
+                print(process_line(cmd, seconds))
+
             def _run_capture(argv: list[str]) -> str:
                 import contextlib as _c
                 import io as _io
@@ -341,22 +423,32 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                     pass
                 return buf.getvalue().strip() or "（无输出）"
 
+            import time as _t3
+
+            _t0 = _t3.monotonic()
+            print(box("你", line))
             _ans, _conv, _meta = _chat.chat_turn(ctx.root, line, conv_id=_conv_id, history=_chat_hist,
-                                                 on_run=_run_capture)
+                                                 on_run=_run_capture, on_progress=_on_progress)
             _conv_id = _conv
             _chat_hist += [{"role": "human", "content": line}, {"role": "assistant", "content": _ans}]
             # ★ 2026-09-21（Founder: "Hermes 的有分界线、有模型、有成本"）: 每回合都亮出这轮的实情
             print()
-            print(_chat.turn_header(_meta))
-            print(_ans or "（没答上来; 换句话再说一次?）")
+            # Hermes 风格: 标题里带这轮的模型/用量/成本/用时（真值）
+            _u = _meta.get("usage") or {}
+            _bits = [f"⚕ AI Factory OS · {_meta.get('model') or '?'}"]
+            if _u.get("prompt_tokens") is not None:
+                _bits.append(f"tokens {_u.get('prompt_tokens')}↑/{_u.get('completion_tokens')}↓")
+            if _u.get("estimated_cost_usd") is not None:
+                _bits.append(f"${float(_u['estimated_cost_usd']):.6f}")
+            _bits.append(f"{_t3.monotonic() - _t0:.1f}s")
+            print(box(" · ".join(_bits), _ans or "（没答上来; 换句话再说一次?）"))
             # ★ 它念了写命令 ⇒ 明确问一句（并显示**精确**命令, 让你看清要跑什么）
             _pend = list(_meta.get("pending") or [])
             if _pend:
                 _pending_cmd = str(_pend[0])
                 print()
-                print(f"  ⏸ 待你点头: factory {_pending_cmd}")
-                print("     回「好」我就跑; 回「不」就取消（也可以自己敲 /命令 直接跑）")
-            print("  " + "─" * 66)
+                print(box("⏸ 待你点头", f"factory {_pending_cmd}\n回「好」我就跑; 回「不」就取消"
+                                          f"（也可以自己敲 /命令 直接跑）"))
             continue
         argv = line.split()
         # 敲错命令 ⇒ 一句短提示（不再是 argparse 整屏 usage + 长报错 ✗）

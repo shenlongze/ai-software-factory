@@ -2564,6 +2564,46 @@ def test_cli_version_and_typo() -> None:
     assert _check_cli_version_and_typo() == []
 
 
+def _check_hermes_style_ui() -> list[str]:
+    """★ Hermes 风格呈现（Founder: "会话中, 我想要 Hermes 这种风格" —— 分块/标题/过程行/你的话分开）。"""
+    from apps.cli.domains import welcome as W
+
+    bad: list[str] = []
+    b = W.box("⚕ AI Factory OS · deepseek-chat · tokens 1↑/2↓ · $0.000100 · 1.0s",
+              "三行\n中文宽度对齐\n`project show` 不能被拆开")
+    lines = b.splitlines()
+    if not lines[0].startswith("  ╭─ "):
+        bad.append("没有圆角框顶栏（Hermes 风格的分块没做）")
+    if not lines[-1].startswith("  ╰"):
+        bad.append("没有圆角框底栏")
+    widths = {W._dw(ln) for ln in lines}
+    if len(widths) != 1:
+        bad.append(f"框线宽度不齐（实得 {sorted(widths)} —— 中文宽度算错会歪）")
+    if any("project show" in ln and "`" not in ln for ln in lines):
+        bad.append("反引号内容被拆行（命令名断成两半）")
+    pl = W.process_line("factory status", 0.4)
+    if "┊" not in pl or "0.4s" not in pl:
+        bad.append("过程行格式不对（应含 ┊ 与耗时）")
+    # 会话里必须真的用了这三样
+    import inspect as _insp
+
+    src = _insp.getsource(W.run_shell)
+    for need, why in (("box(", "助手回复/你的话没有分块"), ("process_line(", "没有过程行"),
+                      ("on_progress=", "没把「跑了什么命令」接出来")):
+        if need not in src:
+            bad.append(why)
+    cs = _insp.getsource(__import__("apps.cli.domains.chat", fromlist=["x"])._ask_llm2) + \
+        _insp.getsource(__import__("apps.cli.domains.chat", fromlist=["x"]).chat_turn)
+    if "RUN:" not in cs:
+        bad.append("chat 侧没有 RUN: 处理")
+    return bad
+
+
+def test_hermes_style_ui() -> None:
+    """Hermes 风格: 圆角框+标题 · 宽度齐 · 反引号不拆 · 过程行 · 会话里真的用了。"""
+    assert _check_hermes_style_ui() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2606,6 +2646,7 @@ def main() -> int:
     results.append(("口径一致（status/project list/dashboard 项目数同源）", not _check_one_authority_projects(), "；".join(_check_one_authority_projects())))
     results.append(("会话打磨（跨重启记上下文·新会话·clear·念命令说后果）", not _check_chat_memory_and_clear(), "；".join(_check_chat_memory_and_clear())))
     results.append(("版本与错字（-v 直接报版本·敲错给人话不甩 usage）", not _check_cli_version_and_typo(), "；".join(_check_cli_version_and_typo())))
+    results.append(("Hermes 风格呈现（分块·过程行·你的话分开）", not _check_hermes_style_ui(), "；".join(_check_hermes_style_ui())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

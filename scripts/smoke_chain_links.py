@@ -2288,7 +2288,7 @@ def _check_cli_chat() -> list[str]:
             for feed, must_have, must_not in (
                 # 第一句是"消息"（触发它念出写命令 ⇒ 建挂起）, 第二句才是点头/摇头
                 ("帮我备份一下" + _NL + "不" + _NL + "exit" + _NL, ["待你点头", "已取消"], ["备份完成"]),
-                ("帮我备份一下" + _NL + "好" + _NL + "exit" + _NL, ["待你点头", "▶ 执行", "备份完成"], []),
+                ("帮我备份一下" + _NL + "好" + _NL + "exit" + _NL, ["待你点头", "执行 ▸", "备份完成"], []),
             ):
                 _sys = __import__("sys")
                 old_in = _sys.stdin

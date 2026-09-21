@@ -2288,7 +2288,7 @@ def _check_cli_chat() -> list[str]:
             for feed, must_have, must_not in (
                 # 第一句是"消息"（触发它念出写命令 ⇒ 建挂起）, 第二句才是点头/摇头
                 ("帮我备份一下" + _NL + "不" + _NL + "exit" + _NL, ["待你点头", "已取消"], ["备份完成"]),
-                ("帮我备份一下" + _NL + "好" + _NL + "exit" + _NL, ["待你点头", "执行 ▸", "备份完成"], []),
+                ("帮我备份一下" + _NL + "好" + _NL + "exit" + _NL, ["待你点头", "┊ 💻 $ factory backup create", "备份完成"], []),
             ):
                 _sys = __import__("sys")
                 old_in = _sys.stdin
@@ -3028,8 +3028,11 @@ def _check_three_marks() -> list[str]:
         if not getattr(_W, name, ""):
             bad.append(f"缺标记 {name}（三态不可辨 ✗）")
     blk = _W.tool_block("project list", 0.1, "a\nb")
-    if "执行 ▸" not in blk or "│ a" not in blk or "─" not in blk:
-        bad.append("工具块没做成「头行+分隔+缩进」✗")
+    # ★ 照 Hermes: 一行 `┊ 💻 $ …` + 输出**原样缩进**（不用分隔线、不逐行加 │ —— 实测更吵 ✗）
+    if "┊ 💻 $ factory project list" not in blk or "      a" not in blk:
+        bad.append("工具行/缩进不对（照 Hermes: `┊ 💻 $ 命令` + 原样缩进 ✗）")
+    if "─" * 10 in blk or "│ a" in blk:
+        bad.append("工具块还在用分隔线/逐行前缀（Founder: Hermes 那样更清晰 ✗）")
     long_out = "\n".join(f"line{i}" for i in range(60))
     blk2 = _W.tool_block("project list", 0.1, long_out)
     if "还有" not in blk2:

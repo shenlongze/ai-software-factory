@@ -373,24 +373,27 @@ MARK_AI = "助手 ▸"
 
 
 def tool_block(cmd: str, seconds: float | None, output: str, *, max_lines: int = 24) -> str:
-    """工具执行块: 头行标明"谁在跑 + 多久", 下面用 `│` 引住输出, 太长就截断并说明。
+    """工具执行 + 输出（★ 照 Hermes 的样子, 不用框、不用分隔线、不逐行加前缀）:
 
-    ★ Founder: "所有结果堆砌在一起, 看不清楚, 太乱" ⇒ 每块要有**标题 + 分隔 + 缩进**。
+      ┊ 💻 $ factory project list  0.1s
+          ID          Project      Status …
+          ----------  -----------  ------
+          P-019cc935  gym-coach    active
+
+    Hermes 的清晰来自**少装饰**: 一行工具行 + 输出原样缩进; 实测我先前加的分隔线与逐行 `│` 更吵 ✗
+    （Founder: "你自己看一下 Hermes 呈现的信息, 就比较清晰"）。
     """
     _c = str(cmd or "").strip()
     if _c.startswith("factory "):
         _c = _c[len("factory "):]
-    head = f"  {MARK_EXEC} factory {_c}" + (f"   {seconds:.1f}s" if seconds is not None else "")
-    lines = [head, "  " + "─" * 66]
+    head = f"  ┊ 💻 $ factory {_c}" + (f"   {seconds:.1f}s" if seconds is not None else "")
     body = str(output or "").rstrip().splitlines() or ["（没有输出）"]
-    # ★ 自适应: 很长的输出只露个头（大树的 dump 全贴 = 一屏糊住, Founder 说"太乱了" ✗）
     _cap = 10 if len(body) > 40 else max_lines
-    shown = body[:_cap]
-    lines += ["  │ " + ln for ln in shown]
+    shown, out = body[:_cap], [head]
+    out += ["      " + ln for ln in shown]          # 只缩进, 不逐行加 │ ✗
     if len(body) > len(shown):
-        lines.append(f"  │ …（还有 {len(body) - len(shown)} 行; 要看全的可用 /<命令> 自己跑）")
-    lines.append("  " + "─" * 66)
-    return "\n".join(lines)
+        out.append(f"      …（还有 {len(body) - len(shown)} 行; 要看全的可用 /<命令> 自己跑）")
+    return "\n".join(out)
 
 
 def _looks_like_command(line: str, cmds: set[str]) -> bool:
@@ -746,7 +749,6 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                     return
                 print()
                 print(tool_block(cmd, _last_exec.get("s"), _t))
-                print()
 
             _last_exec = {"cmd": "", "s": None}
 

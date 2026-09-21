@@ -2584,14 +2584,32 @@ def _check_hermes_style_ui() -> list[str]:
     pl = W.process_line("factory status", 0.4)
     if "┊" not in pl or "0.4s" not in pl:
         bad.append("过程行格式不对（应含 ┊ 与耗时）")
-    # 会话里必须真的用了这三样
+    # 会话里必须真的用了这些（★ Founder: "这风格我有点接受不了" ⇒ **默认不套框**, 框可选）
     import inspect as _insp
+    import os as _os
 
     src = _insp.getsource(W.run_shell)
-    for need, why in (("box(", "助手回复/你的话没有分块"), ("process_line(", "没有过程行"),
-                      ("on_progress=", "没把「跑了什么命令」接出来")):
+    for need, why in (("_use_box()", "没有「要不要框」的开关（默认必须是简洁版）"),
+                      ("process_line(", "没有过程行"), ("on_progress=", "没把「跑了什么命令」接出来"),
+                      ("_MENU.get(low", "会话里不认编号菜单（横幅承诺过「输入编号直接跑」）")):
         if need not in src:
             bad.append(why)
+    _old_env = _os.environ.get("FACTORY_UI")
+    try:
+        _os.environ.pop("FACTORY_UI", None)
+        if W._use_box():
+            bad.append("默认竟然套框（Founder 明确说接受不了 ⇒ 默认必须简洁版）")
+        _os.environ["FACTORY_UI"] = "box"
+        if not W._use_box():
+            bad.append("FACTORY_UI=box 时不套框（可选开关没生效）")
+    finally:
+        _os.environ.pop("FACTORY_UI", None)
+        if _old_env is not None:
+            _os.environ["FACTORY_UI"] = _old_env
+    # project list 必须带 ID 列（会话/用户都要靠它定位）
+    _main_src = _insp.getsource(__import__("importlib").import_module("apps.cli.main"))
+    if chr(34) + "ID" + chr(34) + ", " + chr(34) + "Project" + chr(34) not in _main_src:
+        bad.append("`project list` 没有 ID 列（会话拿不到 P-xxx ⇒ 查 show/看树都卡住）")
     cs = _insp.getsource(__import__("apps.cli.domains.chat", fromlist=["x"])._ask_llm2) + \
         _insp.getsource(__import__("apps.cli.domains.chat", fromlist=["x"]).chat_turn)
     if "RUN:" not in cs:

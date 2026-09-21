@@ -5138,9 +5138,10 @@ def _print_project(sub: str, r: dict) -> None:
         print("          会话绑定项目后, 理解时会自动检索该项目的文档知识（知识记忆）")
         return
     if sub == "list":
-        rows = [[p["name"], p["status"], p["language"], p["repository"] or "-",
+        # ★ 2026-09-21 加 ID 列（Founder 实测: 会话里拿不到 P-xxx ⇒ project show / 看树都卡住 ✗）
+        rows = [[p.get("id", ""), p["name"], p["status"], p["language"], p["repository"] or "-",
                  ", ".join(p["tech_stack"]) or "-"] for p in r["projects"]]
-        print(_render_table(["Project", "Status", "Language", "Repository", "Tech Stack"], rows))
+        print(_render_table(["ID", "Project", "Status", "Language", "Repository", "Tech Stack"], rows))
         print(f"{r['count']} projects (source: {r['source']})")
     elif sub == "show":
         p = r["project"]

@@ -189,6 +189,14 @@ def _term_width(default: int = 100) -> int:
         return default
 
 
+def _use_box() -> bool:
+    """要不要用圆角框。★ 默认**不用**（Founder: "这风格我有点接受不了啊"）——
+    想看框的: `FACTORY_UI=box factory start`。"""
+    import os as _os
+
+    return str(_os.environ.get("FACTORY_UI", "")).strip().lower() == "box"
+
+
 def box(title: str, text: str, *, width: int = 0) -> str:
     """Hermes 那样把一段话装进圆角框（标题在顶栏, 中文字宽算 2）。"""
     # ★ 宽度必须**三条线一致**（实测踩到: 差 1-2 列 ⇒ 框看着是歪的 ✗）
@@ -384,6 +392,29 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         if low in ("help", "h", "?", "/help", "/h", "/?"):
             print(render_help(""))
             continue
+        # ★ 2026-09-21 修（Founder 实测: 横幅写着"输入编号直接跑", 进来敲 `1` 却被当聊天 ✗）:
+        #   会话里 1-6 / h 就是菜单项 —— 与首屏承诺一致。
+        if low in ("1", "2", "3", "4", "5", "6", "h") and _MENU.get(low if low != "h" else "h"):
+            if low == "h":
+                print(render_help(""))
+                continue
+            _item = _MENU[str(low)]
+            _argv2 = list(_item[1])
+            if _argv2 and _argv2[0] in ("tasktree", "run", "chain"):
+                _extra = input(f"  `factory {' '.join(_argv2)}` 还需要参数（可留空返回）: ").strip()
+                if not _extra:
+                    continue
+                _argv2 += _extra.split()
+            print(f"  ▶ 跑: factory {' '.join(_argv2)}")
+            from apps.cli.main import main as _m4
+
+            try:
+                _m4(["--root", str(ctx.root), *_argv2])
+            except SystemExit:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                print(f"  ⚠ 出错: {type(exc).__name__}: {str(exc)[:120]}")
+            continue
         if low in ("新会话", "new", "new session", "/new"):
             _conv_id, _chat_hist = "", []
             print("  （已开新会话: 上下文清空, 后面说的从零开始记）")
@@ -426,7 +457,8 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             import time as _t3
 
             _t0 = _t3.monotonic()
-            print(box("你", line))
+            if _use_box():
+                print(box("你", line))
             _ans, _conv, _meta = _chat.chat_turn(ctx.root, line, conv_id=_conv_id, history=_chat_hist,
                                                  on_run=_run_capture, on_progress=_on_progress)
             _conv_id = _conv
@@ -441,14 +473,23 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             if _u.get("estimated_cost_usd") is not None:
                 _bits.append(f"${float(_u['estimated_cost_usd']):.6f}")
             _bits.append(f"{_t3.monotonic() - _t0:.1f}s")
-            print(box(" · ".join(_bits), _ans or "（没答上来; 换句话再说一次?）"))
+            _head = " · ".join(_bits)
+            if _use_box():
+                print(box(_head, _ans or "（没答上来; 换句话再说一次?）"))
+            else:
+                print()
+                print("  " + _head)
+                for _ln in (_ans or "（没答上来; 换句话再说一次?）").splitlines():
+                    print("    " + _ln)
+                print()
             # ★ 它念了写命令 ⇒ 明确问一句（并显示**精确**命令, 让你看清要跑什么）
             _pend = list(_meta.get("pending") or [])
             if _pend:
                 _pending_cmd = str(_pend[0])
                 print()
-                print(box("⏸ 待你点头", f"factory {_pending_cmd}\n回「好」我就跑; 回「不」就取消"
-                                          f"（也可以自己敲 /命令 直接跑）"))
+                _pend_txt = (f"⏸ 待你点头: factory {_pending_cmd}   回「好」我就跑; 回「不」就取消"
+                             f"（也可以自己敲 /命令 直接跑）")
+                print(box("待你点头", _pend_txt) if _use_box() else "  " + _pend_txt)
             continue
         argv = line.split()
         # 敲错命令 ⇒ 一句短提示（不再是 argparse 整屏 usage + 长报错 ✗）

@@ -3014,6 +3014,8 @@ def _check_three_marks() -> list[str]:
     blk2 = _W.tool_block("project list", 0.1, long_out)
     if "还有" not in blk2:
         bad.append("超长工具输出没截断（会堆砌满屏 ✗）")
+    if len(blk2.splitlines()) > 16:
+        bad.append("超长输出截得还不够狠（一屏糊住 = Founder 说的「太乱了」✗）")
     if blk.count("factory factory") or "factory factory" in blk2:
         bad.append("块头命令名重复（factory factory ✗）")
     src = _insp.getsource(_W.run_shell)
@@ -3021,6 +3023,8 @@ def _check_three_marks() -> list[str]:
         bad.append("用户的话没有回声标记（用户/执行/系统 分不清 ✗）")
     if "tool_block(" not in src:
         bad.append("会话里没用工具块（结果还是堆砌 ✗）")
+    if "_code_fingerprint" not in src or "代码已更新" not in src:
+        bad.append("没有「窗口跑着旧代码」的提醒（改了却看不到效果 ✗）")
     if "执行{'完成" not in src and "执行{'" not in src:
         bad.append("点头执行后没有结果行（看起来像没执行 ✗ —— Founder 实测踩到）")
     return bad

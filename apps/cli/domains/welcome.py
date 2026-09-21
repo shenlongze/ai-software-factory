@@ -383,7 +383,9 @@ def tool_block(cmd: str, seconds: float | None, output: str, *, max_lines: int =
     head = f"  {MARK_EXEC} factory {_c}" + (f"   {seconds:.1f}s" if seconds is not None else "")
     lines = [head, "  " + "─" * 66]
     body = str(output or "").rstrip().splitlines() or ["（没有输出）"]
-    shown = body[:max_lines]
+    # ★ 自适应: 很长的输出只露个头（大树的 dump 全贴 = 一屏糊住, Founder 说"太乱了" ✗）
+    _cap = 10 if len(body) > 40 else max_lines
+    shown = body[:_cap]
     lines += ["  │ " + ln for ln in shown]
     if len(body) > len(shown):
         lines.append(f"  │ …（还有 {len(body) - len(shown)} 行; 要看全的可用 /<命令> 自己跑）")
@@ -406,6 +408,21 @@ def _looks_like_command(line: str, cmds: set[str]) -> bool:
     import re as _re
 
     return _re.fullmatch(r"[\x20-\x7E]+", s) is not None
+
+
+def _code_fingerprint() -> str:
+    """正在跑的这几个 CLI 模块的指纹（mtime+size）—— 用来发现"代码被改了但窗口还开着" ✗。"""
+    try:
+        parts = []
+        for _rel in ("apps/cli/main.py", "apps/cli/domains/welcome.py", "apps/cli/domains/chat.py",
+                     "apps/cli/markdown.py", "apps/cli/textwidth.py"):
+            _f = Path(__file__).resolve().parents[3] / _rel
+            if _f.exists():
+                st = _f.stat()
+                parts.append(f"{int(st.st_mtime)}:{st.st_size}")
+        return "|".join(parts)
+    except Exception:  # noqa: BLE001 — 拿不到就不提醒（不挡用）
+        return ""
 
 
 def run_shell(root: Path | str, *, banner: bool = True) -> int:
@@ -463,6 +480,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
     _last_input = ""
     _tty = bool(getattr(sys.stdin, "isatty", lambda: False)() and
                 getattr(sys.stdout, "isatty", lambda: False)())
+    _code_fp = _code_fingerprint()      # ★ 用来发现"窗口还跑着旧代码"（Founder 实测踩到 ✗）
     # ★ F2 多轮上下文持久化（跨重启还记得）: 启动时接上**最近一次会话**的最后几条消息。
     try:
         import json as _json
@@ -553,6 +571,12 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 continue
             print("  （那条挂起的命令我先搁着; 你这句话按普通消息处理）")
             _pending_cmd = ""
+        # ★ 2026-09-21（Founder 实测: 会话跑着旧代码 ⇒ "改了怎么还是老样子" ✗）:
+        #   每轮看一眼"脚下的代码"变没变（CLI 几个模块的 mtime+大小）⇒ 变了就提醒重开。
+        _fp = _code_fingerprint()
+        if _code_fp and _fp != _code_fp:
+            print(f"  {MARK_SYS} ⚠ 代码已更新（这个窗口还跑着旧代码）⇒ 建议: 输 exit 再 `factory start`")
+            _code_fp = _fp
         low = line.lower()
         # ★ 三态区分（Founder: "没有像 codex/Hermes 的 cli 那样: 用户/系统/执行 都有区分"）
         #   `你 ▸` = 你说的话;  `执行 ▸` = 它跑了什么;  `系统 ▸` = 平台提示;  `⚕` = 助手回答

@@ -1307,7 +1307,10 @@ def main(argv: list[str] | None = None) -> int:
     _argv = list(sys.argv[1:] if argv is None else argv)
     # ★ 2026-09-21 修（Founder 实测: `factory -v` 竟然进了会话 —— 应该直接报版本 ✗）:
     #   版本是最常被敲的开关之一, 必须**直接答**（`-v` / `-V` / `--version` / `version`）。
-    if any(a in ("-v", "-V", "--version", "version") for a in _argv if not a.startswith("--root")):
+    # ★ 2026-09-21 加宽（Founder 又敲了 `-version` ⇒ 仍然进了会话 ✗）:
+    #   把前导横线都去掉再比 —— `-v` / `-V` / `--v` / `version` / `-version` / `--Version` 都算要版本。
+    #   （没有任何命令叫 v / version, 所以这样放宽不会抢走真命令 ✓）
+    if any(a.lstrip("-").lower() in ("v", "version") for a in _argv if not a.startswith("--root")):
         try:
             from importlib.metadata import version as _ver
 
@@ -1344,6 +1347,14 @@ def main(argv: list[str] | None = None) -> int:
         print("  看全部命令: factory help     ·  看版本: factory -v")
         return 2
     if not any(not a.startswith("-") for a in _argv):
+        # ★ 认不出的开关（如 `-Ver`）⇒ 报"未知开关", 不静默进会话 ✗
+        _known_flags = {"--json", "--root", "-h", "--help"}
+        _bad_flag = next((a for a in _argv
+                          if a.startswith("-") and a.split("=", 1)[0] not in _known_flags), "")
+        if _bad_flag:
+            print(f"未知开关: {_bad_flag}")
+            print("  看版本: factory -v     ·  看全部命令: factory help     ·  启动会话: factory start")
+            return 2
         from .domains.welcome import run_welcome
 
         _root = ""

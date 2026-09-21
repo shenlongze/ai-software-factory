@@ -2513,7 +2513,8 @@ def _check_cli_version_and_typo() -> list[str]:
     from apps.cli import main as _cli
 
     bad: list[str] = []
-    for flag in ("-v", "-V", "--version", "version"):
+    # 各种写法都要算（Founder 敲过 `-version`）; 认不出的开关不许静默进会话
+    for flag in ("-v", "-V", "--v", "--version", "-version", "--Version", "VERSION", "version"):
         buf = _io.StringIO()
         try:
             with _ctx.redirect_stdout(buf):
@@ -2540,6 +2541,21 @@ def _check_cli_version_and_typo() -> list[str]:
         bad.append("敲错命令仍在甩 argparse 整屏 usage")
     if rc2 != 2:
         bad.append(f"敲错命令退出码应为 2（实得 {rc2}）")
+    # 认不出的开关 ⇒ 报"未知开关"（不许静默进会话）
+    for bad_flag in ("-Ver", "-x", "--foo"):
+        buf3 = _io.StringIO()
+        try:
+            with _ctx.redirect_stdout(buf3):
+                rc3 = _cli([bad_flag])
+        except SystemExit:
+            rc3 = 0
+        out3 = buf3.getvalue()
+        if "未知开关" not in out3:
+            bad.append(f"`factory {bad_flag}` 没报「未知开关」（可能静默进了会话 ✗）")
+        if "你想做什么" in out3:
+            bad.append(f"`factory {bad_flag}` 竟然进了会话")
+        if rc3 != 2:
+            bad.append(f"`factory {bad_flag}` 退出码应为 2（实得 {rc3}）")
     return bad
 
 

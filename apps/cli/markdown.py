@@ -49,10 +49,11 @@ def _table(rows: list[list[str]], *, color: bool) -> list[str]:
         for i, c in enumerate(r):
             if i < len(widths):
                 widths[i] = max(widths[i], display_width(c))
-    out = ["  " + "  ".join(pad(h, widths[i]) for i, h in enumerate(head)).rstrip()]
+    # ★ 不 rstrip（否则最后一列的补齐被削掉 ⇒ 各行宽度不一致, 表格看着参差 ✗ 守卫抓到的）
+    out = ["  " + "  ".join(pad(h, widths[i]) for i, h in enumerate(head))]
     out.append("  " + "  ".join("-" * w for w in widths))
     out += ["  " + "  ".join(pad(c, widths[i]) if i < len(widths) else c
-                             for i, c in enumerate(r)).rstrip() for r in rest]
+                             for i, c in enumerate(r)) for r in rest]
     return out
 
 

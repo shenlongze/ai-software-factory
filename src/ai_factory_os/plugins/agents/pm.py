@@ -184,6 +184,14 @@ def enforce_requirement_traces(payload: dict[str, Any], requirement: str) -> dic
     if not items:
         return out
     req = _norm(requirement)
+    # ★ 2026-09-21 修（Founder 实测的重大误杀 ✗✗）: 需求是**在命令行里说的**
+    #   （`factory chain "社区图书借还小程序: …"`）⇒ 会话里没有这句原话 ⇒ 门拿不到参照却照样过滤
+    #   ⇒ 把真需求（扫码借还/查馆藏/逾期提醒…）当"凭空发明"移出 21 条 ✗
+    #   ⇒ 拿不到需求原文（太短/为空）就**不过滤**（宁可放过, 不误杀）, 并如实说明。
+    if len(req) < 12:
+        out["skipped"] = True
+        out["why"] = "拿不到需求原文（会话里没有这句需求）⇒ 本次不过滤（宁可放过, 不误杀）"
+        return out
     raw = payload.get("traces") or payload.get("feature_traces")
     traces = {_norm(k): str(v).strip() for k, v in (raw or {}).items()} if isinstance(raw, dict) else {}
 

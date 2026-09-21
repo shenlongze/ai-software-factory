@@ -2942,6 +2942,50 @@ def test_project_notes() -> None:
     assert _check_project_notes() == []
 
 
+def _check_gate_uses_same_requirement() -> list[str]:
+    """★ 门的参照必须是 **agent 用的那份需求**（Founder 实测重大误杀 ✗✗）。
+
+    病: 需求在命令行给（`factory chain "<需求>"`）⇒ 门却从**会话**里另取一份 ⇒ 取到空 ⇒
+        把真需求（扫码借还/查馆藏/逾期提醒…）当"凭空发明"移出 21 条 ✗。
+    判据: ① 有需求原文 ⇒ 真需求**必须留**, 纯凭空发明**必须移出**
+         ② 拿不到需求原文 ⇒ **不过滤**（skipped, 宁可放过不误杀）
+         ③ CLI 里门必须用 `idea`（agent 那份）, 会话那份只作兜底
+    """
+    import inspect as _insp
+
+    from ai_factory_os.plugins.agents.pm import enforce_requirement_traces as G
+
+    bad: list[str] = []
+    req = "社区图书借还小程序：扫码借还、查馆藏、逾期提醒；管理员上架盘点看榜；接微信登录"
+    pay = {"feature_list": ["扫码借还", "查馆藏", "逾期提醒", "管理员上架", "区块链积分商城"],
+           "mvp_scope": {"in": ["接微信登录"]}}
+    r = G(pay, req)
+    left = [str(x) for x in (pay.get("feature_list") or [])]
+    for must_keep in ("扫码借还", "查馆藏", "逾期提醒", "管理员上架"):
+        if must_keep not in left:
+            bad.append(f"真需求「{must_keep}」被误杀 ✗（这是最严重的回归）")
+    if any("区块链" in x for x in left):
+        bad.append("凭空发明（区块链积分商城, 与需求 0 字重合）没被移出 ✗")
+    # ② 拿不到需求 ⇒ 不过滤
+    pay2 = {"feature_list": ["扫码借还", "随便发明的功能"]}
+    r2 = G(pay2, "")
+    if not r2.get("skipped") or r2.get("moved"):
+        bad.append("拿不到需求原文时没跳过过滤（会误杀 ✗）")
+    if len(pay2.get("feature_list") or []) != 2:
+        bad.append("拿不到需求原文时仍改动了清单（不该动 ✗）")
+    # ③ CLI 用 idea
+    _il = __import__("importlib").import_module("apps.cli.main")
+    src = _insp.getsource(_il)
+    if "_req_for_gate" not in src or "idea or" not in src:
+        bad.append("CLI 里的门没用 agent 那份需求（还会再误杀 ✗）")
+    return bad
+
+
+def test_gate_uses_same_requirement() -> None:
+    """门的参照 = agent 用的需求: 真需求留 · 凭空发明移出 · 拿不到需求就不过滤。"""
+    assert _check_gate_uses_same_requirement() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2990,6 +3034,7 @@ def main() -> int:
     results.append(("输出可读性（status 表格化·中文对齐·-h 求助·框宽上限）", not _check_output_readability(), "；".join(_check_output_readability())))
     results.append(("markdown 渲染（去标记·表格对齐·提示词要求原样贴表）", not _check_markdown_render(), "；".join(_check_markdown_render())))
     results.append(("项目说明（中文说明来自真实需求原话·不编）", not _check_project_notes(), "；".join(_check_project_notes())))
+    results.append(("PRD 门用同一份需求（真需求不误杀·拿不到就不过滤）", not _check_gate_uses_same_requirement(), "；".join(_check_gate_uses_same_requirement())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

@@ -2668,7 +2668,13 @@ def cmd_product_develop(ctx: FactoryContext, args: Any) -> dict:
         from ai_factory_os.plugins.agents.pm import enforce_requirement_traces
         from ai_factory_os.services.work.decomposition import prd_text as _req_text
 
-        _gate = enforce_requirement_traces(meta, _req_text(ctx.root, {"project_id": project_id}))
+        # ★ 2026-09-21 修（Founder 实测的重大误杀 ✗✗）: 门必须用 **agent 用的那份需求**
+        #   （idea —— 可能是命令行给的 `factory chain "<需求>"`）; 以前门自己从会话里另取一份 ⇒
+        #   取到空 ⇒ 把真需求（扫码借还/查馆藏/逾期提醒…）全当"凭空发明"移出 21 条 ✗。会话那份只作兜底。
+        _req_for_gate = str(idea or "").strip() or _req_text(ctx.root, {"project_id": project_id})
+        _gate = enforce_requirement_traces(meta, _req_for_gate)
+        if _gate.get("skipped"):
+            print(f"  ⚠ 需求→PRD 门: {_gate.get('why') or '本次没比对'}")
         _moved = list(_gate.get("moved") or [])
         if _moved:
             print(f"  ⚠ 需求→PRD 门: 移出 {len(_moved)} 条【你需求里找不到依据的】"

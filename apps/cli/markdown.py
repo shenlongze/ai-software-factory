@@ -38,8 +38,24 @@ def _inline(s: str, *, color: bool) -> str:
     return s
 
 
+def _is_sep(line: str) -> bool:
+    """分隔行: 只由 - / : / 空格 / | 组成, 且至少两个 -（md 表的 `|---|---|` 或 `----- -----`）。"""
+    s = str(line or "").strip()
+    if not s or "-" not in s:
+        return False
+    return re.fullmatch(r"[\-: |]+", s) is not None and s.count("-") >= 2
+
+
+def _cells(line: str) -> list[str]:
+    """一行 → 单元格: 优先按 `|` 切; 没有 `|` 就按 2+ 空格切（模型有时这么写 ✗）。"""
+    s = str(line or "").strip()
+    if "|" in s:
+        return [x.strip() for x in s.strip("|").split("|")]
+    return [x.strip() for x in re.split(r"\s{2,}", s) if x.strip()]
+
+
 def _table(rows: list[list[str]], *, color: bool) -> list[str]:
-    """md 表格（| a | b |）→ 平台表格渲染（CJK 对齐）。"""
+    """md 表格 → 平台表格渲染（CJK 对齐）。"""
     body = [r for r in rows if not all(re.fullmatch(r":?-{2,}:?", (c or "-").strip()) for c in r)]
     if not body:
         return []
@@ -66,11 +82,11 @@ def render_md(text: str, *, color: bool | None = None, indent: str = "    ") -> 
     while i < len(lines):
         raw = lines[i]
         # md 表格: 连续的 | ... | 行
+        # ① 标准 md 表: 连续的 | ... | 行
         if raw.strip().startswith("|") and raw.strip().endswith("|"):
             block = []
             while i < len(lines) and lines[i].strip().startswith("|") and lines[i].strip().endswith("|"):
-                cells = [x.strip() for x in lines[i].strip().strip("|").split("|")]
-                block.append(cells)
+                block.append(_cells(lines[i]))
                 i += 1
             out += _table(block, color=c)
             continue

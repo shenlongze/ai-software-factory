@@ -2877,8 +2877,14 @@ def _check_markdown_render() -> list[str]:
         bad.append("提示词没要求「原样贴表格」（会话会只挑两列改写成大白话 ✗）")
     from apps.cli.domains import welcome as _W
 
-    if "render_md" not in _insp.getsource(_W.run_shell):
+    _wsrc = _insp.getsource(_W.run_shell)
+    if "render_md" not in _wsrc:
         bad.append("会话回复没走 markdown 渲染")
+    # ★ Founder: "不对, 表格不对" ⇒ 工具输出**原样直通**给人看（模型重画会把列画散 ✗）, 它只补解读
+    if "_on_output" not in _wsrc or "on_output=_on_output" not in _wsrc:
+        bad.append("工具输出没直通给人看（模型重画表格 ⇒ 列会散 ✗）")
+    if "不要再重画表格" not in _src:
+        bad.append("提示词没禁止模型重画表格（它会重画 ✗）")
     return bad
 
 

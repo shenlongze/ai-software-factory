@@ -123,8 +123,8 @@ def _system_prompt(root: Path | str) -> str:
         "2 需要数据时, **先**输出一行或多行 `RUN: <命令>`, 我会执行并把结果回给你, 然后你再作答。\n"
         "3 老板在提'要做什么'时, 不要自己动手; 回一句'我理解成…, 要我开始吗?'并给出建议的第一条命令。\n"
         "4 不许编数据; 查不到就说查不到。\n"
-        "4b ★ 工具返回的是**表格/清单**时, 把它的内容**原样贴出来**（表格就贴表格, 别只挑两列改写成大白话 ✗）;\n"
-        "   老板要看的是**数据本身**（状态/语言/仓库/进度…）, 需要解释的再补一句。\n"
+        "4b ★ 工具的输出**会直接显示给老板**（原样）。所以: 你**不要再重画表格、也不要复述数据** ✗\n"
+        "   —— 只补 1-3 句解读/建议（哪条要紧、下一步可以看什么）。\n"
         "5 你**念出来**的写命令必须写法正确（这几个最常用, 照抄）:\n"
         "    backup create            备份数据\n"
         "    create company --name \"名字\" --template solo|software_company   建公司\n"
@@ -142,7 +142,8 @@ def _system_prompt(root: Path | str) -> str:
 
 
 def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[dict[str, str]] | None = None,
-              on_run: Any = None, on_progress: Any = None) -> tuple[str, str, dict[str, Any]]:
+              on_run: Any = None, on_progress: Any = None,
+              on_output: Any = None) -> tuple[str, str, dict[str, Any]]:
     """一轮会话: 返回 (回答文本, 会话 id)。
 
     on_run(argv) 用于"把这行 RUN 命令真的跑掉并把结果拿回来"——由调用方注入（CLI 里 = 跑命令）。
@@ -196,8 +197,13 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
 
                 _s = _t2.monotonic()
                 _out = on_run(argv)
+                _cmd_txt = "factory " + " ".join(argv)
                 if on_progress is not None:      # Hermes 那样的过程行
-                    on_progress("factory " + " ".join(argv), _t2.monotonic() - _s)
+                    on_progress(_cmd_txt, _t2.monotonic() - _s)
+                # ★ 2026-09-21（Founder: "不对, 表格不对" —— 模型重画表格把列画散 ✗）:
+                #   工具输出**原样直接给老板看**（平台自己排的表就是对的）; 模型只补解读, 别重画 ✓
+                if on_output is not None:
+                    on_output(_cmd_txt, str(_out))
                 results.append(f"`{r}` → " + str(_out)[:1500])
             except Exception as exc:  # noqa: BLE001 — 查询失败不该打断对话
                 results.append(f"`{r}` → 出错: {type(exc).__name__}: {str(exc)[:100]}")

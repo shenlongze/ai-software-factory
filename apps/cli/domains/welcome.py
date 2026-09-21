@@ -667,6 +667,14 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             # ── 会话路径
             from apps.cli.domains import chat as _chat
 
+            def _on_output(cmd: str, text: str) -> None:
+                """★ 工具输出**原样**给老板看（平台排好的表就是对的; 模型重画会把列画散 ✗）。"""
+                _txt = str(text or "").rstrip()   # ★ 只去尾部: 头行的前导空格是表格对齐的一部分 ✗
+                if not _txt:
+                    return
+                for _ln in _txt.splitlines()[:40]:
+                    print("    " + _ln)
+
             def _on_progress(cmd: str, seconds: float) -> None:
                 # ★ 忙指示那行先清掉再打过程行（Founder 实测: 两个黏在一行 ✗）
                 if _first_proc[0] and _busy_txt:
@@ -699,7 +707,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             try:
                 _ans, _conv, _meta = _chat.chat_turn(ctx.root, line, conv_id=_conv_id,
                                                      history=_chat_hist, on_run=_run_capture,
-                                                     on_progress=_on_progress)
+                                                     on_progress=_on_progress, on_output=_on_output)
             except KeyboardInterrupt:                      # ★ 可打断: 断的是**这一轮**, 会话还在
                 print(_busy_clear(_tty) + "  （已中断这一轮; 会话还在 —— 接着说, 或输 /retry）")
                 continue

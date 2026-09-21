@@ -2039,7 +2039,7 @@ def _check_cli_welcome() -> list[str]:
         bad.append(f"空参退出码该是 0, 实得 {rc}")
     if "required: command" in out or "usage:" in out:
         bad.append("空参还是甩 argparse 英文报错（等于进不去）")
-    for kw in ("AI Factory OS", "你想做什么", "经验", "help"):
+    for kw in ("AI Factory OS", "直接说人话", "经验", "help"):
         if kw not in out:
             bad.append(f"首屏缺「{kw}」")
     # 非终端不该挂住: 上面 main([]) 在非 TTY 下已跑完 ⇒ 若它读 stdin 会 EOFError/挂住 ⇒ 视为坏
@@ -2343,8 +2343,12 @@ def _check_cli_chat() -> list[str]:
         finally:
             sys_.stdin = _old_in
         _got = _b.getvalue()
-        if "（会话回答）" not in _got:
-            bad.append("裸词 `status` 没走会话（会与自然语言冲突 ✗）")
+        # ★ 2026-09-21 更新（Founder: "没有真正明白我的意图啊"）:
+        #   裸的**命令名**要**直接跑**（不再绕一圈转述成人话 ✗）; 像句子的才走会话。
+        if "工厂状态" not in _got:
+            bad.append("裸词 `status` 没直接跑（Founder 要的是说了命令就跑 ✗）")
+        if "（会话回答）" in _got:
+            bad.append("裸命令被拿去聊天了（绕一圈 ✗）")
     finally:
         C._provider = _real2
     if C.is_readonly(["run", "--plan", "P"]):

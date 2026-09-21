@@ -131,12 +131,15 @@ def render_welcome(root: Path | str) -> str:
         f"  你的数据（{root}）:",
         f"    项目 {d['projects']} · 任务树 {d['trees']} · 叶 {d['done']}/{d['leaves']} 完成 · 经验 {d['exp']} 条",
         "",
-        "  你想做什么?（输入编号直接跑；q 退出）",
+        # ★ 2026-09-21 首屏压短（Founder: "没有真正明白我的意图" —— 入口是**会话**, 菜单只是快捷）:
+        #   一句话讲清怎么用 + 一行快捷编号; 不再一大块提示占屏。
+        "  直接说人话就行（例:「我有哪些项目」「把 gym-coach 的任务跑起来」）",
+        "  快捷编号: " + " · ".join(f"{k} {v[0].split('（')[0]}" for k, v in _MENU.items())
+        + " · h 帮助",
+        "  命令是快捷方式（带 / 或直接敲命令名）; 会改数据的只念给你, 你点头才跑",
     ]
-    for k, (label, _argv) in _MENU.items():
-        lines.append(f"    {k}  {label}")
+    # （旧的 6 行菜单已并入上面那行「快捷编号」—— 入口是会话, 菜单只是快捷 ✓）
     lines += [
-        "    h  中文帮助中心（按角色: 老板 / 产品 / 开发 / 运维）",
         "",
         "  提示: 任何命令加 -h 看用法; `factory help` 打开帮助中心;",
         "        第一次用不会碰坏东西 —— 所有命令都是幂等的（不自建就先自建目录）。",
@@ -360,6 +363,23 @@ def _ask_permission(cmd: str, *, tty: bool, always: set[str]) -> str:
         print(f"     ✓ 记住了: 本会话内 {key} 不再问")
         return "always"
     return "once" if ans == "1" else "deny"
+
+
+def _looks_like_command(line: str, cmds: set[str]) -> bool:
+    """这句话是不是"就是一条命令"（而不是在跟我说话）。
+
+    跑命令: `project list` · `tasktree todo PLAN-x` · `status --json`
+    走会话: `status 是什么意思?` · `我有哪些项目` · `帮我看看那棵树`
+    判据: 首词命中命令名 + 全行**只有 ASCII 词/参数**（没有中文/问号/句号这些"说话的痕迹"）。
+    """
+    s = str(line or "").strip()
+    if not s or not cmds:
+        return False
+    if s.split()[0] not in cmds:
+        return False
+    import re as _re
+
+    return _re.fullmatch(r"[\x20-\x7E]+", s) is not None
 
 
 def run_shell(root: Path | str, *, banner: bool = True) -> int:
@@ -639,6 +659,10 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             _is_cmd = bool(line)
             if not line:
                 continue
+        elif _looks_like_command(line, _cmds):
+            # ★ 2026-09-21（Founder: "没有真正明白我的意图啊" —— 敲 `project list` 却绕一圈转述成人话 ✗）:
+            #   首词是命令名 且 **整行就是那条命令** ⇒ 直接执行; 像句子/问题的才走会话 ✓
+            _is_cmd = True
         if not _is_cmd:
             # ── 会话路径
             from apps.cli.domains import chat as _chat

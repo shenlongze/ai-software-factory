@@ -4736,26 +4736,24 @@ def _dispatch_demo(ctx: FactoryContext, args: Any) -> dict:
 def _render_table(
     headers: list[str], rows: list[list[str]], *, empty: str | None = "  (无记录)",
 ) -> str:
-    """渲染对齐表格; 空表 → empty 占位 (None 则仍渲染表头, 供恒定表头场景)。"""
-    if not rows:
-        if empty is None:
-            widths = [len(h) for h in headers]
-            return "\n".join([
-                "  " + "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers)),
-                "  " + "  ".join("-" * widths[i] for i in range(len(headers))),
-            ])
+    """渲染对齐表格（★ 用**显示宽度**: 中文/全角算 2 列 —— 以前用 len() ⇒ 中文列全歪 ✗）。
+
+    空表 → empty 占位（None 则仍渲染表头, 供恒定表头场景）。
+    """
+    from apps.cli.textwidth import display_width, pad
+
+    if not rows and empty is not None:
         return empty
-    widths = [len(h) for h in headers]
+    widths = [display_width(h) for h in headers]
     for row in rows:
         for i, cell in enumerate(row):
-            widths[i] = max(widths[i], len(str(cell)))
+            widths[i] = max(widths[i], display_width(cell))
     lines = [
-        "  " + "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers)),
+        "  " + "  ".join(pad(h, widths[i]) for i, h in enumerate(headers)),
         "  " + "  ".join("-" * widths[i] for i in range(len(headers))),
     ]
-    lines += ["  " + "  ".join(str(c).ljust(widths[i]) for i, c in enumerate(row)) for row in rows]
+    lines += ["  " + "  ".join(pad(c, widths[i]) for i, c in enumerate(row)) for row in rows]
     return "\n".join(lines)
-
 
 def _print_init(r: dict) -> None:
     print("✔ 初始化完成 (幂等)")
@@ -4816,36 +4814,47 @@ def _print_event_logs(r: dict) -> None:
 
 
 def _print_status(r: dict) -> None:
-    print(f"✔ 工厂状态 (root: {r['root']})")
-    print(f"  projects  {r['projects_count']}  {r['projects']}")
-    print(f"  tasks     {r['tasks_count']}  {r['tasks_by_status']}")
-    # ★ 2026-09-21: 这行是 **agent 注册表**（插件域）, 与"舰队 N 人"(agents.json) 不是一回事 ⇒ 标签说清
-    print(f"  agent注册表 {r['agents_count']}  {r['agents']}")
-    print(f"  events    {r['events_count']}")
-    # ★ 开发任务（任务树 = 执行的真实账本）+ 舰队 —— 原来这里看不到, 工厂干着活却显示 0
-    dt = r.get("dev_tasks") or {}
-    if dt:
-        print(f"  开发任务  {dt.get('done', 0)}/{dt.get('leaves', 0)} 叶（{dt.get('percent', 0)}%）"
-              f" · {dt.get('plans', 0)} 个计划 · by_status {dt.get('by_status') or '{}'}")
-        print(f"            ↑ 来源: {dt.get('source')}")
-        # ★ 粒度 + 完成成色（都要人看一眼的两类；见 granularity.py / 卡点 3）
-        _extra = []
-        if dt.get("needs_split"):
-            _extra.append(f"⚠ {dt['needs_split']} 个叶可能没拆到位"
-                          "（判据: 一句话写不出验收）⇒ tasktree expand --deep")
-        if dt.get("needs_decision"):
-            _extra.append(f"⚠ {dt['needs_decision']} 条执行体停手待你裁决 ⇒ 看 status --json 里的 "
-                          "decision_reason（这些不算完成）")
-        if dt.get("verify_needed"):
-            _extra.append(f"⚠ {dt['verify_needed']} 个'完成'待核"
-                          "（无产出证据, 或**产出未提交**留在工作区 —— 逐条看 tasktree show 的 note）")
-        if dt.get("retrying"):
-            _extra.append(f"{dt['retrying']} 条失败重试中")
-        for x in _extra:
-            print(f"            {x}")
-    if r.get("fleet_count"):
-        print(f"  舰队      {r['fleet_count']} 人（agents.json; 与 dashboard 同一份）")
-
+    """`factory status` 输出 —— ★ 2026-09-21 改成表格 + 列表（Founder: 原来的输出不直观,
+    用 table / 有序 / 无序列表会好很多；原样是 `tasks 0 {}`、`agent注册表 4 [...]` 这种机器味 ✗）。
+    """
+    print(f"  工厂状态  {r.get('root') or ''}".rstrip())
+    print()
+    _projects = [str(x) for x in (r.get("projects") or [])]
+    _tt = r.get("dev_tasks") or r.get("tasks_tree") or {}
+    _rows = [
+        ["项目", str(len(_projects)), " · ".join(_projects[:6]) or "-"],
+        ["任务树", str(_tt.get("plans") or "-"), "执行的真实账本（见下）"],
+        ["事件", str(r.get("events_count") or "-"), "审计事件总数"],
+        ["舰队", f"{r.get('fleet_count') or '-'} 人", "agents.json · 编制成员"],
+        ["agent 注册表", str(r.get("agents_count") or 0), "插件域（≠ 舰队）"],
+    ]
+    print(_render_table(["项", "数值", "说明"], _rows))
+    if _tt:
+        print()
+        print("  开发任务（任务树 = 执行的真实账本）")
+        print(f"    · 总叶数   {_tt.get('leaves', 0)}")
+        print(f"    · 已完成   {_tt.get('done', 0)}（{_tt.get('percent', 0)}%）")
+        _bs = _tt.get("by_status") or {}
+        if isinstance(_bs, dict) and _bs:
+            print("    · 按状态")
+            for _k, _v in sorted(_bs.items(), key=lambda kv: -int(kv[1] or 0)):
+                print(f"        - {_k:<10} {_v}")
+    _warn = []
+    if _tt.get("needs_split"):
+        _warn.append(f"{_tt['needs_split']} 个叶可能没拆到位（一句话写不出验收）⇒ /tasktree expand --deep")
+    if _tt.get("verify_needed"):
+        _warn.append(f"{_tt['verify_needed']} 个'完成'待核（无产出证据, 或产出未提交）⇒ /tasktree show <PLAN> 看 note")
+    if _tt.get("needs_decision"):
+        _warn.append(f"{_tt['needs_decision']} 条执行体停手待你裁决 ⇒ status --json 的 decision_reason")
+    if _warn:
+        print()
+        print("  ⚠ 需要你留意的")
+        for _w in _warn:
+            print(f"    - {_w}")
+    _ft = r.get("fleet_count")
+    if _ft:
+        print()
+        print(f"  正在干活: {r.get('agents_running') or 0} 人（舰队 {_ft} 人; 其余待命）")
 
 def _print_validate(r: dict) -> None:
     print(r["report_text"])

@@ -94,8 +94,10 @@ def _data_overview(root: Path | str) -> dict[str, str]:
 
 
 def _dw(s: object) -> int:
-    """显示宽度（CJK 算 2 列）—— 中文框线对齐必须用它, 否则右边框歪。"""
-    return sum(2 if ord(ch) > 0x2E80 else 1 for ch in str(s))
+    """显示宽度（委托 apps.cli.textwidth —— 只留一套 ✗ 不再各写一份）。"""
+    from apps.cli.textwidth import display_width
+
+    return display_width(s)
 
 
 def _pad(s: object, width: int) -> str:
@@ -231,7 +233,8 @@ def box(title: str, text: str, *, width: int = 0) -> str:
     # ★ 宽度必须**三条线一致**（实测踩到: 差 1-2 列 ⇒ 框看着是歪的 ✗）
     #   三条线各自的目标宽度都是 W: 顶 `  ╭─ T ` + dash + `╮`; 内容 `  │ ` + 文本 + space + `│`;
     #   底 `  ╰` + dash + `╯`（_dw 按显示宽度算, 中文=2）
-    w = width or _term_width()
+    # ★ 宽度收敛到 88（铺满 120 列的框看着累 —— Founder: "呈现形式不是很好, 不直观"）
+    w = width or min(_term_width(), 88)
     head = f"  ╭─ {title} "
     lines = [head + "─" * max(0, w - _dw(head) - 1) + "╮"]
     for raw in (text or "").splitlines() or [""]:
@@ -321,6 +324,7 @@ SESSION_COMMANDS: dict[str, str] = {
     "/model": "当前供应商与模型",
     "/tools": "它都能跑哪些命令（只读自动 / 写要你点头）",
     "/clear": "清屏",
+    "/commands": "常用命令总表（表格: 命令 / 作用 / 是否改数据）",
 }
 
 
@@ -497,11 +501,32 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             continue
         from apps.cli.domains import chat as _chat0
 
-        if low == "/help":
-            print("  会话命令（斜杠开头）:")
-            for _k, _v in SESSION_COMMANDS.items():
-                print(f"    {_k:<10} {_v}")
-            print("  角色化帮助中心: 输 help  ·  全部命令: factory --help")
+        if low in ("/help", "-h", "--help", "-help", "?"):   # ★ 裸 -h 也算求助（Founder 敲过 ✗）
+            from apps.cli.main import _render_table as _rt
+
+            _rows = [[_k, _v, "—"] for _k, _v in SESSION_COMMANDS.items()]
+            print("  会话命令（斜杠开头）")
+            print(_rt(["命令", "作用", "改数据"], _rows))
+            print("  常用 command 总表: 输 /commands")
+            continue
+        if low in ("/commands", "-c", "--commands"):
+            from apps.cli.main import _render_table as _rt2
+
+            _rows2 = [
+                ["/status", "工厂总览（项目/任务树/叶/事件/舰队）", "—"],
+                ["/project list", "项目清单（带 ID）", "—"],
+                ["/tasktree todo <PLAN 或 项目名>", "看一棵树的逐叶清单与进度", "—"],
+                ["/console dashboard", "七域看板", "—"],
+                ["/metrics", "指标（执行/工作流/验证/失败原因）", "—"],
+                ["/intelligence experience list", "经验库（学习自治攒的）", "—"],
+                ["/backup create", "备份数据目录", "★"],
+                ["/chain 「我要做…」 --project P-x", "提需求: 需求→PRD→设计→任务树", "★"],
+                ["/tasktree confirm <PLAN>", "确认一棵树（确认后才允许执行）", "★"],
+                ["/run --plan <PLAN> --project P-x --limit 3", "派活 + 真执行（会在仓库写码提交）", "★"],
+                ["/recover --plan <PLAN>", "中断恢复（把卡住的叶交回）", "★"],
+            ]
+            print("  常用命令（带 / 执行; 不带 / 就是跟我说人话）")
+            print(_rt2(["命令", "作用", "改数据"], _rows2))
             continue
         if low in ("/new", "/clear", "/cost", "/model", "/tools", "/stop", "/retry", "/sessions"):
             if low == "/clear":
@@ -619,6 +644,11 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             from apps.cli.domains import chat as _chat
 
             def _on_progress(cmd: str, seconds: float) -> None:
+                # ★ 忙指示那行先清掉再打过程行（Founder 实测: 两个黏在一行 ✗）
+                if _first_proc[0] and _busy_txt:
+                    print(_busy_clear(_tty) + process_line(cmd, seconds))
+                    _first_proc[0] = False
+                    return
                 print(process_line(cmd, seconds))
 
             def _run_capture(argv: list[str]) -> str:
@@ -639,6 +669,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
 
             _t0 = _t3.monotonic()
             _busy_txt = _busy("正在查", tty=_tty)          # ★ 忙指示（不再黑屏干等）
+            _first_proc = [True]                            # 过程行: 忙指示那行先清掉再打
             if _busy_txt:
                 print(_busy_txt, end="", flush=True)
             try:

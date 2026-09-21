@@ -2772,6 +2772,76 @@ def test_cli_essence() -> None:
     assert _check_cli_essence() == []
 
 
+def _check_output_readability() -> list[str]:
+    """★ 输出可读性（Founder: "输出的方式…呈现形式不是很好, 不直观, 使用table或者有序或者无序列表"）。
+
+    判据: ① `status` 用表格 + 列表, 不再有 `tasks 0 {}` / `agent注册表 4 [...]` 这种机器味 ✗
+         ② 表格按**显示宽度**对齐（中文算 2 列 —— 以前 len() ⇒ 列全歪 ✗）
+         ③ `-h` 裸敲也当求助（不进聊天 ✗）; ④ `/commands` 给命令总表（命令/作用/改数据）
+         ⑤ 助手回复框宽度 ≤ 88（铺满 120 列看着累 ✗）
+    """
+    import contextlib as _c
+    import inspect as _insp
+    import io as _io
+
+    from apps.cli import main as _cli
+    from apps.cli import textwidth as _TW
+    from apps.cli.domains import welcome as _W
+
+    bad: list[str] = []
+    # ① status 的输出
+    buf = _io.StringIO()
+    try:
+        with _c.redirect_stdout(buf):
+            _cli(["status"])
+    except SystemExit:
+        pass
+    out = buf.getvalue()
+    if "项" not in out or "数值" not in out:
+        bad.append("status 没输出表格（还是老样子）")
+    if "{}" in out or "by_status {" in out or "agent注册表 4  [" in out:
+        bad.append("status 里还有机器味输出（{} / [...] 这种）")
+    if "· 总叶数" not in out:
+        bad.append("status 里开发任务没按列表列出")
+    # ② 表格中文对齐（显示宽度）
+    tbl = _cli.__dict__  # noqa: F841 — 仅为可读性: 直接调工具
+    from apps.cli.main import _render_table
+
+    lines = _render_table(["项", "数值"], [["项目", "3"], ["agent 注册表", "4"]]).splitlines()
+    widths = {_TW.display_width(x) for x in lines}
+    if len(widths) != 1:
+        bad.append(f"表格中文没对齐（行宽 {sorted(widths)}）")
+    if _TW.display_width("中文") != 4:
+        bad.append("显示宽度函数不对（中文应为 2 列）")
+    # ③ -h 当求助 · ④ /commands 表格
+    for feed, need in (("-h" + chr(10) + "exit" + chr(10), "会话命令"),
+                       ("/commands" + chr(10) + "exit" + chr(10), "改数据")):
+        __import__("sys").stdin = _io.StringIO(feed)
+        b2 = _io.StringIO()
+        try:
+            with _c.redirect_stdout(b2):
+                _cli(["start"])
+        except SystemExit:
+            pass
+        if need not in b2.getvalue():
+            bad.append(f"输 {feed.splitlines()[0]!r} 没出该出的内容（缺 {need}）")
+    # ⑤ 框宽 ≤ 88
+    _b = _W.box("⚕ 标题", "正文" * 60)
+    _wide = max(_TW.display_width(x) for x in _b.splitlines())
+    if _wide > 90:
+        bad.append(f"回复框太宽（{_wide} 列; 上限 88）")
+    # 只留一套宽度实现
+    _wsrc = _insp.getsource(_W._dw)
+    if "textwidth" not in _wsrc:
+        bad.append("welcome._dw 没复用 textwidth（宽度实现有两套 ✗）")
+    return bad
+
+
+def test_output_readability() -> None:
+    """输出可读性: status 表格化 · 中文对齐 · -h 当求助 · /commands 总表 · 框宽 ≤88。"""
+    assert _check_output_readability() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2817,6 +2887,7 @@ def main() -> int:
     results.append(("Hermes 风格呈现（分块·过程行·你的话分开）", not _check_hermes_style_ui(), "；".join(_check_hermes_style_ui())))
     results.append(("列得出来就查得到（项目名/片段 show·看树认项目名）", not _check_name_everywhere(), "；".join(_check_name_everywhere())))
     results.append(("CLI 精髓（会话命令/忙指示/可打断/三档权限/多行/会话可挑）", not _check_cli_essence(), "；".join(_check_cli_essence())))
+    results.append(("输出可读性（status 表格化·中文对齐·-h 求助·框宽上限）", not _check_output_readability(), "；".join(_check_output_readability())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

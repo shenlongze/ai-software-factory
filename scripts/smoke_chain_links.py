@@ -2626,7 +2626,7 @@ def _check_hermes_style_ui() -> list[str]:
 
     src = _insp.getsource(W.run_shell)
     for need, why in (("_use_box()", "没有「要不要框」的开关（默认必须是简洁版）"),
-                      ("process_line(", "没有过程行"), ("on_progress=", "没把「跑了什么命令」接出来"),
+                      ("tool_block(", "工具输出没有成块（过程行改由块头承担）"), ("on_progress=", "没把「跑了什么命令」接出来"),
                       ("_MENU.get(low", "会话里不认编号菜单（横幅承诺过「输入编号直接跑」）")):
         if need not in src:
             bad.append(why)

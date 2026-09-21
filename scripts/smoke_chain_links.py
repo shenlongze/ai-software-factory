@@ -2873,8 +2873,8 @@ def _check_markdown_render() -> list[str]:
     from apps.cli.domains import chat as _C
 
     _src = _insp.getsource(_C)
-    if "原样贴出来" not in _src:
-        bad.append("提示词没要求「原样贴表格」（会话会只挑两列改写成大白话 ✗）")
+    if "不要再重画表格" not in _src and "原样贴出来" not in _src:
+        bad.append("提示词没约束模型的表格输出（会重画/改写成大白话 ✗）")
     from apps.cli.domains import welcome as _W
 
     _wsrc = _insp.getsource(_W.run_shell)

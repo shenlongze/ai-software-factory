@@ -695,7 +695,8 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                         _m2(["--root", str(ctx.root), *[str(a) for a in argv]])
                 except SystemExit:
                     pass
-                return buf.getvalue().strip() or "（无输出）"
+                _v = buf.getvalue().rstrip()      # ★ 只去尾部: 头行的前导空格是表格对齐的一部分 ✗
+                return _v or "（无输出）"
 
             import time as _t3
 
@@ -750,9 +751,14 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             if _pend:
                 _pending_cmd = str(_pend[0])
                 print()
-                print(f"  ⏸ 待你点头: factory {_pending_cmd}")
-                print("     1) 允许这一次   2) 本会话总是允许（不再问）   3) 拒绝"
-                      "   · 也可以自己敲 /命令 直接跑")
+                print("  ⏸ 待你点头（这条会改数据）")
+                print()
+                print(f"     命令: factory {_pending_cmd}")
+                print()
+                print("     1) 允许这一次")
+                print("     2) 本会话总是允许（不再问这类）")
+                print("     3) 拒绝")
+                print("     （也可以自己敲 /命令 直接跑）")
             continue
         argv = line.split()
         # `/命令` 写错了 ⇒ 一句短提示（不再是 argparse 整屏 usage ✗）

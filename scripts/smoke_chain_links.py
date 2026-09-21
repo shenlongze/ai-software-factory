@@ -2829,6 +2829,13 @@ def _check_output_readability() -> list[str]:
             pass
         if need not in b2.getvalue():
             bad.append(f"输 {feed.splitlines()[0]!r} 没出该出的内容（缺 {need}）")
+    # ★ 2026-09-21（Founder: "这里应该统一采用列表的形式, 不能在同一行"）:
+    #   ① 待你点头 = 列表（三档各占一行）; ② 工具输出不能被 strip 吃掉头行前导空格（表格歪 ✗）
+    _wsrc2 = _insp.getsource(_W.run_shell)
+    for _need, _why in (("1) 允许这一次", "待你点头没做成列表（挤在同一行 ✗）"),
+                        ("rstrip()", "工具输出对整段 strip（头行前导空格被吃 ⇒ 表格歪 ✗）")):
+        if _need not in _wsrc2:
+            bad.append(_why)
     # ⑤ 框宽 ≤ 88
     _b = _W.box("⚕ 标题", "正文" * 60)
     _wide = max(_TW.display_width(x) for x in _b.splitlines())

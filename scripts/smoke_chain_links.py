@@ -2351,6 +2351,26 @@ def _check_cli_chat() -> list[str]:
             bad.append("裸命令被拿去聊天了（绕一圈 ✗）")
     finally:
         C._provider = _real2
+    # ★ 2026-09-21（Founder: "这么多, 是用户要看的么"）: ① 缺必填参数的命令**不跑**（不许把 argparse 错端给他）
+    #   ② 跑废/空的调用**不展示** ③ 提示词必须把"必填参数"写清（否则模型瞎猜 ✗）
+    import inspect as _insp
+
+    from apps.cli.domains import chat as _C2
+
+    if _C2._has_required_args(["tasktree", "todo"]):
+        bad.append("缺必填参数的命令没被判出来（会空跑并把 argparse 错给老板看 ✗）")
+    if not _C2._has_required_args(["tasktree", "todo", "PLAN-x"]):
+        bad.append("带参数的命令被误判为缺参数（会不跑 ✗）")
+    if not _C2._has_required_args(["status"]):
+        bad.append("无需参数的命令被误判（会不跑 ✗）")
+    _usages = " ".join(_C2.READONLY_USAGE.values())
+    if "必填" not in _usages:
+        bad.append("命令用法里没标必填参数（模型只能瞎猜 ⇒ 空跑 ✗）")
+    _csrc = _insp.getsource(_C2.chat_turn)
+    if "_has_required_args" not in _csrc:
+        bad.append("会话没在跑之前检查必填参数（空跑会把报错端给老板 ✗）")
+    if "_junk" not in _csrc:
+        bad.append("跑废/空的调用没被挡在展示之外（老板会看到 usage 报错 ✗）")
     if C.is_readonly(["run", "--plan", "P"]):
         bad.append("会改数据的命令被当成只读（会话里会自动跑 ✗）")
     if not C.is_readonly(["status"]):

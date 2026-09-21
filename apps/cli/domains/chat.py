@@ -16,6 +16,34 @@ from pathlib import Path
 from typing import Any
 
 #: 会话里可以**自动执行**的只读命令（白名单; 想加就加只读的, 别加会写数据的 ✗）
+#: 每条只读命令的**用法**（必填参数写清楚 —— Founder 实测: 模型不知道必填 ⇒ 空跑报错给他看 ✗）
+READONLY_USAGE: dict[str, str] = {
+    "status": "status",
+    "metrics": "metrics",
+    "dashboard": "dashboard",
+    "kanban": "kanban",
+    "console dashboard": "console dashboard",
+    "console approvals": "console approvals",
+    "project list": "project list",
+    "project show": "project show <项目名或 id>          ← 必填",
+    "tasktree list": "tasktree list",
+    "tasktree show": "tasktree show <PLAN-id 或 项目名>   ← 必填",
+    "tasktree todo": "tasktree todo <PLAN-id 或 项目名>   ← 必填",
+    "tasktree flow": "tasktree flow <PLAN-id 或 项目名>",
+    "tasktree priority": "tasktree priority <PLAN-id 或 项目名>",
+    "agent list": "agent list",
+    "intelligence experience list": "intelligence experience list",
+    "intelligence recommend": "intelligence recommend",
+    "provider list": "provider list",
+    "memory list": "memory list",
+    "plugin list": "plugin list",
+    "execution list": "execution list",
+    "event list": "event list",
+    "history": "history",
+    "run-status": "run-status",
+}
+
+
 READONLY_PREFIXES: tuple[str, ...] = (
     "status", "metrics", "dashboard", "kanban", "console dashboard", "console approvals",
     "project list", "project show", "tasktree show", "tasktree todo", "tasktree flow",
@@ -111,15 +139,31 @@ def turn_header(meta: dict[str, Any], *, width: int = 66) -> str:
     return "  " + "─" * width + ("\n  " + info if info else "")
 
 
+def _has_required_args(argv: list[str]) -> bool:
+    """这条只读命令的参数够不够（用法里带 `<…>` 的必须有值）—— 不够就**别跑** ✗。
+
+    Founder 实测: 模型空跑 `tasktree todo` / `project show` ⇒ argparse 报错直接端给老板看 ✗。
+    """
+    cmd = " ".join(argv).strip()
+    for usage, need in ((u, "<" in u) for u in READONLY_USAGE.values()):
+        if not need:
+            continue
+        head = usage.split("<")[0].strip()
+        if cmd == head or cmd.startswith(head + " "):
+            rest = cmd[len(head):].strip()
+            return bool(rest)
+    return True
+
+
 def _system_prompt(root: Path | str) -> str:
     cmds = "\n".join(f"  - {p}" for p in READONLY_PREFIXES[:14])
     return (
         "你是 AI Factory OS 的终端助手, 正在跟老板对话。\n"
         f"当前数据: {_snapshot(root)}\n"
-        "你能自己跑这些【只读】命令来查数据（一次最多 2 条）:\n"
+        "你能自己跑这些【只读】命令（一次最多 2 条）; **带 ← 必填 的那几个必须给参数**, 缺参数别跑 ✗:\n"
         f"{cmds}\n\n"
         "回答规则:\n"
-        "1 用中文, 像同事汇报一样简短; 不要长篇大论, 不要堆表。\n"
+        "1 用中文, **最多 5 行**（老板要的是结论, 不是你的计划; 别写'我准备怎么查'的清单 ✗）。\n"
         "2 需要数据时, **先**输出一行或多行 `RUN: <命令>`, 我会执行并把结果回给你, 然后你再作答。\n"
         "3 老板在提'要做什么'时, 不要自己动手; 回一句'我理解成…, 要我开始吗?'并给出建议的第一条命令。\n"
         "4 不许编数据; 查不到就说查不到。\n"
@@ -192,6 +236,12 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
                 _pending.append(r)
                 results.append(f"`{r}` → 这条会改数据: **已挂起, 等用户点头**（不要重复列出, 一句话问他要不要跑）")
                 continue
+            # ★ 2026-09-21（Founder: "这么多, 是用户要看的么" —— 空跑的命令 + argparse 报错端到他面前 ✗）:
+            #   ① 缺必填参数 ⇒ **不跑**（回一句提示给模型, 不把 argparse 错给老板看 ✗）
+            if not _has_required_args(argv):
+                results.append(f"`{r}` → 没跑: 这条命令需要参数（缺 PLAN-id 或项目名）。"
+                               f"先 `tasktree list` 或 `project list` 拿到，再重来一次。")
+                continue
             try:
                 import time as _t2
 
@@ -200,11 +250,13 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
                 _cmd_txt = "factory " + " ".join(argv)
                 if on_progress is not None:      # Hermes 那样的过程行
                     on_progress(_cmd_txt, _t2.monotonic() - _s)
-                # ★ 2026-09-21（Founder: "不对, 表格不对" —— 模型重画表格把列画散 ✗）:
-                #   工具输出**原样直接给老板看**（平台自己排的表就是对的）; 模型只补解读, 别重画 ✓
-                if on_output is not None:
-                    on_output(_cmd_txt, str(_out))
-                results.append(f"`{r}` → " + str(_out)[:1500])
+                # ★ 工具输出**原样直接给老板看**（平台排好的表就是对的; 模型重画会把列画散 ✗）;
+                #   但**跑废/空**的调用不占屏（argparse 错、无输出 ⇒ 只回给模型, 不给老板看 ✗）
+                _sout = str(_out or "").strip()
+                _junk = (not _sout) or _sout.startswith("usage:") or "error: the following arguments" in _sout
+                if on_output is not None and not _junk:
+                    on_output(_cmd_txt, _sout)
+                results.append(f"`{r}` → " + (_sout or "（空）")[:1500])
             except Exception as exc:  # noqa: BLE001 — 查询失败不该打断对话
                 results.append(f"`{r}` → 出错: {type(exc).__name__}: {str(exc)[:100]}")
         _meta["pending"] = list(dict.fromkeys(_pending))

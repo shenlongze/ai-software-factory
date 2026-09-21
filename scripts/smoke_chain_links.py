@@ -2959,7 +2959,7 @@ def _check_gate_uses_same_requirement() -> list[str]:
     req = "社区图书借还小程序：扫码借还、查馆藏、逾期提醒；管理员上架盘点看榜；接微信登录"
     pay = {"feature_list": ["扫码借还", "查馆藏", "逾期提醒", "管理员上架", "区块链积分商城"],
            "mvp_scope": {"in": ["接微信登录"]}}
-    r = G(pay, req)
+    G(pay, req)
     left = [str(x) for x in (pay.get("feature_list") or [])]
     for must_keep in ("扫码借还", "查馆藏", "逾期提醒", "管理员上架"):
         if must_keep not in left:

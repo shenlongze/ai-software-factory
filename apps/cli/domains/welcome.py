@@ -190,11 +190,39 @@ def _term_width(default: int = 100) -> int:
 
 
 def _use_box() -> bool:
-    """要不要用圆角框。★ 默认**不用**（Founder: "这风格我有点接受不了啊"）——
-    想看框的: `FACTORY_UI=box factory start`。"""
-    import os as _os
+    """助手回复要不要套框（照 Hermes 的样子, 见 ~/.hermes/hermes-agent/hermes_cli/skin_engine.py:
+    response_border + 工具行前缀 `┊`）。
 
-    return str(_os.environ.get("FACTORY_UI", "")).strip().lower() == "box"
+    规则: 终端里 ⇒ **套**（Hermes 风格）; 非终端（管道/脚本/CI）⇒ 不套（输出干净、可断言 ✓）;
+    `FACTORY_UI=plain` 或 `NO_COLOR` ⇒ 不套。
+    """
+    import os as _os
+    import sys as _sys
+
+    if str(_os.environ.get("FACTORY_UI", "")).strip().lower() == "plain":
+        return False
+    if _os.environ.get("NO_COLOR") is not None:
+        return False
+    return bool(getattr(_sys.stdout, "isatty", lambda: False)())
+
+
+def _border_color() -> str:
+    """回复框的边框色（Hermes 用 response_border 金/铜色系）; 非终端或 NO_COLOR ⇒ 不上色。"""
+    import os as _os
+    import sys as _sys
+
+    if _os.environ.get("NO_COLOR") is not None or not getattr(_sys.stdout, "isatty", lambda: False)():
+        return ""
+    return "\033[33m"
+
+
+def _color_off() -> str:
+    import os as _os
+    import sys as _sys
+
+    if _os.environ.get("NO_COLOR") is not None or not getattr(_sys.stdout, "isatty", lambda: False)():
+        return ""
+    return "\033[0m"
 
 
 def box(title: str, text: str, *, width: int = 0) -> str:
@@ -320,7 +348,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             _mline = " · ".join(f"{_zh.get(k, k)} {v}" for k, v in _info.items() if v)
         except Exception:  # noqa: BLE001 — 拿不到就不显示
             _mline = ""
-        print("  ★ 已进入交互式 CLI —— 直接说人话 = 会话; `/命令` = 执行命令（例: /status）; exit 离开")
+        print("  ★ 已进入交互式 CLI —— 直接说人话 = 会话; **命令要带 /**(例: /status); exit 离开")
         if _mline:
             print(f"     当前: {_mline}")
         print("     help 帮助中心 · 会话里只会自动跑**只读**命令, 会改数据的只念给你确认")
@@ -425,15 +453,22 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         if low in ("welcome", "menu", "/welcome", "/menu"):
             print(render_welcome(ctx.root))
             continue
-        # ★ 2026-09-21（Founder: "我要在 cli 中可以使用会话功能, 并且可以使用 / 使用命令, 像 Hermes 一样"）:
-        #   `/xxx` ⇒ 命令; 裸词且是已知命令 ⇒ 也当命令（向后兼容）; **其它任何一句话 ⇒ 会话**（LLM + 本平台数据）。
+        # ★ 2026-09-21（Founder: "factory的命令，不需要带 / 么，不对冲突么？" —— 会冲突 ✗）:
+        #   规则**定死**: `/命令` 或 `factory 命令` ⇒ 执行命令; **其它一切都是会话**。
+        #   （去掉"裸词恰好是命令名就当命令"的兼容 —— 那会把 "status 是什么意思?" 这种问句抢去当命令 ✗）
+        _cmds = _top_commands()
+        _is_cmd = False
         if line.startswith("/"):
             line = line[1:].strip()
             if not line:
                 continue
-        _cmds = _top_commands()
-        _is_cmd = bool(_cmds) and line.split()[0] in _cmds
-        if not _is_cmd and (_cmds or line.startswith("/")):
+            _is_cmd = True
+        elif line.split() and line.split()[0] == "factory":
+            line = " ".join(line.split()[1:]).strip()       # 明确打了 factory 前缀 ⇒ 要命令
+            _is_cmd = bool(line)
+            if not line:
+                continue
+        if not _is_cmd:
             # ── 会话路径
             from apps.cli.domains import chat as _chat
 
@@ -457,8 +492,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             import time as _t3
 
             _t0 = _t3.monotonic()
-            if _use_box():
-                print(box("你", line))
+            # ★ 照 Hermes: 用户输入**不进框**（提示符那行就是你的话）⇒ 只有助手回复套框
             _ans, _conv, _meta = _chat.chat_turn(ctx.root, line, conv_id=_conv_id, history=_chat_hist,
                                                  on_run=_run_capture, on_progress=_on_progress)
             _conv_id = _conv
@@ -475,7 +509,9 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             _bits.append(f"{_t3.monotonic() - _t0:.1f}s")
             _head = " · ".join(_bits)
             if _use_box():
-                print(box(_head, _ans or "（没答上来; 换句话再说一次?）"))
+                _b = box(_head, _ans or "（没答上来; 换句话再说一次?）")
+                _c, _z = _border_color(), _color_off()
+                print("\n".join(_c + ln + _z for ln in _b.splitlines()) if _c else _b)
             else:
                 print()
                 print("  " + _head)
@@ -487,15 +523,13 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             if _pend:
                 _pending_cmd = str(_pend[0])
                 print()
-                _pend_txt = (f"⏸ 待你点头: factory {_pending_cmd}   回「好」我就跑; 回「不」就取消"
-                             f"（也可以自己敲 /命令 直接跑）")
-                print(box("待你点头", _pend_txt) if _use_box() else "  " + _pend_txt)
+                print(f"  ⏸ 待你点头: factory {_pending_cmd}   回「好」我就跑; 回「不」就取消"
+                      f"（也可以自己敲 /命令 直接跑）")
             continue
         argv = line.split()
-        # 敲错命令 ⇒ 一句短提示（不再是 argparse 整屏 usage + 长报错 ✗）
+        # `/命令` 写错了 ⇒ 一句短提示（不再是 argparse 整屏 usage ✗）
         if _cmds and argv and argv[0] not in _cmds:
-            print(f"  （没有这个命令: {argv[0]} —— 输入 help 看命令表, 或 <命令> -h 查用法;"
-                  f" 想聊天就直接说人话）")
+            print(f"  （没有这个命令: {argv[0]} —— 输入 help 看命令表, 或 /命令 -h 看用法）")
             continue
         from apps.cli.main import main as _main  # 局部导入: 避免模块环
 

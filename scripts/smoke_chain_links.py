@@ -2105,12 +2105,13 @@ def _check_cli_shell() -> list[str]:
             __import__("sys").stdin = old_stdin
         return buf.getvalue()
 
-    out = _feed("status\nexit\n")
+    # ★ 命令现在要带 `/`（Founder: "不需要带 / 么，不对冲突么？" ⇒ 定死带 /, 零歧义）
+    out = _feed("/status\nexit\n")
     if "工厂状态" not in out:
         bad.append("进去后敲 status 没真执行（交互式 CLI 没通）")
     if "已退出" not in out:
         bad.append("exit 没退出（或没提示已退出）")
-    out2 = _feed("nosuchcmd\nstatus\nexit\n")
+    out2 = _feed("nosuchcmd\n/status\nexit\n")
     if "工厂状态" not in out2:
         bad.append("敲错一条命令就把 shell 带走了（后面跑不动）")
     out3 = _feed("help\nexit\n")
@@ -2315,6 +2316,37 @@ def _check_cli_chat() -> list[str]:
                 bad.append(f"回合信息缺「{kw}」")
     finally:
         C._provider = real
+    # ★ 规则定死（Founder: "factory的命令，不需要带 / 么，不对冲突么？"）:
+    #   `/命令` / `factory 命令` ⇒ 执行; **其它一切都是会话**（裸的 status 不能直接被当命令跑 ✗）
+    import contextlib as _c3
+    import io as _io3
+    import types as _t3
+
+    class _FakeP2:
+        def __init__(self): self.n = 0
+        def generate(self, req):  # noqa: ANN001
+            self.n += 1
+            return _t3.SimpleNamespace(ok=True, content="（会话回答）", error=None, usage={})
+
+    _real2 = C._provider
+    try:
+        C._provider = lambda: _FakeP2()
+        sys_ = __import__("sys")
+        _old_in = sys_.stdin
+        sys_.stdin = _io3.StringIO("status" + chr(10) + "exit" + chr(10))   # 裸词(故意): 应走会话
+        _b = _io3.StringIO()
+        try:
+            with _c3.redirect_stdout(_b):
+                _cli_main(["start"])
+        except SystemExit:
+            pass
+        finally:
+            sys_.stdin = _old_in
+        _got = _b.getvalue()
+        if "（会话回答）" not in _got:
+            bad.append("裸词 `status` 没走会话（会与自然语言冲突 ✗）")
+    finally:
+        C._provider = _real2
     if C.is_readonly(["run", "--plan", "P"]):
         bad.append("会改数据的命令被当成只读（会话里会自动跑 ✗）")
     if not C.is_readonly(["status"]):
@@ -2594,18 +2626,25 @@ def _check_hermes_style_ui() -> list[str]:
                       ("_MENU.get(low", "会话里不认编号菜单（横幅承诺过「输入编号直接跑」）")):
         if need not in src:
             bad.append(why)
-    _old_env = _os.environ.get("FACTORY_UI")
+    # ★ 照 Hermes（skin_engine.py: response_border + 工具行 ┊）: **终端里套框, 非终端不套**;
+    #   用户输入**不进框**（Founder 上次就是嫌这个花 ✗）
+    _old_env, _old_nc = _os.environ.get("FACTORY_UI"), _os.environ.get("NO_COLOR")
     try:
         _os.environ.pop("FACTORY_UI", None)
+        _os.environ.pop("NO_COLOR", None)
         if W._use_box():
-            bad.append("默认竟然套框（Founder 明确说接受不了 ⇒ 默认必须简洁版）")
-        _os.environ["FACTORY_UI"] = "box"
-        if not W._use_box():
-            bad.append("FACTORY_UI=box 时不套框（可选开关没生效）")
+            bad.append("管道/脚本里竟然套框（输出要干净可断言）")
+        _os.environ["FACTORY_UI"] = "plain"
+        if W._use_box():
+            bad.append("FACTORY_UI=plain 时仍套框（开关没生效）")
     finally:
         _os.environ.pop("FACTORY_UI", None)
         if _old_env is not None:
             _os.environ["FACTORY_UI"] = _old_env
+        if _old_nc is not None:
+            _os.environ["NO_COLOR"] = _old_nc
+    if 'box("你"' in src:
+        bad.append("用户输入被套框了（照 Hermes: 只有助手回复套框）")
     # project list 必须带 ID 列（会话/用户都要靠它定位）
     _main_src = _insp.getsource(__import__("importlib").import_module("apps.cli.main"))
     if chr(34) + "ID" + chr(34) + ", " + chr(34) + "Project" + chr(34) not in _main_src:

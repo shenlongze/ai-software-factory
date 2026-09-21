@@ -725,15 +725,17 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 _bits.append(f"${float(_u['estimated_cost_usd']):.6f}")
             _bits.append(f"{_t3.monotonic() - _t0:.1f}s")
             _head = " · ".join(_bits)
+            from apps.cli.markdown import render_md as _md   # ★ 终端渲染 markdown（Founder: "cli 好像不支持markdown格式"）
+            _body = _md(_ans or "（没答上来; 换句话再说一次?）", indent="")
             if _use_box():
-                _b = box(_head, _ans or "（没答上来; 换句话再说一次?）")
+                _b = box(_head, _body)
                 _c, _z = _border_color(), _color_off()
                 print("\n".join(_c + ln + _z for ln in _b.splitlines()) if _c else _b)
             else:
                 print()
                 print("  " + _head)
-                for _ln in (_ans or "（没答上来; 换句话再说一次?）").splitlines():
-                    print("    " + _ln)
+                for _ln in _body.splitlines():
+                    print(_ln if not _ln else "    " + _ln)
                 print()
             # ★ 它念了写命令 ⇒ 明确问一句（并显示**精确**命令, 让你看清要跑什么）
             _pend = list(_meta.get("pending") or [])

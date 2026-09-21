@@ -2846,6 +2846,47 @@ def test_output_readability() -> None:
     assert _check_output_readability() == []
 
 
+def _check_markdown_render() -> list[str]:
+    """★ 会话输出渲染 markdown（Founder: "cli 好像不支持markdown格式" + "项目列表内容太少了"）。
+
+    判据: ① `**粗体**` 的星号不再原样露出（终端里加样式, 非终端去标记）
+         ② md 表格（| a | b |）渲染成**对齐**表格（中文也齐）
+         ③ 提示词要求"工具返回表格/清单时原样贴出"（不然会话只挑两列改写成大白话 ✗ —— 实测踩到）
+    """
+    import inspect as _insp
+
+    from apps.cli import markdown as _MD
+    from apps.cli import textwidth as _TW
+
+    bad: list[str] = []
+    out = _MD.render_md("**粗体** 与 `代码` 和 *斜体*", color=False)
+    if "**" in out or "`" in out:
+        bad.append("markdown 标记没去掉（** 或 ` 还在）")
+    if "粗体" not in out or "代码" not in out:
+        bad.append("markdown 渲染把正文吃掉了")
+    tbl = _MD.render_md("| 项目 | 状态 |\n|---|---|\n| gym-coach | active |\n| 中文项目 | active |", color=False)
+    widths = {_TW.display_width(x) for x in tbl.splitlines() if x.strip()}
+    if len(widths) != 1:
+        bad.append(f"md 表格没对齐（行宽 {sorted(widths)}）")
+    if "-" * 5 not in tbl:
+        bad.append("md 表格没渲染出分隔线")
+    from apps.cli.domains import chat as _C
+
+    _src = _insp.getsource(_C)
+    if "原样贴出来" not in _src:
+        bad.append("提示词没要求「原样贴表格」（会话会只挑两列改写成大白话 ✗）")
+    from apps.cli.domains import welcome as _W
+
+    if "render_md" not in _insp.getsource(_W.run_shell):
+        bad.append("会话回复没走 markdown 渲染")
+    return bad
+
+
+def test_markdown_render() -> None:
+    """markdown 渲染: 去标记/加样式 · md 表格对齐 · 提示词要求原样贴表格 · 会话真的用了。"""
+    assert _check_markdown_render() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2892,6 +2933,7 @@ def main() -> int:
     results.append(("列得出来就查得到（项目名/片段 show·看树认项目名）", not _check_name_everywhere(), "；".join(_check_name_everywhere())))
     results.append(("CLI 精髓（会话命令/忙指示/可打断/三档权限/多行/会话可挑）", not _check_cli_essence(), "；".join(_check_cli_essence())))
     results.append(("输出可读性（status 表格化·中文对齐·-h 求助·框宽上限）", not _check_output_readability(), "；".join(_check_output_readability())))
+    results.append(("markdown 渲染（去标记·表格对齐·提示词要求原样贴表）", not _check_markdown_render(), "；".join(_check_markdown_render())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

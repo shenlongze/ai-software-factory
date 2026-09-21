@@ -2604,6 +2604,61 @@ def test_hermes_style_ui() -> None:
     assert _check_hermes_style_ui() == []
 
 
+def _check_name_everywhere() -> list[str]:
+    """★ "列得出来就该查得到"（Founder 实测: `project list` 有 community-library, 但
+    `project show community-library` 说 not found ✗、看树也说"任务树不存在" ✗ ⇒ 断头路）。
+
+    判据: ① 项目名/id/仓库名/**片段** 都能解析成项目 id
+         ② `project show <名字>` 不再报 not found（走权威源）
+         ③ 看树那条路真的接了名字解析（调用点断言: 用 _resolve_plan_id）
+    """
+    import contextlib as _ctx
+    import inspect as _insp
+    import io as _io
+    import tempfile as _tf
+
+    from apps.cli import main as _cli
+    from ai_factory_os.services.organization.projects import Project, ProjectStore
+
+    bad: list[str] = []
+    with _tf.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "org").mkdir(parents=True, exist_ok=True)
+        try:
+            # 用**真 API**（先查过: ProjectStore 只有 save_project, 没有 create_project ✗）
+            ProjectStore(root / "org").save_project(
+                Project(id="P-t", name="community-library", repo_path=str(root / "repo" / "community-library")))
+        except Exception as exc:  # noqa: BLE001
+            return [f"造项目失败（守卫前置条件不满足）: {type(exc).__name__}: {str(exc)[:60]}"]
+        for tok in ("community-library", "library", "community"):
+            buf = _io.StringIO()
+            try:
+                with _ctx.redirect_stdout(buf):
+                    _cli(["--root", str(root), "project", "show", tok])
+            except SystemExit:
+                pass
+            out = buf.getvalue()
+            if "not found" in out or "Traceback" in out:
+                bad.append(f"`project show {tok}` 仍查不到（列得出来就该查得到）")
+    import importlib as _il
+
+    # ★ 注意: `apps.cli.main` 这个名字既是模块又是函数（包 __init__ 里导出了 main）⇒ 要 import_module 取模块
+    _mmod = _il.import_module("apps.cli.main")
+    _src = _insp.getsource(_mmod)
+    if "def _resolve_plan_id" not in _src:
+        bad.append("看树那条路没有名字解析函数 _resolve_plan_id")
+    if "_resolve_plan_id(ctx," not in _src:
+        bad.append("看树那条路没**接线**（函数在但没人调）")
+    if "def resolve_project_id" not in _insp.getsource(_il.import_module("apps.cli.commands")):
+        bad.append("缺统一的项目解析器 resolve_project_id")
+    return bad
+
+
+def test_name_everywhere() -> None:
+    """"列得出来就该查得到": 项目名/片段能 show · 看树能按项目名解析。"""
+    assert _check_name_everywhere() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2647,6 +2702,7 @@ def main() -> int:
     results.append(("会话打磨（跨重启记上下文·新会话·clear·念命令说后果）", not _check_chat_memory_and_clear(), "；".join(_check_chat_memory_and_clear())))
     results.append(("版本与错字（-v 直接报版本·敲错给人话不甩 usage）", not _check_cli_version_and_typo(), "；".join(_check_cli_version_and_typo())))
     results.append(("Hermes 风格呈现（分块·过程行·你的话分开）", not _check_hermes_style_ui(), "；".join(_check_hermes_style_ui())))
+    results.append(("列得出来就查得到（项目名/片段 show·看树认项目名）", not _check_name_everywhere(), "；".join(_check_name_everywhere())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

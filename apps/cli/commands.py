@@ -2173,6 +2173,48 @@ def cmd_project_list(ctx: FactoryContext, args: Any) -> dict:
     }
 
 
+def resolve_project_id(ctx: FactoryContext, token: str) -> str:
+    """把「用户口中的项目」（id / 名字 / 仓库目录名 / 片段）统一解析成**项目 id**。
+
+    ★ 2026-09-21（Founder 实测）: `project list` 列得出 community-library, 但
+      `project show community-library` 说 "project not found" ✗、看树说 "任务树不存在" ✗
+      —— **列得出来就该查得到**。权威源: org 项目库（与 `project list`/`status` 同源）。
+    返回 "" = 没解析出来（调用方按平实信息报错, 不要编）。
+    """
+    try:
+        from ai_factory_os.services.organization.projects import ProjectStore
+
+        rows = ProjectStore(ctx.root / "org").list_projects() or []
+    except Exception:  # noqa: BLE001 — 拿不到就当没解析出来
+        return ""
+    tk = str(token or "").strip().lower()
+    if not tk:
+        return ""
+
+    def _pid(r: Any) -> str:
+        return str(getattr(r, "id", "") or "")
+
+    def _name(r: Any) -> str:
+        return str(getattr(r, "name", "") or "").lower()
+
+    def _base(r: Any) -> str:
+        return str(getattr(r, "repo_path", "") or "").rstrip("/").split("/")[-1].lower()
+
+    for r in rows:                      # ① id
+        if _pid(r).lower() == tk:
+            return _pid(r)
+    for r in rows:                      # ② 名字
+        if _name(r) == tk:
+            return _pid(r)
+    for r in rows:                      # ③ 仓库目录名
+        if _base(r) == tk:
+            return _pid(r)
+    for r in rows:                      # ④ 片段（用户常说 library, 不说 community-library）
+        if tk and (_name(r).find(tk) >= 0 or _base(r).find(tk) >= 0 or tk in _pid(r).lower()):
+            return _pid(r)
+    return ""
+
+
 def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
     """factory project show <name> — 项目详情: 技术栈/状态/运行偏好/Agent/技能/工作流。
 
@@ -2180,6 +2222,29 @@ def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
     是上层组织单位); 详情含 ProjectDef 增强字段 (status/runtime_preferences)。
     退出码: 7 项目不存在; 1 配置解析/校验失败; 0 成功。只读 (ADR-0013)。
     """
+    # ★ 先走权威源（org 项目库）: 名字/id/仓库名/片段都能认 —— 列得出来就查得到
+    _pid_org = resolve_project_id(ctx, str(getattr(args, "name", "") or ""))
+    if _pid_org:
+        try:
+            from ai_factory_os.services.organization.projects import ProjectStore
+
+            _rec = next((r for r in (ProjectStore(ctx.root / "org").list_projects() or [])
+                         if str(getattr(r, "id", "")) == _pid_org), None)
+            if _rec is not None:
+                _repo = str(getattr(_rec, "repo_path", "") or "")
+                return {"ok": True, "command": "project show", "source": "org 项目库",
+                        # 打印器要的字段一个不少（实测: 少 description 就 KeyError ✗）
+                        "project": {"name": str(getattr(_rec, "name", "") or _pid_org),
+                                    "id": _pid_org, "project_id": _pid_org,
+                                    "description": str(getattr(_rec, "description", "") or ""),
+                                    "status": str(getattr(_rec, "status", "") or "active"),
+                                    "language": str(getattr(_rec, "language", "") or "-"),
+                                    "repository": _repo, "repo_path": _repo,
+                                    "tech_stack": [str(getattr(_rec, "project_type", "") or "")]},
+                        "agents": [], "skills": [], "workflows": [],
+                        "exit_code": 0, "args": args}
+        except Exception:  # noqa: BLE001 — 拿不到就照旧走老路（不挡）
+            pass
     examples_dir = default_examples_dir()
     src = resolve_projects_root(ctx.root, args.name, examples_dir)
     if src is None:

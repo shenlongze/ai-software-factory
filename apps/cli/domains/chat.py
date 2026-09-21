@@ -206,7 +206,9 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
 
     # ★ RUN: 是给系统的指令, **不该露给用户** —— 行内的也清掉（保留命令本身, 用反引号包住）
     answer = "\n".join(ln for ln in answer.splitlines() if not ln.strip().startswith("RUN:")).strip()
-    answer = _re.sub(r"`?RUN:\s*([^`\n]+)`?", lambda m: f"`{m.group(1).strip()}`", answer).strip()
+    #   清掉的同时**给个交代**（实测: 只删不留 ⇒ 出现"要不我换个写法再试："后面空着 ✗）
+    answer = _re.sub(r"`?RUN:\s*([^`\n]+)`?",
+                     lambda m: f"（已跑 `factory {m.group(1).strip()}`）", answer).strip()
     if conv:
         U.append_message(root, conv, role="assistant", content=answer)
     _meta["elapsed"] = round(_time.monotonic() - _t0, 2)

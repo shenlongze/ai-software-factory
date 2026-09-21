@@ -1299,6 +1299,43 @@ def _top_command_names() -> set[str]:
     return set()
 
 
+def _resolve_plan_id(ctx: FactoryContext, token: str) -> str:
+    """看树时允许用户说**项目名**（而不是记 PLAN-id）。
+
+    ★ 2026-09-21（Founder 实测）: "看社区图书馆那棵树" ⇒ `tasktree … community-library` 报
+      "任务树不存在" ✗ —— 用户/助手拿不到项目 id 就断头路。现在: 项目名/id/片段 ⇒ 取该项目最新一棵树。
+    """
+    tk = str(token or "").strip()
+    if not tk or tk.upper().startswith("PLAN-"):
+        return tk
+    try:
+        from ai_factory_os.services.organization.projects import ProjectStore
+        from ai_factory_os.services.work import decomposition as _D
+
+        rows = ProjectStore(ctx.root / "org").list_projects() or []
+        tl = tk.lower()
+        pid = ""
+        for r in rows:
+            nm = str(getattr(r, "name", "") or "").lower()
+            rp = str(getattr(r, "repo_path", "") or "").rstrip("/").split("/")[-1].lower()
+            if tl in (str(getattr(r, "id", "")).lower(), nm, rp) or (tl and (tl in nm or tl in rp)):
+                pid = str(getattr(r, "id", "") or "")
+                break
+        if not pid:
+            return tk
+        trees = [t for t in (_D.list_trees(ctx.root) or [])
+                 if str(t.get("project_id")) == pid and str(t.get("plan_id", "")).upper().startswith("PLAN-")]
+        if not trees:
+            return tk
+        trees.sort(key=lambda t: str(t.get("created_at") or ""), reverse=True)
+        got = str(trees[0].get("plan_id") or tk)
+        if got != tk:
+            print(f"  （按项目 {tk} 找到最新一棵树: {got}）")
+        return got
+    except Exception:  # noqa: BLE001 — 解析失败就按原样交给下游（不挡）
+        return tk
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI 入口: 返回退出码 (console script 以返回值作为进程退出码)。"""
     # ★ 2026-09-21（Founder: "我需要如何进入 factory 的 cli"）: 空参**不再甩英文报错**,
@@ -2755,7 +2792,7 @@ def _tasktree_todo(ctx: FactoryContext, args: Any) -> dict:
     from ai_factory_os.services.work import decomposition as _D
     from ai_factory_os.services.work import user_view as _UV
 
-    plan_id = str(getattr(args, "plan_id", "") or "")
+    plan_id = _resolve_plan_id(ctx, str(getattr(args, "plan_id", "") or ""))
     project = str(getattr(args, "project", "") or "")
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:

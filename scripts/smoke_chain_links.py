@@ -2849,6 +2849,31 @@ def _check_output_readability() -> list[str]:
             pass
         if need not in b2.getvalue():
             bad.append(f"输 {feed.splitlines()[0]!r} 没出该出的内容（缺 {need}）")
+    # ★ 2026-09-21（Founder: "无效信息太多了"）:
+    #   ① 首屏 ≤9 行（原来 11 行前言 = 噪音 ✗）② 回答规则必须收紧（≤3 行 / 别问"要不要我跑"只读直接跑 /
+    #   缺参数先问老板, 不许念带占位符的命令）③ 执行结果不许**假成功**（命令报错却打"✔ 完成" ✗）
+    _rsrc = _insp.getsource(_W.run_shell)
+    _wl = _insp.getsource(_W.render_welcome)
+    _banner_lines = _wl.count('lines.append') + _wl.count('"  ')
+    buf = _io.StringIO()
+    try:
+        with _c.redirect_stdout(buf):
+            print(_W.render_welcome("."))
+    except Exception:  # noqa: BLE001
+        pass
+    _bn = len([x for x in buf.getvalue().splitlines() if x.strip()])
+    if _bn > 10:
+        bad.append(f"首屏太长（{_bn} 行非空 ⇒ 无效信息多 ✗）")
+    from apps.cli.domains import chat as _CC
+
+    _csrc = _insp.getsource(_CC)
+    for _need, _why in (("最多 3 行", "回答没限长（老板嫌无效信息多 ✗）"),
+                        ("不许问「要不要我跑", "还在问「要不要我跑」（只读的直接跑 ✗）"),
+                        ("占位符", "没禁止念带占位符的命令（跑出来必然报错 ✗）")):
+        if _need not in _csrc:
+            bad.append(_why)
+    if "执行**没成功**" not in _rsrc:
+        bad.append("执行结果可能假成功（命令报错却打「✔ 完成」✗）")
     # ★ 2026-09-21（Founder: "这里应该统一采用列表的形式, 不能在同一行"）:
     #   ① 待你点头 = 列表（三档各占一行）; ② 工具输出不能被 strip 吃掉头行前导空格（表格歪 ✗）
     _wsrc2 = _insp.getsource(_W.run_shell)

@@ -133,16 +133,13 @@ def render_welcome(root: Path | str) -> str:
         "",
         # ★ 2026-09-21 首屏压短（Founder: "没有真正明白我的意图" —— 入口是**会话**, 菜单只是快捷）:
         #   一句话讲清怎么用 + 一行快捷编号; 不再一大块提示占屏。
-        "  直接说人话就行（例:「我有哪些项目」「把 gym-coach 的任务跑起来」）",
-        "  快捷编号: " + " · ".join(f"{k} {v[0].split('（')[0]}" for k, v in _MENU.items())
-        + " · h 帮助",
-        "  命令是快捷方式（带 / 或直接敲命令名）; 会改数据的只念给你, 你点头才跑",
+        # ★ 2026-09-21 首屏再砍（Founder: "无效信息太多了"）⇒ 只留: 版本 · 数据 · 怎么用 · 命令怎么敲
+        "  直接说人话就行; 命令名开头就直接跑（例: status / project list）",
+        "  会改数据的只念给你, 你点头才跑 · h 帮助 · exit 离开",
     ]
     # （旧的 6 行菜单已并入上面那行「快捷编号」—— 入口是会话, 菜单只是快捷 ✓）
     lines += [
         "",
-        "  提示: 任何命令加 -h 看用法; `factory help` 打开帮助中心;",
-        "        第一次用不会碰坏东西 —— 所有命令都是幂等的（不自建就先自建目录）。",
         "",
     ]
     return "\n".join(lines)
@@ -468,10 +465,8 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             _mline = " · ".join(f"{_zh.get(k, k)} {v}" for k, v in _info.items() if v)
         except Exception:  # noqa: BLE001 — 拿不到就不显示
             _mline = ""
-        print("  ★ 已进入交互式 CLI —— 直接说人话 = 会话; **命令要带 /**(例: /status); exit 离开")
         if _mline:
             print(f"     当前: {_mline}")
-        print("     help 帮助中心 · 会话里只会自动跑**只读**命令, 会改数据的只念给你确认")
         print()
 
     _conv_id = ""
@@ -501,8 +496,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             _conv_id = str(_d.get("id") or _f.stem)
             _chat_hist = [{"role": ("assistant" if str(m.get("role")) == "ai" else str(m.get("role"))),
                            "content": str(m.get("content"))[:1500]} for m in _msgs]
-            print(f"  （接着上次的会话 {_conv_id} · 已载入 {len(_chat_hist)} 条上下文;"
-                  f" 想从零开始就说「新会话」）")
+            print(f"  （接上次会话 {_conv_id} · {len(_chat_hist)} 条上下文; 从零开始说「新会话」）")
             break
     except Exception:  # noqa: BLE001 — 载入失败就正常开新会话
         pass
@@ -565,7 +559,14 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 _out9 = _buf9.getvalue().rstrip()
                 print()
                 print(tool_block(" ".join(_argv), _t9.monotonic() - _t09, _out9))
-                print(f"  {MARK_SYS} {'✔' if _rc9 == 0 else '⚠'} 执行{'完成（改动已落盘）' if _rc9 == 0 else f'结束（退出码 {_rc9}）'}")
+                # ★ 2026-09-21 修假成功（Founder 实测: `create project … --repo-path /你的路径` 报错
+                #   "repo path is not a directory" 却打「✔ 执行完成」✗）⇒ 输出里有错字样就当失败
+                _err9 = any(_k in _out9 for _k in ("error:", "Error:", "Traceback",
+                                                   "not a directory", "不存在", "失败"))
+                _ok9 = (_rc9 == 0) and not _err9
+                print(f"  {MARK_SYS} {'✔' if _ok9 else '⚠'} "
+                      + ("执行完成（改动已落盘）" if _ok9 else
+                         f"执行**没成功**（{'退出码 ' + str(_rc9) if _rc9 else '命令报错'}）—— 上面那条错信息就是原因"))
                 print()
                 continue
             if _yes is False:

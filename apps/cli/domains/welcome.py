@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -308,6 +309,55 @@ def _top_commands() -> set[str]:
     return set()
 
 
+#: 斜杠"会话命令"（照 Hermes: /help /new /stop /retry /cost /model /tools …）
+SESSION_COMMANDS: dict[str, str] = {
+    "/help": "列出所有会话命令（就是这份表）",
+    "/new": "开新会话（上下文清空）",
+    "/sessions": "列出历史会话（可直接 /resume <编号> 接着聊）",
+    "/resume": "接着某个历史会话: /resume <编号>",
+    "/retry": "重发上一句（重试一轮）",
+    "/stop": "中断当前这一轮（会话保留）",
+    "/cost": "本次会话累计 tokens / 估算成本 / 轮数",
+    "/model": "当前供应商与模型",
+    "/tools": "它都能跑哪些命令（只读自动 / 写要你点头）",
+    "/clear": "清屏",
+}
+
+
+def _busy(label: str, *, tty: bool) -> str:
+    """忙指示（Hermes 有 "preparing terminal…"）—— 只在终端里画, 非终端不污染输出。"""
+    return f"  ⏳ {label}…" if tty else ""
+
+
+def _busy_clear(tty: bool) -> str:
+    return "\r" + " " * 60 + "\r" if tty else ""
+
+
+def _ask_permission(cmd: str, *, tty: bool, always: set[str]) -> str:
+    """权限三档（Hermes 的 permission prompt）: 允许一次 / 总是 / 拒绝。返回 "once"/"always"/"deny"。
+
+    `always` = 本次会话里"总是允许"过的命令（**不落盘** —— 重启即忘, 安全默认）。
+    """
+    key = str(cmd).split()[1] if len(str(cmd).split()) > 1 else str(cmd)
+    if key in always:
+        print(f"  ✓ 已记住「总是允许 {key}」（本会话）: {cmd}")
+        return "always"
+    if not tty:
+        print(f"  ⏸ 需要你点头（非终端 ⇒ 不跑）: {cmd}")
+        return "deny"
+    print(f"  ⏸ 这条会改数据: {cmd}")
+    print("     1) 允许这一次   2) 本会话总是允许   3) 拒绝")
+    try:
+        ans = input("     选 1/2/3（回车=拒绝）: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return "deny"
+    if ans == "2":
+        always.add(key)
+        print(f"     ✓ 记住了: 本会话内 {key} 不再问")
+        return "always"
+    return "once" if ans == "1" else "deny"
+
+
 def run_shell(root: Path | str, *, banner: bool = True) -> int:
     """★ 启动 AI Factory OS —— 进入交互式 CLI（Founder: "我要的是启动 factory os, 使用 cli 命令"）。
 
@@ -357,6 +407,12 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
     _conv_id = ""
     _chat_hist: list[dict[str, str]] = []
     _pending_cmd = ""            # ★ 待你点头的命令（会话里它念出来的写命令）
+    # ★ CLI 精髓（照 Hermes）: 会话级状态 —— 累计用量 / 权限记忆 / 上一句（重试用）/ 是否终端
+    _sess = {"cost": 0.0, "prompt_tokens": 0, "completion_tokens": 0, "turns": 0}
+    _always: set[str] = set()
+    _last_input = ""
+    _tty = bool(getattr(sys.stdin, "isatty", lambda: False)() and
+                getattr(sys.stdout, "isatty", lambda: False)())
     # ★ F2 多轮上下文持久化（跨重启还记得）: 启动时接上**最近一次会话**的最后几条消息。
     try:
         import json as _json
@@ -382,6 +438,12 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
     while True:
         try:
             line = input("factory> ").strip()
+            # ★ 多行输入（照 Hermes 手感）: 行尾反斜杠 ⇒ 续行（贴长需求不用拆）
+            while line.endswith("\\"):
+                try:
+                    line = line[:-1] + " " + input("   ... ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    break
         except EOFError:
             print()
             break
@@ -394,7 +456,20 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         if _pending_cmd:
             from apps.cli.domains.chat import approval as _appr, to_argv as _toargv
 
-            _yes = _appr(line)
+            # ★ 权限三档（照 Hermes）: 1/好=允许一次 · 2=本会话总是允许 · 3/不=拒绝
+            if line.strip() == "2":
+                _always.add(_pending_cmd.split()[0] if _pending_cmd.split() else _pending_cmd)
+                print(f"  ✓ 记住了: 本会话内 {_pending_cmd.split()[0] if _pending_cmd.split() else _pending_cmd} 不再问")
+                _yes = True
+            elif line.strip() == "1":
+                _yes = True
+            elif line.strip() == "3":
+                _yes = False
+            elif _pending_cmd.split() and _pending_cmd.split()[0] in _always:
+                print(f"  ✓ 之前已记住「总是允许 {_pending_cmd.split()[0]}」（本会话）")
+                _yes = True
+            else:
+                _yes = _appr(line)
             if _yes is True:
                 _argv = _toargv(_pending_cmd)
                 print(f"  ▶ 执行: factory {' '.join(_argv)}")
@@ -417,8 +492,79 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         low = line.lower()
         if low in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
             break
-        if low in ("help", "h", "?", "/help", "/h", "/?"):
+        if low in ("help", "h", "?", "/h", "/?"):
             print(render_help(""))
+            continue
+        from apps.cli.domains import chat as _chat0
+
+        if low == "/help":
+            print("  会话命令（斜杠开头）:")
+            for _k, _v in SESSION_COMMANDS.items():
+                print(f"    {_k:<10} {_v}")
+            print("  角色化帮助中心: 输 help  ·  全部命令: factory --help")
+            continue
+        if low in ("/new", "/clear", "/cost", "/model", "/tools", "/stop", "/retry", "/sessions"):
+            if low == "/clear":
+                print("\033[2J\033[H", end="")
+            elif low == "/new":
+                _conv_id, _chat_hist = "", []
+                print("  （已开新会话: 上下文清空, 后面说的从零开始记）")
+            elif low == "/cost":
+                print(f"  本次会话: {_sess['turns']} 轮 · tokens ↑{_sess['prompt_tokens']} / "
+                      f"↓{_sess['completion_tokens']} · 估算成本 ${_sess['cost']:.6f}")
+            elif low == "/model":
+                _pi = _chat0.provider_info(_chat0._provider()) if hasattr(_chat0, "provider_info") else {}
+                print(f"  供应商 {_pi.get('provider') or '（未知）'} · 模型 {_pi.get('model') or '（未知）'}")
+            elif low == "/tools":
+                print("  只读（会话里自动跑）:")
+                for _n in sorted(list(getattr(_chat0, "READONLY_PREFIXES", ()) or ())):
+                    print(f"    {_n}")
+                print("  会改数据的 ⇒ 一律先亮给你: 1)允许一次 2)本会话总是允许 3)拒绝")
+            elif low == "/stop":
+                print("  （进行中的一轮按 Ctrl-C 中断; 会话保留）")
+            elif low == "/retry" and _last_input:
+                line = _last_input
+                print(f"  ↻ 重试上一句: {line[:60]}")
+            elif low == "/retry":
+                print("  （还没有可重试的一句）")
+            else:  # /sessions
+                _cs = sorted((Path(ctx.root) / "projects").glob("*/conversations/*.json"),
+                             key=lambda q: q.stat().st_mtime, reverse=True)[:8]
+                if not _cs:
+                    print("  （还没有历史会话）")
+                else:
+                    print("  历史会话（按最近排序）:")
+                    for _i, _f in enumerate(_cs, 1):
+                        try:
+                            _d = json.loads(_f.read_text(encoding="utf-8"))
+                        except Exception:  # noqa: BLE001
+                            _d = {}
+                        print(f"    {_i}) {_d.get('id') or _f.stem}   "
+                              f"{len(_d.get('messages') or [])} 条消息   {_f.parent.parent.name}")
+                    print("  接着聊: /resume <编号>")
+            if low != "/retry":
+                continue
+            if low == "/retry" and not _last_input:
+                continue
+        if low.startswith("/resume"):
+            _cs = sorted((Path(ctx.root) / "projects").glob("*/conversations/*.json"),
+                         key=lambda q: q.stat().st_mtime, reverse=True)[:8]
+            _arg = line.split()[1] if len(line.split()) > 1 else ""
+            if not _cs or not _arg.isdigit() or not (1 <= int(_arg) <= len(_cs)):
+                print("  用法: /resume <编号>（先 /sessions 看编号）")
+                continue
+            _f = _cs[int(_arg) - 1]
+            try:
+                _d = json.loads(_f.read_text(encoding="utf-8"))
+            except Exception as _e:  # noqa: BLE001 — 读不了就说, 不假装
+                print(f"  ⚠ 读会话失败: {type(_e).__name__}")
+                continue
+            _conv_id = str(_d.get("id") or _f.stem)
+            _msgs = [m for m in (_d.get("messages") or [])
+                     if str(m.get("role")) in ("human", "assistant", "ai")][-8:]
+            _chat_hist = [{"role": ("assistant" if str(m.get("role")) == "ai" else str(m.get("role"))),
+                           "content": str(m.get("content"))[:1500]} for m in _msgs]
+            print(f"  ✓ 已接着会话 {_conv_id}（载入 {len(_chat_hist)} 条上下文）")
             continue
         # ★ 2026-09-21 修（Founder 实测: 横幅写着"输入编号直接跑", 进来敲 `1` 却被当聊天 ✗）:
         #   会话里 1-6 / h 就是菜单项 —— 与首屏承诺一致。
@@ -492,9 +638,25 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             import time as _t3
 
             _t0 = _t3.monotonic()
-            # ★ 照 Hermes: 用户输入**不进框**（提示符那行就是你的话）⇒ 只有助手回复套框
-            _ans, _conv, _meta = _chat.chat_turn(ctx.root, line, conv_id=_conv_id, history=_chat_hist,
-                                                 on_run=_run_capture, on_progress=_on_progress)
+            _busy_txt = _busy("正在查", tty=_tty)          # ★ 忙指示（不再黑屏干等）
+            if _busy_txt:
+                print(_busy_txt, end="", flush=True)
+            try:
+                _ans, _conv, _meta = _chat.chat_turn(ctx.root, line, conv_id=_conv_id,
+                                                     history=_chat_hist, on_run=_run_capture,
+                                                     on_progress=_on_progress)
+            except KeyboardInterrupt:                      # ★ 可打断: 断的是**这一轮**, 会话还在
+                print(_busy_clear(_tty) + "  （已中断这一轮; 会话还在 —— 接着说, 或输 /retry）")
+                continue
+            finally:
+                if _busy_txt:
+                    print(_busy_clear(_tty), end="")
+            _last_input = line
+            _u0 = (_meta or {}).get("usage") or {}
+            _sess["turns"] += 1
+            _sess["prompt_tokens"] += int(_u0.get("prompt_tokens") or 0)
+            _sess["completion_tokens"] += int(_u0.get("completion_tokens") or 0)
+            _sess["cost"] += float(_u0.get("estimated_cost_usd") or 0.0)
             _conv_id = _conv
             _chat_hist += [{"role": "human", "content": line}, {"role": "assistant", "content": _ans}]
             # ★ 2026-09-21（Founder: "Hermes 的有分界线、有模型、有成本"）: 每回合都亮出这轮的实情
@@ -523,8 +685,9 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             if _pend:
                 _pending_cmd = str(_pend[0])
                 print()
-                print(f"  ⏸ 待你点头: factory {_pending_cmd}   回「好」我就跑; 回「不」就取消"
-                      f"（也可以自己敲 /命令 直接跑）")
+                print(f"  ⏸ 待你点头: factory {_pending_cmd}")
+                print("     1) 允许这一次   2) 本会话总是允许（不再问）   3) 拒绝"
+                      "   · 也可以自己敲 /命令 直接跑")
             continue
         argv = line.split()
         # `/命令` 写错了 ⇒ 一句短提示（不再是 argparse 整屏 usage ✗）

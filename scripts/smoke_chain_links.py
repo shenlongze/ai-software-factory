@@ -2716,6 +2716,62 @@ def test_name_everywhere() -> None:
     assert _check_name_everywhere() == []
 
 
+def _check_cli_essence() -> list[str]:
+    """★ Hermes 的 CLI 精髓（Founder: "我说的是Hermes的cli的精髓"）—— 会话体验闭环, 不是 agent 架构。
+
+    该有的: 会话命令集(/help /new /stop /retry /cost /model /tools /sessions) · 忙指示 ·
+     可打断(断一轮留会话) · 权限三档(允许一次/本会话总是允许/拒绝) · 多行输入 · 会话可挑可续。
+    """
+    import contextlib as _c
+    import inspect as _insp
+    import io as _io
+
+    from apps.cli import main as _cli
+    from apps.cli.domains import welcome as W
+
+    bad: list[str] = []
+    need = {"/help", "/new", "/stop", "/retry", "/cost", "/model", "/tools", "/sessions"}
+    missing = need - set(W.SESSION_COMMANDS)
+    if missing:
+        bad.append(f"会话命令集缺: {sorted(missing)}")
+    src = _insp.getsource(W.run_shell)
+    for needle, why in (("_busy(", "没有忙指示（黑屏干等）"),
+                        ("KeyboardInterrupt", "不能打断当前这一轮"),
+                        ("总是允许", "没有权限三档（允许一次/本会话总是允许/拒绝）"),
+                        ("_sess[", "没累计会话用量（/cost 会是空的）"),
+                        ('line.endswith("\\\\")', "不支持多行输入（行尾反斜杠续行）"),
+                        ("/sessions", "会话不可列不可挑")):
+        if needle not in src:
+            bad.append(why)
+    # 权限三档: 非终端 ⇒ 一律拒绝（安全默认）
+    _old = __import__("sys").stdout
+    buf = _io.StringIO()
+    try:
+        with _c.redirect_stdout(buf):
+            r = W._ask_permission("factory backup create", tty=False, always=set())
+    finally:
+        __import__("sys").stdout = _old
+    if r != "deny":
+        bad.append(f"非终端下权限没默认拒绝（实得 {r}）—— 脚本里不该自动跑写命令 ✗")
+    # /help 必须列出会话命令（可发现性）
+    __import__("sys").stdin = _io.StringIO("/help" + chr(10) + "exit" + chr(10))
+    buf2 = _io.StringIO()
+    try:
+        with _c.redirect_stdout(buf2):
+            _cli(["start"])
+    except SystemExit:
+        pass
+    got = buf2.getvalue()
+    if "/cost" not in got or "会话命令" not in got:
+        bad.append("/help 没列会话命令（不可发现 ✗）")
+    return bad
+
+
+def test_cli_essence() -> None:
+    """CLI 精髓: 会话命令集 · 忙指示 · 可打断 · 权限三档(非终端默认拒绝) · 多行 · 会话可挑。"""
+    assert _check_cli_essence() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2760,6 +2816,7 @@ def main() -> int:
     results.append(("版本与错字（-v 直接报版本·敲错给人话不甩 usage）", not _check_cli_version_and_typo(), "；".join(_check_cli_version_and_typo())))
     results.append(("Hermes 风格呈现（分块·过程行·你的话分开）", not _check_hermes_style_ui(), "；".join(_check_hermes_style_ui())))
     results.append(("列得出来就查得到（项目名/片段 show·看树认项目名）", not _check_name_everywhere(), "；".join(_check_name_everywhere())))
+    results.append(("CLI 精髓（会话命令/忙指示/可打断/三档权限/多行/会话可挑）", not _check_cli_essence(), "；".join(_check_cli_essence())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

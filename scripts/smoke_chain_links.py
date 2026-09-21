@@ -2993,6 +2993,44 @@ def test_gate_uses_same_requirement() -> None:
     assert _check_gate_uses_same_requirement() == []
 
 
+def _check_three_marks() -> list[str]:
+    """★ 三态可辨（Founder: "没有像 codex/Hermes 的 cli 那样: 用户/系统/执行 都有区分" + "结果堆砌在一起"）。
+
+    判据: ① 有四个标记常量（你/系统/执行/助手）② 工具输出成块（头行 + 分隔 + `│` 缩进 + 超长截断并说明）
+         ③ 会话里真的用了（源码断言: 用户回声 / tool_block）④ 点头执行后必须有**结果行**（不许零反馈 ✗）
+    """
+    import inspect as _insp
+
+    from apps.cli.domains import welcome as _W
+
+    bad: list[str] = []
+    for name in ("MARK_USER", "MARK_SYS", "MARK_EXEC", "MARK_AI"):
+        if not getattr(_W, name, ""):
+            bad.append(f"缺标记 {name}（三态不可辨 ✗）")
+    blk = _W.tool_block("project list", 0.1, "a\nb")
+    if "执行 ▸" not in blk or "│ a" not in blk or "─" not in blk:
+        bad.append("工具块没做成「头行+分隔+缩进」✗")
+    long_out = "\n".join(f"line{i}" for i in range(60))
+    blk2 = _W.tool_block("project list", 0.1, long_out)
+    if "还有" not in blk2:
+        bad.append("超长工具输出没截断（会堆砌满屏 ✗）")
+    if blk.count("factory factory") or "factory factory" in blk2:
+        bad.append("块头命令名重复（factory factory ✗）")
+    src = _insp.getsource(_W.run_shell)
+    if "MARK_USER" not in src:
+        bad.append("用户的话没有回声标记（用户/执行/系统 分不清 ✗）")
+    if "tool_block(" not in src:
+        bad.append("会话里没用工具块（结果还是堆砌 ✗）")
+    if "执行{'完成" not in src and "执行{'" not in src:
+        bad.append("点头执行后没有结果行（看起来像没执行 ✗ —— Founder 实测踩到）")
+    return bad
+
+
+def test_three_marks() -> None:
+    """三态可辨: 你/系统/执行/助手 · 工具输出成块+截断 · 点头执行后有结果行。"""
+    assert _check_three_marks() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -3042,6 +3080,7 @@ def main() -> int:
     results.append(("markdown 渲染（去标记·表格对齐·提示词要求原样贴表）", not _check_markdown_render(), "；".join(_check_markdown_render())))
     results.append(("项目说明（中文说明来自真实需求原话·不编）", not _check_project_notes(), "；".join(_check_project_notes())))
     results.append(("PRD 门用同一份需求（真需求不误杀·拿不到就不过滤）", not _check_gate_uses_same_requirement(), "；".join(_check_gate_uses_same_requirement())))
+    results.append(("三态可辨（你 · 系统 · 执行 · 助手 + 结果成块）", not _check_three_marks(), "；".join(_check_three_marks())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

@@ -365,6 +365,32 @@ def _ask_permission(cmd: str, *, tty: bool, always: set[str]) -> str:
     return "once" if ans == "1" else "deny"
 
 
+#: 会话里三类信息各自的前缀（Founder: "没有像 codex/Hermes 的 cli 那样: 用户/系统/执行 都有区分"）
+MARK_USER = "你 ▸"
+MARK_SYS = "系统 ▸"
+MARK_EXEC = "执行 ▸"
+MARK_AI = "助手 ▸"
+
+
+def tool_block(cmd: str, seconds: float | None, output: str, *, max_lines: int = 24) -> str:
+    """工具执行块: 头行标明"谁在跑 + 多久", 下面用 `│` 引住输出, 太长就截断并说明。
+
+    ★ Founder: "所有结果堆砌在一起, 看不清楚, 太乱" ⇒ 每块要有**标题 + 分隔 + 缩进**。
+    """
+    _c = str(cmd or "").strip()
+    if _c.startswith("factory "):
+        _c = _c[len("factory "):]
+    head = f"  {MARK_EXEC} factory {_c}" + (f"   {seconds:.1f}s" if seconds is not None else "")
+    lines = [head, "  " + "─" * 66]
+    body = str(output or "").rstrip().splitlines() or ["（没有输出）"]
+    shown = body[:max_lines]
+    lines += ["  │ " + ln for ln in shown]
+    if len(body) > len(shown):
+        lines.append(f"  │ …（还有 {len(body) - len(shown)} 行; 要看全的可用 /<命令> 自己跑）")
+    lines.append("  " + "─" * 66)
+    return "\n".join(lines)
+
+
 def _looks_like_command(line: str, cmds: set[str]) -> bool:
     """这句话是不是"就是一条命令"（而不是在跟我说话）。
 
@@ -496,24 +522,42 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 _yes = _appr(line)
             if _yes is True:
                 _argv = _toargv(_pending_cmd)
-                print(f"  ▶ 执行: factory {' '.join(_argv)}")
                 _pending_cmd = ""
-                try:
-                    from apps.cli.main import main as _m3
+                # ★ Founder: "最后的好像没有执行动作" —— 其实是**执行了却零反馈** ✗
+                #   （那棵树真从 13 叶变成 199 叶 ✓）⇒ 现在抓输出 + 打块 + 明确结果行。
+                import contextlib as _c9
+                import io as _io9
+                import time as _t9
 
-                    _m3(["--root", str(ctx.root), *_argv])
-                except SystemExit:
-                    pass
+                _buf9 = _io9.StringIO()
+                _rc9, _t09 = 0, _t9.monotonic()
+                try:
+                    with _c9.redirect_stdout(_buf9):
+                        from apps.cli.main import main as _m3
+
+                        _m3(["--root", str(ctx.root), *_argv])
+                except SystemExit as _se9:
+                    _rc9 = int(getattr(_se9, "code", 0) or 0)
                 except Exception as exc:  # noqa: BLE001 — 一条命令炸了不带走 shell
+                    _rc9 = 1
                     print(f"  ⚠ 出错: {type(exc).__name__}: {str(exc)[:120]}")
+                _out9 = _buf9.getvalue().rstrip()
+                print()
+                print(tool_block(" ".join(_argv), _t9.monotonic() - _t09, _out9))
+                print(f"  {MARK_SYS} {'✔' if _rc9 == 0 else '⚠'} 执行{'完成（改动已落盘）' if _rc9 == 0 else f'结束（退出码 {_rc9}）'}")
+                print()
                 continue
             if _yes is False:
-                print("  （已取消那条命令, 没执行）")
+                print(f"  {MARK_SYS} 已取消, 没执行")
                 _pending_cmd = ""
                 continue
             print("  （那条挂起的命令我先搁着; 你这句话按普通消息处理）")
             _pending_cmd = ""
         low = line.lower()
+        # ★ 三态区分（Founder: "没有像 codex/Hermes 的 cli 那样: 用户/系统/执行 都有区分"）
+        #   `你 ▸` = 你说的话;  `执行 ▸` = 它跑了什么;  `系统 ▸` = 平台提示;  `⚕` = 助手回答
+        if line and low not in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
+            print(f"  {MARK_USER} {line}")
         if low in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
             break
         if low in ("help", "h", "?", "/h", "/?"):
@@ -553,7 +597,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 print("\033[2J\033[H", end="")
             elif low == "/new":
                 _conv_id, _chat_hist = "", []
-                print("  （已开新会话: 上下文清空, 后面说的从零开始记）")
+                print(f"  {MARK_SYS} 已开新会话（上下文清空）")
             elif low == "/cost":
                 print(f"  本次会话: {_sess['turns']} 轮 · tokens ↑{_sess['prompt_tokens']} / "
                       f"↓{_sess['completion_tokens']} · 估算成本 ${_sess['cost']:.6f}")
@@ -668,20 +712,26 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             from apps.cli.domains import chat as _chat
 
             def _on_output(cmd: str, text: str) -> None:
-                """★ 工具输出**原样**给老板看（平台排好的表就是对的; 模型重画会把列画散 ✗）。"""
-                _txt = str(text or "").rstrip()   # ★ 只去尾部: 头行的前导空格是表格对齐的一部分 ✗
-                if not _txt:
+                """★ 工具输出**原样**给老板看 + 每块**带头行与分隔线**。
+
+                两条 Founder 实测: ① "模型重画表格会把列画散 ✗"（所以直通）;
+                ② "所有结果堆砌在一起, 看不清楚, 太乱" + "用户/系统/执行 要有区分" ⇒ 分块 ✓。
+                """
+                _t = str(text or "").rstrip()
+                if not _t:
                     return
-                for _ln in _txt.splitlines()[:40]:
-                    print("    " + _ln)
+                print()
+                print(tool_block(cmd, _last_exec.get("s"), _t))
+                print()
+
+            _last_exec = {"cmd": "", "s": None}
 
             def _on_progress(cmd: str, seconds: float) -> None:
-                # ★ 忙指示那行先清掉再打过程行（Founder 实测: 两个黏在一行 ✗）
-                if _first_proc[0] and _busy_txt:
-                    print(_busy_clear(_tty) + process_line(cmd, seconds))
+                # ★ 只**记录**（打印交给 tool_block 的块头 —— 否则命令名/耗时会出现两次 ✗）
+                _last_exec["cmd"], _last_exec["s"] = cmd, seconds
+                if _first_proc[0] and _busy_txt:      # 忙指示那行先清掉（Founder: 别黏一起 ✗）
+                    print(_busy_clear(_tty), end="")
                     _first_proc[0] = False
-                    return
-                print(process_line(cmd, seconds))
 
             def _run_capture(argv: list[str]) -> str:
                 import contextlib as _c
@@ -751,7 +801,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             if _pend:
                 _pending_cmd = str(_pend[0])
                 print()
-                print("  ⏸ 待你点头（这条会改数据）")
+                print(f"  {MARK_SYS} ⏸ 待你点头（这条会改数据）")
                 print()
                 print(f"     命令: factory {_pending_cmd}")
                 print()

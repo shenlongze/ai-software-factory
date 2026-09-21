@@ -2501,6 +2501,53 @@ def test_chat_memory_and_clear() -> None:
     assert _check_chat_memory_and_clear() == []
 
 
+def _check_cli_version_and_typo() -> list[str]:
+    """★ `factory -v` 直接报版本（不是进会话）· 敲错命令给人话+建议（不是整屏英文 usage）。
+
+    实测病（Founder 敲的）: `factory -v` 进了交互式会话 ✗; `factory veresion`（打错字）甩了一屏
+      argparse usage + 全部命令枚举 ✗ —— 这两条都是最常见的敲法。
+    """
+    import contextlib as _ctx
+    import io as _io
+
+    from apps.cli import main as _cli
+
+    bad: list[str] = []
+    for flag in ("-v", "-V", "--version", "version"):
+        buf = _io.StringIO()
+        try:
+            with _ctx.redirect_stdout(buf):
+                rc = _cli([flag])
+        except SystemExit:
+            rc = 0
+        out = buf.getvalue()
+        if "AI Factory OS" not in out or "v" not in out:
+            bad.append(f"`factory {flag}` 没直接报版本")
+        if "你想做什么" in out:
+            bad.append(f"`factory {flag}` 竟然进了会话（应该直接报版本）")
+        if rc != 0:
+            bad.append(f"`factory {flag}` 退出码应为 0")
+    buf = _io.StringIO()
+    try:
+        with _ctx.redirect_stdout(buf):
+            rc2 = _cli(["veresion"])
+    except SystemExit:
+        rc2 = 0
+    out2 = buf.getvalue()
+    if "没有这个命令" not in out2:
+        bad.append("敲错命令没给一句人话")
+    if "invalid choice" in out2 or "usage: factory [" in out2:
+        bad.append("敲错命令仍在甩 argparse 整屏 usage")
+    if rc2 != 2:
+        bad.append(f"敲错命令退出码应为 2（实得 {rc2}）")
+    return bad
+
+
+def test_cli_version_and_typo() -> None:
+    """-v/--version/version 直接报版本 · 敲错命令给人话+建议 · 都不甩整屏英文 usage。"""
+    assert _check_cli_version_and_typo() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2542,6 +2589,7 @@ def main() -> int:
     results.append(("需求→PRD 的门（无出处的功能不进 PRD·标出可疑）", not _check_prd_requirement_gate(), "；".join(_check_prd_requirement_gate())))
     results.append(("口径一致（status/project list/dashboard 项目数同源）", not _check_one_authority_projects(), "；".join(_check_one_authority_projects())))
     results.append(("会话打磨（跨重启记上下文·新会话·clear·念命令说后果）", not _check_chat_memory_and_clear(), "；".join(_check_chat_memory_and_clear())))
+    results.append(("版本与错字（-v 直接报版本·敲错给人话不甩 usage）", not _check_cli_version_and_typo(), "；".join(_check_cli_version_and_typo())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

@@ -1288,12 +1288,61 @@ def build_parser() -> Any:
     return p
 
 
+def _top_command_names() -> set[str]:
+    """全部顶层命令名（从解析器读, 不写死 —— 命令表变了它跟着变）。"""
+    try:
+        for a in build_parser()._actions:
+            if hasattr(a, "choices") and isinstance(a.choices, dict) and "status" in a.choices:
+                return {str(k) for k in a.choices}
+    except Exception:  # noqa: BLE001 — 读不到就不预校验（照旧交给 argparse）
+        pass
+    return set()
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI 入口: 返回退出码 (console script 以返回值作为进程退出码)。"""
     # ★ 2026-09-21（Founder: "我需要如何进入 factory 的 cli"）: 空参**不再甩英文报错**,
     #   而是进友好首屏（版本 + 你的数据概览 + 编号菜单; 有终端可交互, 非终端只打印）。
     #   实测病: 原来 `factory` ⇒ "error: the following arguments are required: command" ✗ 等于进不去。
     _argv = list(sys.argv[1:] if argv is None else argv)
+    # ★ 2026-09-21 修（Founder 实测: `factory -v` 竟然进了会话 —— 应该直接报版本 ✗）:
+    #   版本是最常被敲的开关之一, 必须**直接答**（`-v` / `-V` / `--version` / `version`）。
+    if any(a in ("-v", "-V", "--version", "version") for a in _argv if not a.startswith("--root")):
+        try:
+            from importlib.metadata import version as _ver
+
+            _v = _ver("ai-software-factory")
+        except Exception:  # noqa: BLE001 — 拿不到就如实说, 不编
+            _v = "unknown（包元数据读不到）"
+        print(f"AI Factory OS  v{_v}")
+        print("  想看能干什么: factory help     ·  启动会话: factory start")
+        return 0
+    # ★ 敲错命令（如 `veresion`）⇒ 一句人话 + 像不像的提示, 不再甩整屏英文 usage ✗
+    _cmdlist = _top_command_names()
+    # ★ 取"第一个真正的命令词"时要**跳过取值型开关的值** ——
+    #   实测踩到: `--root /tmp/xxx start` 里那个路径被当成命令名 ⇒ 报"没有这个命令: /tmp/xxx" ✗
+    _takes_value = {"--root"}
+    _first, _skip = "", False
+    for _a in _argv:
+        if _skip:
+            _skip = False
+            continue
+        if _a in _takes_value:
+            _skip = True
+            continue
+        if _a.startswith("-"):
+            continue
+        _first = _a
+        break
+    if _first and _cmdlist and _first not in _cmdlist:
+        import difflib as _dl
+
+        _near = _dl.get_close_matches(_first, sorted(set(_cmdlist) | {"version", "help"}), n=3, cutoff=0.6)
+        print(f"没有这个命令: {_first}")
+        if _near:
+            print(f"  你是不是想敲: {' / '.join(_near)}")
+        print("  看全部命令: factory help     ·  看版本: factory -v")
+        return 2
     if not any(not a.startswith("-") for a in _argv):
         from .domains.welcome import run_welcome
 

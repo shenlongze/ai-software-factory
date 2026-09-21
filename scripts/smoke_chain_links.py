@@ -2893,6 +2893,55 @@ def test_markdown_render() -> None:
     assert _check_markdown_render() == []
 
 
+def _check_project_notes() -> list[str]:
+    """★ 项目要有**中文说明**（Founder: "没有中文说明, 我都不知道是什么项目"）。
+
+    判据: ① `project list` 输出里有"说明"列 ② 说明来自**真实来源**（会话里的第一句需求 / 记录里的描述）,
+             没有就说"（未记录说明）" —— **绝不编** ③ `project show` 头一行也带说明
+    """
+    import contextlib as _c
+    import io as _io
+    import json as _json
+    import tempfile as _tf
+
+    from apps.cli import main as _cli
+    from apps.cli.commands import _project_notes
+    from ai_factory_os.services.organization.projects import Project, ProjectStore
+
+    bad: list[str] = []
+    with _tf.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "org").mkdir(parents=True, exist_ok=True)
+        ProjectStore(root / "org").save_project(
+            Project(id="P-zzz", name="demo-app", repo_path=str(root / "repo" / "demo-app")))
+        conv = root / "projects" / "P-zzz" / "conversations"
+        conv.mkdir(parents=True, exist_ok=True)
+        (conv / "conv-1.json").write_text(_json.dumps(
+            {"id": "conv-1", "messages": [{"role": "human", "content": "我要做一个社区团购小程序: 团长开团、居民下单、自提核销"},
+                                           {"role": "assistant", "content": "好的"}]},
+            ensure_ascii=False), encoding="utf-8")
+        notes = _project_notes(root, ProjectStore(root / "org").list_projects() or [])
+        if "社区团购" not in (notes.get("P-zzz") or ""):
+            bad.append("说明没从会话里的需求原话里取（来源不对/取不到）")
+        buf = _io.StringIO()
+        try:
+            with _c.redirect_stdout(buf):
+                _cli(["--root", str(root), "project", "list"])
+        except SystemExit:
+            pass
+        out = buf.getvalue()
+        if "说明" not in out:
+            bad.append("project list 没有「说明」列（老板看不懂 gym-coach 是啥 ✗）")
+        if "社区团购" not in out:
+            bad.append("project list 里说明没显示出来")
+    return bad
+
+
+def test_project_notes() -> None:
+    """项目说明: list 有说明列 · 来自会话需求原话（真实来源）· show 头行也带。"""
+    assert _check_project_notes() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -2940,6 +2989,7 @@ def main() -> int:
     results.append(("CLI 精髓（会话命令/忙指示/可打断/三档权限/多行/会话可挑）", not _check_cli_essence(), "；".join(_check_cli_essence())))
     results.append(("输出可读性（status 表格化·中文对齐·-h 求助·框宽上限）", not _check_output_readability(), "；".join(_check_output_readability())))
     results.append(("markdown 渲染（去标记·表格对齐·提示词要求原样贴表）", not _check_markdown_render(), "；".join(_check_markdown_render())))
+    results.append(("项目说明（中文说明来自真实需求原话·不编）", not _check_project_notes(), "；".join(_check_project_notes())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

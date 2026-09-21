@@ -2129,8 +2129,11 @@ def cmd_project_list(ctx: FactoryContext, args: Any) -> dict:
         from ai_factory_os.services.organization.projects import ProjectStore
 
         rows = ProjectStore(ctx.root / "org").list_projects() or []
+
+        _notes = _project_notes(ctx.root, rows)
         out_rows = [{
             "name": str(getattr(r, "name", "") or getattr(r, "id", "")),
+            "note": _notes.get(str(getattr(r, "id", "")), ""),
             "id": str(getattr(r, "id", "")),
             "status": str(getattr(r, "status", "") or "active"),
             "language": str(getattr(r, "language", "") or getattr(r, "project_type", "") or "-"),
@@ -2171,6 +2174,39 @@ def cmd_project_list(ctx: FactoryContext, args: Any) -> dict:
         "examples_dir": source_path,  # 兼容 Phase 5A 输出键
         "event_seq": ev.seq,
     }
+
+
+def _project_notes(root: Path, rows: list[Any]) -> dict[str, str]:
+    """每个项目的**中文说明** —— 找不到就说没有, 绝不编 ✓。
+
+    ★ 2026-09-21（Founder: "没有中文说明, 我都不知道是什么项目"）:
+      来源优先级: ① org 记录里的 description/标题; ② 该项目**会话里的第一句需求**（真实原话, 截断显示）。
+    """
+    out: dict[str, str] = {}
+    for r in rows or []:
+        pid = str(getattr(r, "id", "") or "")
+        if not pid:
+            continue
+        note = str(getattr(r, "description", "") or getattr(r, "title", "") or "").strip()
+        if not note:
+            try:
+                files = sorted((Path(root) / "projects" / pid / "conversations").glob("*.json"),
+                               key=lambda q: q.stat().st_mtime)
+                for f in files:
+                    try:
+                        d = json.loads(f.read_text(encoding="utf-8"))
+                    except Exception:  # noqa: BLE001
+                        continue
+                    for m in (d.get("messages") or []):
+                        if str(m.get("role")) in ("human", "user") and str(m.get("content") or "").strip():
+                            note = " ".join(str(m["content"]).split())
+                            break
+                    if note:
+                        break
+            except Exception:  # noqa: BLE001 — 读不到就没说明, 不编
+                note = ""
+        out[pid] = note[:60]
+    return out
 
 
 def resolve_project_id(ctx: FactoryContext, token: str) -> str:
@@ -2232,11 +2268,12 @@ def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
                          if str(getattr(r, "id", "")) == _pid_org), None)
             if _rec is not None:
                 _repo = str(getattr(_rec, "repo_path", "") or "")
+                _note = _project_notes(ctx.root, [_rec]).get(_pid_org, "")
                 return {"ok": True, "command": "project show", "source": "org 项目库",
                         # 打印器要的字段一个不少（实测: 少 description 就 KeyError ✗）
                         "project": {"name": str(getattr(_rec, "name", "") or _pid_org),
                                     "id": _pid_org, "project_id": _pid_org,
-                                    "description": str(getattr(_rec, "description", "") or ""),
+                                    "description": _note,
                                     "status": str(getattr(_rec, "status", "") or "active"),
                                     "language": str(getattr(_rec, "language", "") or "-"),
                                     "repository": _repo, "repo_path": _repo,

@@ -2892,9 +2892,13 @@ def _check_output_readability() -> list[str]:
     _rf = _W.box("⚕ t", "第一行没标点结尾\n第二行接着\n\n- 列表项\n继续")
     if "第一行没标点结尾第二行接着" not in _rf.replace("\n", " "):
         bad.append("没有把模型硬换的行接回段落（框里右边缘像狗牙 ✗）")
-    _wide = max(_TW.display_width(x) for x in _b.splitlines())
+    _lines = _b.splitlines()
+    _wide = max(_TW.display_width(x) for x in _lines)
     if _wide > 100:
         bad.append(f"回复框太宽（{_wide} 列; 上限 100 —— 照 Hermes 通栏但别超屏）")
+    # ★ 新版回答区: 只有**上下两条线**要等宽（内容行缩进, 不等宽是正常的 ✓）
+    if _TW.display_width(_lines[0]) != _TW.display_width(_lines[-1]):
+        bad.append("上下两条线不等宽（框看着歪 ✗）")
     # 只留一套宽度实现
     _wsrc = _insp.getsource(_W._dw)
     if "textwidth" not in _wsrc:

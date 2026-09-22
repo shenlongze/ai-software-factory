@@ -1089,6 +1089,10 @@ def build_parser() -> Any:
     p_understand.add_argument("path", help="项目路径 (目录)")
 
     # factory console (Phase 11A, ADR-0034: Human Console Layer — 统一只读视图)
+    p_serve = sub.add_parser("serve", help="一条命令起 API + 最小界面（只读; Ctrl-C 停）")
+    json_opt(p_serve)
+    p_serve.add_argument("--port", type=int, default=8011, help="端口（默认 8011）")
+    p_serve.add_argument("--host", default="127.0.0.1", help="绑定地址（默认只绑本机 ✓）")
     p_console = sub.add_parser(
         "console", help="Human Console: 统一只读视图 (Human Layer, 零写操作; 发 console.* 审计事件)"
     )
@@ -1501,6 +1505,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_plugin(ctx, args)
         elif args.command == "arch":
             result = _dispatch_arch(ctx, args)
+        elif args.command == "serve":
+            return _run_serve(ctx, args)
         elif args.command == "kanban":
             result = _dispatch_kanban(ctx, args)
         elif args.command == "update":
@@ -4741,6 +4747,33 @@ def _dispatch_console(ctx: FactoryContext, args: Any) -> dict:
     if args.console_command in ("activity", "projects", "agents", "decisions", "cost", "experience"):
         return cmd_console_domain(ctx, args)
     raise CliError(f"unknown console command: {args.console_command}", exit_code=2)
+
+
+def _run_serve(ctx: FactoryContext, args: Any) -> int:
+    """`factory serve` —— 一条命令起 API + 最小界面（只读视图; Ctrl-C 停 ✓）。
+
+    ★ 2026-09-22（Founder 点单"发布交付链: factory serve 一条命令起 API + 最小界面"）:
+      以前要记"哪个脚本 + 哪个端口 + 什么参数" ✗ ⇒ 现在一条命令, 起来后把地址打给人看 ✓。
+    """
+    import os as _os
+
+    _host = str(getattr(args, "host", "127.0.0.1") or "127.0.0.1")
+    _port = int(getattr(args, "port", 8011) or 8011)
+    _os.environ.setdefault("FACTORY_ROOT", str(getattr(ctx, "root", "")))
+    print("  AI Factory OS · 只读界面已启动")
+    print(f"    地址: http://{_host}:{_port}/")
+    print(f"    API : http://{_host}:{_port}/api/health · /api/trees …")
+    print(f"    数据: {getattr(ctx, 'root', '')}（只读 ✓ 不改数据）")
+    print("    Ctrl-C 停")
+    try:
+        import uvicorn
+
+        from apps.api.main import app as _app
+
+        uvicorn.run(_app, host=_host, port=_port, log_level="warning")
+    except KeyboardInterrupt:
+        pass
+    return 0
 
 
 def cmd_console_domain(ctx: FactoryContext, args: Any) -> dict:

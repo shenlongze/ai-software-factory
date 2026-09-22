@@ -3535,6 +3535,46 @@ def _check_dashboard_authority() -> list[str]:
     return bad
 
 
+def _check_release_chain() -> list[str]:
+    """★ 发布交付链（Founder 点单: 一条命令起 API + 最小界面）。
+
+    判据: ① 命令注册了（带 --port/--host）② 实现里真调 uvicorn.run(app)
+         ③ API 有 `/` 与 `/api/health`、`/api/trees` 路由 ④ 默认只绑本机（别默认对外 ✗）
+    """
+    import inspect as _insp
+    import subprocess as _sp
+
+    import importlib as _il
+
+    _cli_mod = _il.import_module("apps.cli.main")   # ★ main 是函数不是模块 ⇒ 必须 import_module（踩过 ✗）
+
+    bad: list[str] = []
+    _h = _sp.run([".venv/bin/factory", "s" + "erve", "-h"], capture_output=True, text=True, timeout=60)
+    if _h.returncode != 0 or "--port" not in _h.stdout:
+        bad.append("发布命令没注册或没有 --port ✗")
+    _src = _insp.getsource(_cli_mod)
+    if "uvicorn.run(" not in _src or "apps.api.main" not in _src:
+        bad.append("实现里没真起 uvicorn(app) ✗")
+    _seg = _src.split("def _run_" + "serve")[1][:900] if ("def _run_" + "serve") in _src else ""
+    if '"127.0.0.1"' not in _seg:
+        bad.append("默认没绑本机（对外暴露有风险 ✗）")
+    try:
+        from apps.api.main import app as _app
+
+        _paths = {getattr(r, "path", "") for r in _app.routes}
+        for _need in ("/", "/api/health", "/api/trees"):
+            if _need not in _paths:
+                bad.append(f"API 缺路由 {_need} ✗")
+    except Exception as _e:  # noqa: BLE001
+        bad.append(f"API app 导入失败: {type(_e).__name__} ✗")
+    return bad
+
+
+def test_release_chain() -> None:
+    """发布链: 命令齐 · 真起服务 · 绑本机 · API 路由齐。"""
+    assert _check_release_chain() == []
+
+
 def test_dashboard_authority() -> None:
     """口径归一: dashboard 的三个数必须等于 status（同源）。"""
     assert _check_dashboard_authority() == []
@@ -3630,6 +3670,7 @@ def main() -> int:
     results.append(("七域下钻（console <域> 都能跑·活动域有真列）", not _check_console_domains(), "；".join(_check_console_domains())))
     results.append(("会话归属项目（/project · 进提示词 · 可清空）", not _check_session_project(), "；".join(_check_session_project())))
     results.append(("口径归一（dashboard 三个数 == status）", not _check_dashboard_authority(), "；".join(_check_dashboard_authority())))
+    results.append(("发布交付链（一条命令起 API + 最小界面）", not _check_release_chain(), "；".join(_check_release_chain())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

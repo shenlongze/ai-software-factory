@@ -3391,6 +3391,11 @@ def _check_kanban_board() -> list[str]:
                    capture_output=True, text=True, timeout=90).stdout
     if len(_all.splitlines()) < len(_two.splitlines()):
         bad.append("`--all` 比 `--limit` 还短（条数开关没生效 ✗）")
+    # ★ 表头要带项目中文说明（Founder: "我都不知道是什么项目"）: helper 必须收到**对象**（传 dict 就取不到 ✗）
+    from pathlib import Path as _PP
+    _src = _PP("apps/cli/main.py").read_text(encoding="utf-8")
+    if "_project_notes(ctx.root, list(_proj))" not in _src:
+        bad.append("看板表头没挂项目说明（或又把对象换成 dict ⇒ 取不到 ✗）")
     return bad
 
 

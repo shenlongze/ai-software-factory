@@ -1832,12 +1832,10 @@ def _dispatch_kanban(ctx: FactoryContext, args: Any) -> dict:
                 from apps.cli.commands import _project_notes
 
                 _proj = ProjectStore(ctx.root / "org").list_projects() or []
-                _pdicts = []
                 for _rec in _proj:
-                    _d = _rec.to_dict() if hasattr(_rec, "to_dict") else dict(_rec)
-                    _name[str(_d.get("id") or "")] = str(_d.get("name") or "")
-                    _pdicts.append(_d)
-                _notes = _project_notes(ctx.root, _pdicts) or {}
+                    _name[str(getattr(_rec, "id", "") or "")] = str(getattr(_rec, "name", "") or "")
+                # ★ 传**对象**（helper 用 getattr 读 id/description ✓ —— 上次我传 dict ⇒ 全取不到 ✗）
+                _notes = _project_notes(ctx.root, list(_proj)) or {}
             except Exception:  # noqa: BLE001 — 拿不到就不写表头说明 ✓
                 pass
             out: list[str] = []

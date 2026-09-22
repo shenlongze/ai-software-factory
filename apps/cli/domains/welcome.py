@@ -138,6 +138,7 @@ def render_welcome(root: Path | str) -> str:
         # ★ 2026-09-21 首屏再砍（Founder: "无效信息太多了"）⇒ 只留: 版本 · 数据 · 怎么用 · 命令怎么敲
         "  直接说人话就行; 命令名开头就直接跑（例: status / project list）",
         "  会改数据的只念给你, 你点头才跑 · h 帮助 · exit 离开",
+        "  命令: 直接敲（status / project list）; 打 / 再回车=命令表, 打 / 后按 TAB=补全",
     ]
     # （旧的 6 行菜单已并入上面那行「快捷编号」—— 入口是会话, 菜单只是快捷 ✓）
     lines += [

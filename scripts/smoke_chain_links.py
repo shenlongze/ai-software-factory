@@ -2872,6 +2872,10 @@ def _check_output_readability() -> list[str]:
     _bn = len([x for x in buf.getvalue().splitlines() if x.strip()])
     if _bn > 10:
         bad.append(f"首屏太长（{_bn} 行非空 ⇒ 无效信息多 ✗）")
+    # ★ Founder: 命令带不带 / 要能一眼知道 ⇒ 首屏必须给"打 / 回车=命令表 · TAB=补全"这一行
+    for _need in ("打 / 再回车", "TAB"):
+        if _need not in buf.getvalue():
+            bad.append(f"首屏没提「{_need}」（Founder 要一眼知道怎么用 ✗）")
     from apps.cli.domains import chat as _CC
 
     _csrc = _insp.getsource(_CC)

@@ -2883,6 +2883,15 @@ def _check_output_readability() -> list[str]:
             bad.append(_why)
     # ⑤ 框宽 ≤ 88
     _b = _W.box("⚕ 标题", "正文" * 60)
+    # ★ Founder: "这里左右的框就不要了" ⇒ 回答区**不许有左右边框**（只有上下两条线 + 内容缩进）
+    if "│" in _b:
+        bad.append("回答区还有左右边框（Founder 明确不要 ✗）")
+    if not _b.startswith("  ╭─") or "\n  ╰" not in _b:
+        bad.append("回答区的上下两条线没了（那是对齐/分区用的 ✗）")
+    # 段落重排: 模型硬换的行要接回去
+    _rf = _W.box("⚕ t", "第一行没标点结尾\n第二行接着\n\n- 列表项\n继续")
+    if "第一行没标点结尾第二行接着" not in _rf.replace("\n", " "):
+        bad.append("没有把模型硬换的行接回段落（框里右边缘像狗牙 ✗）")
     _wide = max(_TW.display_width(x) for x in _b.splitlines())
     if _wide > 100:
         bad.append(f"回复框太宽（{_wide} 列; 上限 100 —— 照 Hermes 通栏但别超屏）")

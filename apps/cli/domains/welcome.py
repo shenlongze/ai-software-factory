@@ -230,19 +230,36 @@ def _color_off() -> str:
     return "\033[0m"
 
 
+def _reflow(text: str) -> list[str]:
+    """把模型自己硬换的行**接回段落**（Founder 实测: 框里右边缘像狗牙 ✗）。
+
+    规则: 一行不以句末标点结尾、且下一行不是新段落/列表/标题 ⇒ 接上（中文不靠空格断行, 必须接 ✓）。
+    """
+    out: list[str] = []
+    for raw in (text or "").splitlines():
+        s = raw.rstrip()
+        _is_new = (not s) or s.lstrip()[:1] in ("-", "*", "·", "#", ">") or s.lstrip()[:2] in ("1.", "2.", "3.")
+        if out and out[-1].strip() and s.strip() and not _is_new and out[-1].rstrip()[-1:] not in "。！？.!?:：;；)）」":
+            out[-1] = out[-1].rstrip() + (" " if out[-1].rstrip()[-1:].isascii() and s[:1].isascii() else "") + s.lstrip()
+        else:
+            out.append(s)
+    return out
+
+
 def box(title: str, text: str, *, width: int = 0) -> str:
-    """Hermes 那样把一段话装进圆角框（标题在顶栏, 中文字宽算 2）。"""
-    # ★ 宽度必须**三条线一致**（实测踩到: 差 1-2 列 ⇒ 框看着是歪的 ✗）
-    #   三条线各自的目标宽度都是 W: 顶 `  ╭─ T ` + dash + `╮`; 内容 `  │ ` + 文本 + space + `│`;
-    #   底 `  ╰` + dash + `╯`（_dw 按显示宽度算, 中文=2）
-    # ★ 照 Hermes: 回复框用**通栏宽度**（Founder: "Hermes…比较清晰" —— 先前我限到 88 对不上它的版面 ✗）
+    """回答区（照 Founder 的意思: **左右边框去掉** —— 只留上下两条线 + 内容缩进 ✓）。
+
+    · 顶: `  ╭─ ⚕ AI Factory OS ──…──`  （标题在顶部线上, 就像 Hermes ✓）
+    · 内容: 缩进 6 格, 先**重排段落**（把模型硬换的行接回去 ✓）再按宽度折行
+    · 底: `  ╰──…──`（通栏; 与顶线同宽 ✓）
+    """
     w = width or min(_term_width(), 96)
     head = f"  ╭─ {title} "
-    lines = [head + "─" * max(0, w - _dw(head) - 1) + "╮"]
-    for raw in (text or "").splitlines() or [""]:
-        for seg in _wrap(raw, w - 6):
-            lines.append("  │ " + seg + " " * max(0, w - _dw(seg) - 5) + "│")
-    lines.append("  ╰" + "─" * max(0, w - 4) + "╯")
+    lines = [head + "─" * max(0, w - _dw(head))]
+    for raw in _reflow(text):
+        for seg in _wrap(raw, w - 6) if raw.strip() else [""]:
+            lines.append(("      " + seg).rstrip() if seg else "")
+    lines.append("  ╰" + "─" * max(0, w - 3))
     return "\n".join(lines)
 
 

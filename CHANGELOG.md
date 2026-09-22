@@ -1,5 +1,24 @@
 # Changelog
 
+## [v1.3.11] — 2026-09-22
+
+**真流式**（Founder 选 A′）—— 首块 0.65 秒就出来，不再等整段。
+
+### Added
+- `infrastructure/llm/providers/streaming.py`：**直连 OpenAI 兼容端点 + `stream: true`**，逐块收 SSE
+  · 配置走**单源** `providers.json`（base_url / models / `api_key_ref`）· 密钥只从 `<root>/.env` 或环境变量取（不落盘 ✗）
+  · ★ **只新增**：`generate()` / `chat()` 一个字节没改 ⇒ 其它环零影响
+- 会话层接上：终端里回答**逐行渐出**（答案区顶线先出 ⇒ 内容渐出 ⇒ 底线 + 状态栏）· 内部协议行不外泄 ✗
+
+### Fixed / 更正
+- 更正我先前的说法：`adapters/hermes.py` 里的 `stream()` 是**假流式** —— 它先
+  `subprocess.run(capture_output=True)` 把**整段**拿回来再按行切块 ✗（零加速; 要像打字机只能加人为延迟 = 装样子 ✗）
+  ⇒ 真流式必须换接入方式（本刀 ✓）
+
+### Note
+- **非终端（管道/脚本）保持非流式**（输出确定性 ✓ 门禁可断言）
+- 实测: 真接口 14 个分块, **首块 0.65s**（老路整段等 1.3~3s）· 本地假 SSE 单测: 必须带 `stream:true` · 分块有序 · 全文完整
+
 ## [v1.3.10] — 2026-09-22
 
 **干净环境真装真跑** —— 并因此抓到并修掉一个真打包病。

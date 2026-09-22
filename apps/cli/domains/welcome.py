@@ -1029,6 +1029,30 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
 
             _last_exec = {"cmd": "", "s": None}
 
+            _streamed = [False]          # ★ 本轮流式打印过没有（有就别再整段打一遍 ✗）
+            _sline = [""]                # 行缓冲（真流式按块来, 攒够一行再处理 ✓）
+
+            def _flush_line(_ln: str) -> None:
+                if _ln.strip().startswith("RUN:"):      # 内部协议不外泄给老板 ✗
+                    return
+                if not _streamed[0]:                    # 第一行之前: 先把答案区顶线打出来 ✓
+                    from apps.cli.theme import paint as _pl
+
+                    _w = min(_term_width(), 96)
+                    _hd = "  ╭─ ⚕ AI Factory OS "
+                    print(_pl("response_border", _hd) + _pl("response_border", "─" * max(0, _w - _dw(_hd))))
+                    _streamed[0] = True
+                from apps.cli.markdown import render_md as _mdl
+
+                print(_mdl(_ln, indent="      ") if _ln.strip() else "")
+
+            def _on_delta(chunk: str) -> None:
+                """真流式的分块回调: 攒到换行就出（所以是"逐行渐出" ✓）。"""
+                _sline[0] += chunk
+                while "\n" in _sline[0]:
+                    _one, _sline[0] = _sline[0].split("\n", 1)
+                    _flush_line(_one)
+
             def _on_progress(cmd: str, seconds: float) -> None:
                 # ★ 只**记录**（打印交给 tool_block 的块头 —— 否则命令名/耗时会出现两次 ✗）
                 _last_exec["cmd"], _last_exec["s"] = cmd, seconds
@@ -1062,7 +1086,8 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 _ans, _conv, _meta = _chat.chat_turn(ctx.root, line, conv_id=_conv_id,
                                                      history=_chat_hist, on_run=_run_capture,
                                                      on_progress=_on_progress, on_output=_on_output,
-                                                     on_approval=_ask_sh, project=_sel_project)
+                                                     on_approval=_ask_sh, project=_sel_project,
+                                                     on_delta=(_on_delta if _tty else None))
             except KeyboardInterrupt:                      # ★ 可打断: 断的是**这一轮**, 会话还在
                 print(_busy_clear(_tty) + "  （已中断这一轮; 会话还在 —— 接着说, 或输 /retry）")
                 continue
@@ -1098,7 +1123,12 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 _sb.append(f"查了 {_rounds - 1} 次")
             _head = "⚕ AI Factory OS"
             from apps.cli.markdown import render_md as _md   # ★ 终端渲染 markdown（Founder: "cli 好像不支持markdown格式"）
-            _body = _md(_ans or "（没答上来; 换句话再说一次?）", indent="")
+            if _streamed[0]:                     # 真流式已经逐行打过了 ✓
+                if _sline[0].strip():
+                    _flush_line(_sline[0])
+                _body = ""
+            else:
+                _body = _md(_ans or "（没答上来; 换句话再说一次?）", indent="")
             from apps.cli.theme import paint as _pb    # ★ 正文色（照 Hermes 的 banner_text ✓）
 
             _body = "\n".join(_pb("body", _ln) if _ln.strip() else _ln for _ln in _body.splitlines())
@@ -1113,6 +1143,11 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 print()
                 for _ln in _body.splitlines():
                     print(_ln if not _ln else "    " + _ln)
+            if _streamed[0]:
+                _w2 = min(_term_width(), 96)
+                from apps.cli.theme import paint as _pl2
+
+                print(_pl2("response_border", "  ╰" + "─" * max(0, _w2 - 3)))
             if _sb:
                 from apps.cli.theme import paint as _pl
 

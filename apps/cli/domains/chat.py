@@ -107,10 +107,25 @@ def _provider() -> Any:
     return provs[0] if provs else None
 
 
-def _ask_llm2(prov: Any, messages: list[dict[str, str]]) -> tuple[str, dict[str, Any]]:
-    from ai_factory_os.infrastructure.llm.provider import ProviderRequest
+def _ask_llm2(prov: Any, messages: list[dict[str, str]], root: Any = None,
+              on_delta: Any = None) -> tuple[str, dict[str, Any]]:
+    """一轮问答。★ 2026-09-22（Founder 选 A′ 真流式）: 给了 `on_delta` 且能直连 ⇒ 走**真流式**;
+    任何失败 ⇒ **回退**到原来的 `generate()`（不许因为流式把会话搞坏 ✗）。"""
+    if on_delta is not None and root is not None:
+        try:
+            from ai_factory_os.infrastructure.llm.providers import streaming as _st
 
+            _sys_prompt = next((m.get("content", "") for m in messages if m.get("role") == "system"), "")
+            _usr = "\n".join(m.get("content", "") for m in messages if m.get("role") != "system")
+            _r = _st.stream_chat(root, [{"role": "system", "content": _sys_prompt},
+                                        {"role": "user", "content": _usr}], on_delta=on_delta)
+            if _r.get("ok") and _r.get("content"):
+                return str(_r["content"]), dict(_r.get("usage") or {})
+        except Exception:  # noqa: BLE001 — 流式失败就回退, 不抛给老板 ✗
+            pass
     ctx = "\n\n".join(f"[{m['role']}] {m['content']}" for m in messages)
+    from ai_factory_os.infrastructure.llm.provider import ProviderRequest   # ★ 对的那个（带 task_context/max_tokens ✓）
+
     resp = prov.generate(ProviderRequest(task_context=ctx, max_tokens=1200))
     return str(getattr(resp, "content", "") or "").strip(), dict(getattr(resp, "usage", None) or {})
 
@@ -202,7 +217,7 @@ def _system_prompt(root: Path | str, project: str = "") -> str:
 def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[dict[str, str]] | None = None,
               on_run: Any = None, on_progress: Any = None,
               on_output: Any = None, on_approval: Any = None,
-              project: str = "") -> tuple[str, str, dict[str, Any]]:
+              project: str = "", on_delta: Any = None) -> tuple[str, str, dict[str, Any]]:
     """一轮会话: 返回 (回答文本, 会话 id)。
 
     on_run(argv) 用于"把这行 RUN 命令真的跑掉并把结果拿回来"——由调用方注入（CLI 里 = 跑命令）。
@@ -231,7 +246,7 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
 
     answer = ""
     for _round in range(_MAX_ROUNDS):
-        answer, _usage = _ask_llm2(prov, msgs)
+        answer, _usage = _ask_llm2(prov, msgs, root=root, on_delta=on_delta)
         if _usage:
             _meta["usage"] = _usage
         _meta["rounds"] = _round + 1

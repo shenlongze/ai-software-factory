@@ -3594,6 +3594,97 @@ def _check_packaging_data() -> list[str]:
     return bad
 
 
+def _check_streaming() -> list[str]:
+    """★ 真流式（Founder 选 A′）: 直连 HTTP + `stream: true`, 逐块回调; 失败回退非流式。
+
+    判据（用**本地假 SSE 服务**验证, 确定性且不联网 ✓）:
+      ① 请求体必须带 `stream: true` ② 分块按序回调 ③ 拼回的全文完整
+      ④ 会话层: **只有终端**才流式（非终端保持确定性输出 ✓）⑤ 流式失败 ⇒ 回退 generate（不崩 ✗）
+    """
+    import json as _json
+    import sys as _sys
+    import tempfile as _tf
+    import threading as _th
+    from http.server import BaseHTTPRequestHandler as _BH, HTTPServer as _HS
+    from pathlib import Path as _PP
+
+    _sys.path.insert(0, ".")
+    from ai_factory_os.infrastructure.llm.providers import streaming as _S
+
+    bad: list[str] = []
+    seen = {"stream": None}
+
+    class _H(_BH):
+        def do_POST(self):  # noqa: N802
+            n = int(self.headers.get("Content-Length") or 0)
+            body = _json.loads(self.rfile.read(n) or b"{}")
+            seen["stream"] = body.get("stream")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for d in ("A", "B", "C"):
+                self.wfile.write(("data: " + _json.dumps({"choices": [{"delta": {"content": d}}]}) + "\n\n").encode())
+            self.wfile.write(b"data: [DONE]\n\n")
+
+        def log_message(self, *a):  # noqa: A002
+            return
+
+    srv = _HS(("127.0.0.1", 0), _H)
+    _th.Thread(target=srv.serve_forever, daemon=True).start()
+    root = _PP(_tf.mkdtemp())
+    (root / "providers.json").write_text(_json.dumps({"providers": {"fake": {
+        "id": "fake", "enabled": True, "models": ["m"],
+        "base_url": f"http://127.0.0.1:{srv.server_address[1]}/v1/chat/completions",
+        "api_key_ref": "env:FAKE_KEY"}}}), encoding="utf-8")
+    (root / ".env").write_text("FAKE_KEY=sk-x\n", encoding="utf-8")
+    got: list[str] = []
+    try:
+        r = _S.stream_chat(root, [{"role": "user", "content": "hi"}], on_delta=got.append)
+    finally:
+        srv.shutdown()
+    if seen["stream"] is not True:
+        bad.append("请求没带 stream:true（那就是假流式 ✗）")
+    if got != ["A", "B", "C"]:
+        bad.append(f"分块回调不对（实得 {got} ✗）")
+    if not r.get("ok") or r.get("content") != "ABC":
+        bad.append("拼回的全文不对 ✗")
+    # 拿不到配置 ⇒ 必须优雅失败（调用方回退 ✓）
+    r2 = _S.stream_chat(_PP(_tf.mkdtemp()), [{"role": "user", "content": "x"}])
+    if r2.get("ok") is not False or not r2.get("error"):
+        bad.append("没有可直连 provider 时没优雅失败（会拖垮会话 ✗）")
+    import contextlib as _ctx
+    import io as _io
+    import inspect as _insp
+
+    from apps.cli.domains import chat as _C
+    from apps.cli.domains import welcome as _W
+
+    src = _insp.getsource(_W.run_shell)
+    if "on_delta=(_on_delta if _tty else None)" not in src:
+        bad.append("非终端也会走流式（管道输出就不确定了 ✗）")
+    if "回退" not in _insp.getsource(_C._ask_llm2):
+        bad.append("流式失败没写回退（会把会话搞坏 ✗）")
+    # ★ 流式拿不到配置/失败时, 必须**回退**到非流式（用假 provider 验, 不联网 ✓）
+    class _Fake:
+        def generate(self, _req):
+            class _R:
+                content = "回退成功"
+                usage: dict = {}
+
+            return _R()
+
+    with _ctx.redirect_stdout(_io.StringIO()):
+        _a2, _u2 = _C._ask_llm2(_Fake(), [{"role": "user", "content": "x"}], root=_PP(_tf.mkdtemp()))
+    if "回退成功" not in str(_a2):
+        bad.append("流式失败时没回退到非流式（会话会哑掉 ✗）")
+    return bad
+
+
+def test_streaming() -> None:
+    """真流式: 带 stream:true · 分块有序 · 全文完整 · 非终端不流式 · 失败回退。"""
+    assert _check_streaming() == []
+
+
 def test_packaging_data() -> None:
     """打包: 数据文件已声明 · 真装真跑脚本在 · 脚本探 `/` · 不用 pkill。"""
     assert _check_packaging_data() == []
@@ -3701,6 +3792,7 @@ def main() -> int:
     results.append(("口径归一（dashboard 三个数 == status）", not _check_dashboard_authority(), "；".join(_check_dashboard_authority())))
     results.append(("发布交付链（一条命令起 API + 最小界面）", not _check_release_chain(), "；".join(_check_release_chain())))
     results.append(("打包数据文件（html 进包 + 真装真跑脚本）", not _check_packaging_data(), "；".join(_check_packaging_data())))
+    results.append(("真流式（stream:true · 分块 · 非终端不流式 · 回退）", not _check_streaming(), "；".join(_check_streaming())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

@@ -3240,6 +3240,11 @@ def _check_theme() -> list[str]:
     for h in _T.PALETTE.values():
         if not (h.startswith("#") and len(h) == 7):
             bad.append(f"色号格式不对: {h}")
+    # ★ Founder: "字体颜色 不要蓝色" ⇒ 界面里**不许有偏蓝**的颜色（语义色只留 绿/黄/红 ✓）
+    for _el, _h in _T.PALETTE.items():
+        _r, _g, _b = _T._hex_rgb(_h)
+        if _b > _r + 12 and _b > _g + 12:
+            bad.append(f"元素 {_el} 还是偏蓝（{_h}; Founder 明确不要蓝 ✗）")
     # 非终端不上色
     old_out = _sys.stdout
     try:

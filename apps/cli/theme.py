@@ -19,23 +19,24 @@ import sys
 
 #: 元素 → 颜色（Apple 系统色; 与 Hermes 的元素名对齐）
 PALETTE: dict[str, str] = {
-    "banner_border": "#0071e3",     # 开场框边框（Apple 蓝）
-    "banner_title": "#f5f5f7",      # 开场标题
+    # ★ Founder: "不要蓝色" ⇒ 界面**中性灰白**（语义色只留 绿=好 / 黄=提醒 / 红=错）
+    "banner_border": "#8e8e93",     # 开场框边框（中性灰）
+    "banner_title": "#f5f5f7",      # 开场标题（近白）
     "banner_dim": "#8e8e93",        # 次要说明
     "prompt": "#f5f5f7",            # 输入提示符
-    "input_rule": "#3a3a3c",        # 用户区横线
-    "user_mark": "#0071e3",         # `● 你的话` 的圆点
-    "tool_prefix": "#8e8e93",       # `┊` 与耗时（暗）
-    "response_border": "#0071e3",   # 回答框边框
-    "response_label": "#f5f5f7",    # 回答框标题 `⚕ AI Factory OS`
+    "input_rule": "#3a3a3c",        # 用户区横线（深灰）
+    "user_mark": "#f5f5f7",         # `● 你的话` 的圆点（白, 不是蓝 ✗）
+    "tool_prefix": "#8e8e93",       # `┊` 与耗时（灰）
+    "response_border": "#8e8e93",   # 回答框边框（中性灰）
+    "response_label": "#f5f5f7",    # 回答框标题
     "status_text": "#c7c7cc",       # 状态栏文字
-    "status_strong": "#f5f5f7",     # 状态栏数值（模型名等）
-    "status_dim": "#8e8e93",        # 状态栏分隔符
-    "good": "#30d158",              # ✔ 成功
-    "warn": "#ffd60a",              # ⚠ 提醒
-    "bad": "#ff453a",               # ✗ 失败
-    "code": "#64d2ff",              # 行内 `代码`
-    "body": "#f5f5f7",              # 正文（照 Hermes 的 banner_text 位置; 深色终端适用）
+    "status_strong": "#f5f5f7",     # 状态栏数值
+    "status_dim": "#8e8e93",        # 状态栏分隔符 / 次要文字
+    "good": "#30d158",              # ✔ 成功（绿）
+    "warn": "#ffd60a",              # ⚠ 提醒（黄）
+    "bad": "#ff453a",               # ✗ 失败（红）
+    "code": "#e5e5ea",              # 行内 `代码`（浅灰, 不用蓝 ✗）
+    "body": "#f5f5f7",              # 正文（近白; 深色终端适用）
 }
 
 

@@ -3729,6 +3729,55 @@ def _check_run_lock() -> list[str]:
     return bad
 
 
+def _check_apply_guard() -> list[str]:
+    """★ 回写防护（Founder 问: "同一个仓库同一时间 两个人改？？？" 的第三段 = 真风险点）。
+
+    patch 要回到**同一个项目工作副本** ⇒ 若目标文件已有未提交改动, 直接套用会把两拨改动
+    **静默混在一起** ✗。判据:
+      ① 目标干净 ⇒ 正常套用 ✓
+      ② 目标有未提交改动 ⇒ **拒绝**（返回 False + 说清是哪些文件）✓
+      ③ 宽松/模糊套用（recount / patch --fuzz）必须**在返回信息里标注**要复核 ✓
+    """
+    import subprocess as _sp
+    import sys as _sys
+    import tempfile as _tf
+    from pathlib import Path as _PP
+
+    _sys.path.insert(0, ".")
+    from ai_factory_os.services.delivery import ops as _O
+
+    bad: list[str] = []
+    d = _PP(_tf.mkdtemp()) / "proj"
+    d.mkdir()
+    _sp.run(["git", "init", "-q"], cwd=d, capture_output=True)
+    _sp.run(["git", "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q",
+             "--allow-empty", "-m", "base"], cwd=d, capture_output=True)
+    (d / "a.txt").write_text("hello\n", encoding="utf-8")
+    _sp.run(["git", "add", "a.txt"], cwd=d, capture_output=True)
+    _sp.run(["git", "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "-m", "add"],
+            cwd=d, capture_output=True)
+    _patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-hello\n+hello world\n"
+
+    ok1, msg1 = _O.apply_patch(d, _patch)
+    if not ok1:
+        bad.append(f"干净目标都套不上（{msg1[:40]} ✗）")
+    (d / "a.txt").write_text("hello\n另一个人改的\n", encoding="utf-8")
+    ok2, msg2 = _O.apply_patch(d, _patch)
+    if ok2:
+        bad.append("目标文件有未提交改动时**仍然自动套用**（两拨改动会被静默混在一起 ✗）")
+    if "未提交" not in msg2 or "a.txt" not in msg2:
+        bad.append("拒绝时没说清是哪个文件/为什么（老板没法处置 ✗）")
+    _src = _PP("src/ai_factory_os/services/delivery/ops.py").read_text(encoding="utf-8")
+    if "patch -p1)）" in _src or ("--fuzz=3" in _src and "必须复核" not in _src):
+        bad.append("模糊套用（--fuzz）没标注要复核 ✗")
+    return bad
+
+
+def test_apply_guard() -> None:
+    """回写防护: 干净套用 · 脏目标拒绝并说清 · 模糊套用要标注复核。"""
+    assert _check_apply_guard() == []
+
+
 def test_run_lock() -> None:
     """运行锁: 跨进程拒绝 · 陈旧接管 · 不删别人的 · run 已接。"""
     assert _check_run_lock() == []
@@ -3848,6 +3897,7 @@ def main() -> int:
     results.append(("打包数据文件（html 进包 + 真装真跑脚本）", not _check_packaging_data(), "；".join(_check_packaging_data())))
     results.append(("真流式（stream:true · 分块 · 非终端不流式 · 回退）", not _check_streaming(), "；".join(_check_streaming())))
     results.append(("运行锁（跨进程拒绝 · 陈旧接管 · 不删别人的）", not _check_run_lock(), "；".join(_check_run_lock())))
+    results.append(("回写防护（目标脏就拒绝 · 模糊套用要标注）", not _check_apply_guard(), "；".join(_check_apply_guard())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

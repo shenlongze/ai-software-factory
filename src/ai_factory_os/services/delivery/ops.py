@@ -50,6 +50,36 @@ def ensure_git_repo(project_dir: Path) -> bool:
     return True
 
 
+def _patch_targets(patch_text: str) -> list[str]:
+    """patch 里 `+++ b/<path>` 的目标文件（去 b/ 前缀 ✓）—— 判断"这刀要动谁" ✓。"""
+    out: list[str] = []
+    for ln in str(patch_text or "").splitlines():
+        if not ln.startswith("+++ "):
+            continue
+        rel = ln[4:].strip().split("\t")[0]
+        if rel.startswith("b/"):
+            rel = rel[2:]
+        if rel and rel != "/dev/null" and rel not in out:
+            out.append(rel)
+    return out
+
+
+def _dirty_targets(project_dir: Path, targets: list[str]) -> set[str]:
+    """目标文件里**有未提交改动**的那些（`git status --porcelain` 判; 判不了 ⇒ 返回空 = 不拦, 安全侧 ✓）。"""
+    if not targets:
+        return set()
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(project_dir), "status", "--porcelain", "--", *targets],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if proc.returncode != 0:
+        return set()
+    return {ln[3:].strip().strip('"') for ln in (proc.stdout or "").splitlines() if ln.strip()}
+
+
 def apply_patch(project_dir: Path, patch_text: str) -> tuple[bool, str]:
     """把过滤后的 patch 应用到项目目录 (git apply + 容错重试)。
 
@@ -66,6 +96,15 @@ def apply_patch(project_dir: Path, patch_text: str) -> tuple[bool, str]:
     if not ensure_git_repo(project_dir):
         return False, "project not a git repo and git init failed"
 
+    # ★ 2026-09-22（Founder 问"同一个仓库同一时间两个人改？？？"）:
+    #   patch 要回到**同一个项目工作副本** ⇒ 并发/前一轮没收尾时直接套用, 会把两拨改动**静默混在一起** ✗。
+    #   判据: patch 要动的文件若在项目里**有未提交改动** ⇒ **拒绝自动套用**, 交人工裁决 ✓（宁可不贴, 不贴错 ✗）
+    _dirty = _dirty_targets(project_dir, _patch_targets(text))
+    if _dirty:
+        _list = ", ".join(sorted(_dirty)[:4]) + ("…" if len(_dirty) > 4 else "")
+        return False, (f"目标文件已被改动（未提交）: {_list} ⇒ **不自动套用**"
+                       f"（避免两拨改动静默混在一起 ✗）; 请先提交/清理, 或人工套用 ✓")
+
     # 尝试 1: 标准 git apply
     proc = subprocess.run(
         ["git", "-C", str(project_dir), "apply", "--whitespace=nowarn", "-"],
@@ -80,7 +119,7 @@ def apply_patch(project_dir: Path, patch_text: str) -> tuple[bool, str]:
         input=text, capture_output=True, text=True, timeout=60,
     )
     if proc2.returncode == 0:
-        return True, "patch applied (loose)"
+        return True, "patch applied (loose: recount + ignore-whitespace —— ★ 用了宽松套用, 建议复核)"
 
     # 尝试 3: 系统 patch 工具 (fuzz 上下文容错)
     proc3 = subprocess.run(
@@ -88,7 +127,7 @@ def apply_patch(project_dir: Path, patch_text: str) -> tuple[bool, str]:
         input=text, capture_output=True, text=True, timeout=60,
     )
     if proc3.returncode == 0:
-        return True, "patch applied (patch -p1)"
+        return True, "patch applied (patch -p1 --fuzz=3 —— ★★ 模糊套用可能贴错位置, 必须复核)"
 
     last_err = (proc.stderr or proc.stdout or "").strip()[:300]
     return False, f"git apply failed: {last_err}"

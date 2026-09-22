@@ -3100,7 +3100,8 @@ def _check_general_command() -> list[str]:
     bad: list[str] = []
 
     class _Resp:
-        def __init__(self, c): self.content = c; self.usage = {}
+        def __init__(self, c):
+            self.content, self.usage = c, {}
 
     class _Pv:
         def __init__(self): self.n = 0

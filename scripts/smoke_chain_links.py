@@ -3227,6 +3227,7 @@ def _check_theme() -> list[str]:
     import sys as _sys
 
     from apps.cli import theme as _T
+    from apps.cli.domains import welcome as _W
 
     bad: list[str] = []
     if "/colors" not in _W.SESSION_COMMANDS:

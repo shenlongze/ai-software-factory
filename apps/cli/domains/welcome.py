@@ -233,8 +233,8 @@ def box(title: str, text: str, *, width: int = 0) -> str:
     # ★ 宽度必须**三条线一致**（实测踩到: 差 1-2 列 ⇒ 框看着是歪的 ✗）
     #   三条线各自的目标宽度都是 W: 顶 `  ╭─ T ` + dash + `╮`; 内容 `  │ ` + 文本 + space + `│`;
     #   底 `  ╰` + dash + `╯`（_dw 按显示宽度算, 中文=2）
-    # ★ 宽度收敛到 88（铺满 120 列的框看着累 —— Founder: "呈现形式不是很好, 不直观"）
-    w = width or min(_term_width(), 88)
+    # ★ 照 Hermes: 回复框用**通栏宽度**（Founder: "Hermes…比较清晰" —— 先前我限到 88 对不上它的版面 ✗）
+    w = width or min(_term_width(), 96)
     head = f"  ╭─ {title} "
     lines = [head + "─" * max(0, w - _dw(head) - 1) + "╮"]
     for raw in (text or "").splitlines() or [""]:
@@ -466,8 +466,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         except Exception:  # noqa: BLE001 — 拿不到就不显示
             _mline = ""
         if _mline:
-            print(f"     当前: {_mline}")
-        print()
+            print(f"    模型: {_mline.replace('供应商 ', '').replace('模型 ', '')}")
 
     _conv_id = ""
     _chat_hist: list[dict[str, str]] = []
@@ -585,7 +584,12 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         # ★ 三态区分（Founder: "没有像 codex/Hermes 的 cli 那样: 用户/系统/执行 都有区分"）
         #   `你 ▸` = 你说的话;  `执行 ▸` = 它跑了什么;  `系统 ▸` = 平台提示;  `⚕` = 助手回答
         if line and low not in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
-            print(f"  {MARK_USER} {line}")
+            # ★ 照 Hermes 的**分区**（Founder: "Hermes 和 codex 都比较清晰, factory 就比较乱, 没有分区"）
+            #   用户回合: 上下各一条通栏线 + `● <原话>`
+            _rule = "  " + "─" * max(40, min(_term_width(), 96) - 2)
+            print(_rule)
+            print(f"  ● {line}")
+            print(_rule)
         if low in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
             break
         if low in ("help", "h", "?", "/h", "/?"):

@@ -2884,8 +2884,8 @@ def _check_output_readability() -> list[str]:
     # ⑤ 框宽 ≤ 88
     _b = _W.box("⚕ 标题", "正文" * 60)
     _wide = max(_TW.display_width(x) for x in _b.splitlines())
-    if _wide > 90:
-        bad.append(f"回复框太宽（{_wide} 列; 上限 88）")
+    if _wide > 100:
+        bad.append(f"回复框太宽（{_wide} 列; 上限 100 —— 照 Hermes 通栏但别超屏）")
     # 只留一套宽度实现
     _wsrc = _insp.getsource(_W._dw)
     if "textwidth" not in _wsrc:
@@ -3067,8 +3067,10 @@ def _check_three_marks() -> list[str]:
     if blk.count("factory factory") or "factory factory" in blk2:
         bad.append("块头命令名重复（factory factory ✗）")
     src = _insp.getsource(_W.run_shell)
-    if "MARK_USER" not in src:
-        bad.append("用户的话没有回声标记（用户/执行/系统 分不清 ✗）")
+    if "MARK_USER" not in src and "● {line}" not in src:
+        bad.append("用户的话没有回声/分区（用户/执行/系统 分不清 ✗ —— Founder 要 Hermes 那种分区）")
+    if "─" * 20 not in src:
+        bad.append("用户回合没有通栏分隔线（没有分区 ✗）")
     if "tool_block(" not in src:
         bad.append("会话里没用工具块（结果还是堆砌 ✗）")
     if "_code_fingerprint" not in src or "代码已更新" not in src:

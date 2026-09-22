@@ -3469,6 +3469,42 @@ def _check_console_domains() -> list[str]:
     return bad
 
 
+def _check_session_project() -> list[str]:
+    """★ 会话归属项目（Founder 点单）。
+
+    判据: ① `/project` 是会话命令 ② 不带参数能列候选（名字+id+说明, 来自 org 权威源 ✓）
+         ③ 归属后**提示词里必须带**该项目（模型才知道按它答 ✓ —— 用纯函数验, 不联网络 ✓）
+         ④ `/project 清空` 能取消 ✓ · ⑤ 状态栏会显示归属 ✓
+    """
+    import inspect as _insp
+
+    from apps.cli.domains import chat as _C
+    from apps.cli.domains import welcome as _W
+
+    bad: list[str] = []
+    if "/project" not in _W.SESSION_COMMANDS:
+        bad.append("`/project` 不是会话命令（打 / 也看不到 ✗）")
+    _sp = _C._system_prompt(".", project="demo-proj（P-000）")
+    if "demo-proj" not in _sp or "归属项目" not in _sp:
+        bad.append("归属项目没进提示词（模型不会按它答 ✗）")
+    _sp2 = _C._system_prompt(".", project="")
+    if "归属项目" in _sp2:
+        bad.append("没归属时也写了归属（会误导模型 ✗）")
+    src = _insp.getsource(_W.run_shell)
+    if "清空" not in src or "_sel_project = f" not in src:
+        bad.append("`/project 清空` 或设置逻辑缺了 ✗")
+    if "_sel_project" not in src.split("_sb: list[str] = []")[1][:200]:
+        bad.append("状态栏没显示归属项目（老板看不到在跟谁说话 ✗）")
+    if "_project_candidates" not in _insp.getsource(_W):
+        bad.append("没有候选来源（/project 不带参数该列出来 ✓）")
+    return bad
+
+
+def test_session_project() -> None:
+    """会话归属项目: 命令 · 候选 · 进提示词 · 可清空 · 状态栏可见。"""
+    assert _check_session_project() == []
+
+
 def test_console_domains() -> None:
     """七域: 都能跑 · 活动域有真列 · 不露枚举前缀 · 复用同一快照。"""
     assert _check_console_domains() == []
@@ -3552,6 +3588,7 @@ def main() -> int:
     results.append(("看板（横排列·中文对齐·带数据源）", not _check_kanban_board(), "；".join(_check_kanban_board())))
     results.append(("版本号规矩（三处一致·不倒退·文档+入口）", not _check_version_discipline(), "；".join(_check_version_discipline())))
     results.append(("七域下钻（console <域> 都能跑·活动域有真列）", not _check_console_domains(), "；".join(_check_console_domains())))
+    results.append(("会话归属项目（/project · 进提示词 · 可清空）", not _check_session_project(), "；".join(_check_session_project())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

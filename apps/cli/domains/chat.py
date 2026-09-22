@@ -84,13 +84,19 @@ def to_argv(cmd_line: str) -> list[str]:
     return argv
 
 
-def _snapshot(root: Path | str) -> str:
-    """给 LLM 的一页数据摘要（用平台自己的口径, 不编）。"""
+def _snapshot(root: Path | str, project: str = "") -> str:
+    """给 LLM 的一页数据摘要（平台自己的口径, 不编）。
+
+    ★ 2026-09-22: 支持**会话归属项目**（Founder 点单）—— 盯住一个项目时把它的名字/需求/树数写进去 ✓。
+    """
     from apps.cli.domains.welcome import _data_overview
 
     d = _data_overview(root)
-    return (f"项目 {d['projects']} 个 · 任务树 {d['trees']} 棵 · 叶 {d['done']}/{d['leaves']} 完成 · "
+    base = (f"项目 {d['projects']} 个 · 任务树 {d['trees']} 棵 · 叶 {d['done']}/{d['leaves']} 完成 · "
             f"经验 {d['exp']} 条")
+    if project:
+        base += f"\n当前会话**归属项目**: {project}（老板已经把话题锁在它身上 —— 默认按它来 ✓）"
+    return base
 
 
 def _provider() -> Any:
@@ -155,17 +161,20 @@ def _has_required_args(argv: list[str]) -> bool:
     return True
 
 
-def _system_prompt(root: Path | str) -> str:
+def _system_prompt(root: Path | str, project: str = "") -> str:
     cmds = "\n".join(f"  - {p}" for p in READONLY_PREFIXES[:14])
+    _proj_line = (f"1a ★ 会话已归属项目 **{project}** ⇒ 默认按它回答/查它的数据; 要换项目老板会说 ✓\n"
+                  if project else "")
     return (
         "你是 AI Factory OS 的终端助手, 正在跟老板对话。\n"
-        f"当前数据: {_snapshot(root)}\n"
+        f"当前数据: {_snapshot(root, project)}\n"
         "你能自己跑这些【只读】命令（一次最多 2 条）; **带 ← 必填 的那几个必须给参数**, 缺参数别跑 ✗:\n"
         f"{cmds}\n\n"
         "回答规则:\n"
         "1 用中文, **最多 3 行**（老板要结论, 不是你的计划 ✗）。\n"
         "1b ★ 不许问「要不要我跑 X」—— **只读命令直接跑**（工具结果会自动显示给老板）;\n"
         "   参数不全（如缺 P-xxx / 路径）⇒ 先**问老板要参数**, 不要念带占位符的命令 ✗\n"
+        f"{_proj_line}"
         "2 需要数据时, **先**输出一行或多行 `RUN: <命令>`, 我会执行并把结果回给你, 然后你再作答。\n"
         "2b ★ 跟 factory 无关的事（查天气/看文件/跑个小脚本/上网取数）⇒ 用 `RUN: sh <shell 命令>`\n"
         "   （**不要**写成 factory sh …）;\n"
@@ -192,7 +201,8 @@ def _system_prompt(root: Path | str) -> str:
 
 def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[dict[str, str]] | None = None,
               on_run: Any = None, on_progress: Any = None,
-              on_output: Any = None, on_approval: Any = None) -> tuple[str, str, dict[str, Any]]:
+              on_output: Any = None, on_approval: Any = None,
+              project: str = "") -> tuple[str, str, dict[str, Any]]:
     """一轮会话: 返回 (回答文本, 会话 id)。
 
     on_run(argv) 用于"把这行 RUN 命令真的跑掉并把结果拿回来"——由调用方注入（CLI 里 = 跑命令）。
@@ -215,7 +225,7 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
         return "（没配置 LLM provider —— 用 factory provider add 配一个, 我才能跟你对话。）", conv, _meta
     _meta.update(provider_info(prov))
 
-    msgs = [{"role": "system", "content": _system_prompt(root)}]
+    msgs = [{"role": "system", "content": _system_prompt(root, project=project)}]
     msgs += (history or [])[-8:]
     msgs.append({"role": "human", "content": text})
 

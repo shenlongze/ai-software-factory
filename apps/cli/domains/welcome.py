@@ -346,6 +346,7 @@ SESSION_COMMANDS: dict[str, str] = {
     "/clear": "清屏",
     "/commands": "常用命令总表（表格: 命令 / 作用 / 是否改数据）",
     "/colors": "色板预览（每个界面元素上一遍色, 指着说哪不对）",
+    "/project": "会话归属哪个项目: /project <名字|id|片段>（不带参数=看当前+候选）",
 }
 
 
@@ -529,6 +530,24 @@ def _menu_for(prefix: str) -> list[tuple[str, str]]:
     return [(n, d) for n, d in items if n.lower().startswith(pfx)]
 
 
+def _project_candidates(root: Path | str) -> list[tuple[str, str, str]]:
+    """可归属的项目候选：(名字, id, 说明) —— 权威源 = org 项目库（与 status/project list 同源 ✓）。"""
+    out: list[tuple[str, str, str]] = []
+    try:
+        from ai_factory_os.services.organization.projects import ProjectStore
+
+        from apps.cli.commands import _project_notes
+
+        _rows = ProjectStore(Path(root) / "org").list_projects() or []
+        _notes = _project_notes(root, list(_rows)) or {}
+        for _r in _rows:
+            _id = str(getattr(_r, "id", "") or "")
+            out.append((str(getattr(_r, "name", "") or _id), _id, _notes.get(_id, "")))
+    except Exception:  # noqa: BLE001 — 拿不到就没候选, 不编 ✗
+        pass
+    return out
+
+
 def _install_completer() -> None:
     """装上 readline 补全: 打 `/` 后按 TAB 能补会话命令 + factory 命令名。
 
@@ -668,6 +687,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
     _chat_hist: list[dict[str, str]] = []
     _pending_cmd = ""            # ★ 待你点头的命令（会话里它念出来的写命令）
     # ★ CLI 精髓（照 Hermes）: 会话级状态 —— 累计用量 / 权限记忆 / 上一句（重试用）/ 是否终端
+    _sel_project = ""           # ★ 会话归属项目（Founder 点单; `/project <名字|id>` 设置 ✓）
     _sess = {"cost": 0.0, "prompt_tokens": 0, "completion_tokens": 0, "turns": 0}
     _always: set[str] = set()
     _last_input = ""
@@ -823,6 +843,30 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             ]
             print("  常用命令（带 / 执行; 不带 / 就是跟我说人话）")
             print(_rt2(["命令", "作用", "改数据"], _rows2))
+            continue
+        if low == "/project" or low.startswith("/project "):
+            # ★ 2026-09-22（Founder 点单: "会话归属哪个项目"）
+            _arg = line.strip()[len("/project"):].strip()
+            _cands = _project_candidates(root)
+            if not _arg:
+                _cur = f"当前归属: {_sel_project}" if _sel_project else "当前: **没有指定**（我会按全局数据回答）"
+                print(f"  {MARK_SYS} {_cur}")
+                print("  可选的（说 /project <名字|id|片段> 就锁到它）:")
+                for _n, _i, _note in _cands[:10]:
+                    print(f"     {_i}  {_n}" + (f"   {_note[:34]}" if _note else ""))
+                print("      /project 清空   ⇒ 取消归属（回到全局）")
+                continue
+            if _arg.lower() in ("清空", "none", "clear", "-"):
+                _sel_project = ""
+                print(f"  {MARK_SYS} 已取消归属（回到全局数据 ✓）")
+                continue
+            _hit = [c for c in _cands if _arg.lower() in (c[1] or "").lower()
+                    or _arg.lower() in (c[0] or "").lower() or (c[0] or "").lower().startswith(_arg.lower())]
+            if not _hit:
+                print(f"  {MARK_SYS} 没找到「{_arg}」—— 打 /project 看候选（名字/id/片段都认 ✓）")
+                continue
+            _sel_project = f"{_hit[0][0]}（{_hit[0][1]}）"
+            print(f"  {MARK_SYS} 会话已归属: {_sel_project} —— 之后默认按它回答/查它的数据 ✓")
             continue
         if low in ("/colors", "/theme"):
             from apps.cli.theme import PALETTE, color_enabled, paint
@@ -1018,7 +1062,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 _ans, _conv, _meta = _chat.chat_turn(ctx.root, line, conv_id=_conv_id,
                                                      history=_chat_hist, on_run=_run_capture,
                                                      on_progress=_on_progress, on_output=_on_output,
-                                                     on_approval=_ask_sh)
+                                                     on_approval=_ask_sh, project=_sel_project)
             except KeyboardInterrupt:                      # ★ 可打断: 断的是**这一轮**, 会话还在
                 print(_busy_clear(_tty) + "  （已中断这一轮; 会话还在 —— 接着说, 或输 /retry）")
                 continue
@@ -1040,6 +1084,8 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             # ★ 照 Hermes 的分区: 输入区(横线夹住) · 执行区(┊ 💻) · **回答区**(框) · **状态栏**(底下那行)
             #   ⇒ 模型/用量/成本/耗时 **不再挤在框标题里**，改到底部状态栏 ✓
             _sb: list[str] = []
+            if _sel_project:
+                _sb.append(_sel_project)          # ★ 归属项目显示在状态栏（一眼看到在跟谁说话 ✓）
             if _meta.get("model"):
                 _sb.append(str(_meta["model"]))
             if _u.get("prompt_tokens") is not None:

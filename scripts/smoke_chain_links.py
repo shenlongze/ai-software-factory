@@ -3085,6 +3085,63 @@ def test_three_marks() -> None:
     assert _check_three_marks() == []
 
 
+def _check_general_command() -> list[str]:
+    """★ 通用命令通道（Founder 对比: Hermes 直接查了天气, factory 说"我查不了" ✗）。
+
+    判据: ① `RUN: sh <cmd>` 能真跑（**先过审批**）② 拒绝时**不跑**且不许绕道再问
+         ③ 非终端默认拒绝（脚本里绝不自动跑通用命令）④ sh 分支必须在"只读白名单"之前
+           （实测踩到: 放后面会被当成"写命令挂起" ✗）
+    """
+    import inspect as _insp
+    from pathlib import Path as _P
+
+    from apps.cli.domains import chat as _C
+
+    bad: list[str] = []
+
+    class _Resp:
+        def __init__(self, c): self.content = c; self.usage = {}
+
+    class _Pv:
+        def __init__(self): self.n = 0
+        def generate(self, req):
+            self.n += 1
+            return _Resp("RUN: sh echo ok-通用" if self.n == 1 else "答完了")
+
+    _old = _C._provider
+    asked, outs = [], []
+    try:
+        _C._provider = lambda: _Pv()
+        _C.chat_turn(_P.home(), "随便问一句", on_run=lambda argv: "",
+                     on_output=lambda c, o: outs.append(o.strip()),
+                     on_approval=lambda c: (asked.append(c), True)[1])
+        if not asked or "sh" not in asked[0]:
+            bad.append("通用命令没走审批（Hermes 那样必须点头 ✗）")
+        if not any("ok-通用" in o for o in outs):
+            bad.append("通用命令没真跑（说了「我查不了」✗）")
+        # 拒绝: 不许跑
+        asked2, outs2 = [], []
+        _C._provider = lambda: _Pv()
+        _C.chat_turn(_P.home(), "再问一次", on_run=lambda argv: "",
+                     on_output=lambda c, o: outs2.append(o.strip()),
+                     on_approval=lambda c: (asked2.append(c), False)[1])
+        if any("ok-通用" in o for o in outs2):
+            bad.append("拒绝了还跑（危险 ✗）")
+    finally:
+        _C._provider = _old
+    _src = _insp.getsource(_C.chat_turn)
+    if _src.index('argv[0] == "sh"') > _src.index("is_readonly(argv)"):
+        bad.append("sh 分支在只读检查之后（会被当成写命令挂起 ✗ 实测踩到）")
+    if "别绕道再问" not in _src:
+        bad.append("拒绝后没让模型打住（会反复问 ✗）")
+    return bad
+
+
+def test_general_command() -> None:
+    """通用命令: 先审批 · 会真跑 · 拒绝则不跑 · 分支顺序正确。"""
+    assert _check_general_command() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -3135,6 +3192,7 @@ def main() -> int:
     results.append(("项目说明（中文说明来自真实需求原话·不编）", not _check_project_notes(), "；".join(_check_project_notes())))
     results.append(("PRD 门用同一份需求（真需求不误杀·拿不到就不过滤）", not _check_gate_uses_same_requirement(), "；".join(_check_gate_uses_same_requirement())))
     results.append(("三态可辨（你 · 系统 · 执行 · 助手 + 结果成块）", not _check_three_marks(), "；".join(_check_three_marks())))
+    results.append(("通用命令通道（sh: 先审批·会真跑·拒绝不跑）", not _check_general_command(), "；".join(_check_general_command())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

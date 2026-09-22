@@ -167,6 +167,9 @@ def _system_prompt(root: Path | str) -> str:
         "1b ★ 不许问「要不要我跑 X」—— **只读命令直接跑**（工具结果会自动显示给老板）;\n"
         "   参数不全（如缺 P-xxx / 路径）⇒ 先**问老板要参数**, 不要念带占位符的命令 ✗\n"
         "2 需要数据时, **先**输出一行或多行 `RUN: <命令>`, 我会执行并把结果回给你, 然后你再作答。\n"
+        "2b ★ 跟 factory 无关的事（查天气/看文件/跑个小脚本/上网取数）⇒ 用 `RUN: sh <shell 命令>`\n"
+        "   （**不要**写成 factory sh …）;\n"
+        "   这条**一定会先问老板**（他点头才跑, 三档: 一次/本会话总是/拒绝）—— 所以放心用, 别回\"我查不了\" ✗\n"
         "3 老板在提'要做什么'时, 不要自己动手; 回一句'我理解成…, 要我开始吗?'并给出建议的第一条命令。\n"
         "4 不许编数据; 查不到就说查不到。\n"
         "4b ★ 工具的输出**会直接显示给老板**（原样）。所以: 你**不要再重画表格、也不要复述数据** ✗\n"
@@ -189,7 +192,7 @@ def _system_prompt(root: Path | str) -> str:
 
 def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[dict[str, str]] | None = None,
               on_run: Any = None, on_progress: Any = None,
-              on_output: Any = None) -> tuple[str, str, dict[str, Any]]:
+              on_output: Any = None, on_approval: Any = None) -> tuple[str, str, dict[str, Any]]:
     """一轮会话: 返回 (回答文本, 会话 id)。
 
     on_run(argv) 用于"把这行 RUN 命令真的跑掉并把结果拿回来"——由调用方注入（CLI 里 = 跑命令）。
@@ -232,6 +235,30 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
             argv = r.split()
             if argv and argv[0] == "factory":
                 argv = argv[1:]
+            # ★ 2026-09-21（Founder 对比: Hermes 直接查了天气, factory 说"我查不了" ✗）:
+            #   通用 shell 命令（`RUN: sh <cmd>`）—— **必须老板点头**（照 Hermes 的审批框）;
+            #   ★ 必须放在"只读白名单"检查**之前**（否则 sh 会被当成"写命令挂起" ✗ 实测踩到）。
+            if argv and argv[0] == "sh":
+                _sh = " ".join(argv[1:]).strip()
+                if not _sh:
+                    continue
+                if on_approval is None or not on_approval("sh " + _sh):
+                    results.append(f"`{r}` → 老板**拒绝了**这条命令, 别绕道再问; 就此打住并说明。")
+                    continue
+                import subprocess as _sp
+                import time as _t3
+
+                _s3 = _t3.monotonic()
+                try:
+                    _p3 = _sp.run(_sh, shell=True, capture_output=True, text=True, timeout=25)
+                    _o3 = (_p3.stdout or "") + (("\n" + _p3.stderr) if _p3.stderr else "")
+                    _rc3 = _p3.returncode
+                except Exception as _e3:  # noqa: BLE001
+                    _o3, _rc3 = f"（命令没跑成: {type(_e3).__name__}: {str(_e3)[:120]}）", 1
+                if on_output is not None and _o3.strip():
+                    on_output("sh " + _sh, _o3.rstrip())
+                results.append(f"`sh {_sh}` → (rc={_rc3}) " + (_o3 or "（无输出）")[:1500])
+                continue
             if not is_readonly(argv):
                 # ★ 2026-09-21（Founder 选 A: "你点头它就执行"）: 写命令**挂起**等用户点头,
                 #   不当场跑（安全）, 也不丢掉（可执行）—— shell 会问"要我跑吗?"
@@ -240,6 +267,8 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
                 continue
             # ★ 2026-09-21（Founder: "这么多, 是用户要看的么" —— 空跑的命令 + argparse 报错端到他面前 ✗）:
             #   ① 缺必填参数 ⇒ **不跑**（回一句提示给模型, 不把 argparse 错给老板看 ✗）
+            if argv and argv[0] == "factory":       # 模型有时写成 `factory sh xxx` ⇒ 归一
+                argv = argv[1:]
             if not _has_required_args(argv):
                 results.append(f"`{r}` → 没跑: 这条命令需要参数（缺 PLAN-id 或项目名）。"
                                f"先 `tasktree list` 或 `project list` 拿到，再重来一次。")

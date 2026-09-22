@@ -743,6 +743,27 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             # ── 会话路径
             from apps.cli.domains import chat as _chat
 
+            def _ask_sh(cmd: str) -> bool:
+                """通用命令的审批（照 Hermes 的框: 一次 / 本会话总是 / 拒绝）—— 默认**拒绝**（非终端）。"""
+                key = "sh:" + str(cmd).split()[0] if str(cmd).split() else "sh"
+                if key in _always:
+                    return True
+                if not _tty:
+                    return False
+                print()
+                print(f"  {MARK_SYS} ⏸ 要跑一条**通用命令**（不是 factory 自己的命令）")
+                print(f"     命令: {cmd}")
+                print("     1) 允许这一次   2) 本会话总是允许   3) 拒绝")
+                try:
+                    _a = input("     > ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    return False
+                if _a in ("2", "总是", "all"):
+                    _always.add(key)
+                    print(f"  {MARK_SYS} 记住了: 本会话 {key} 不再问")
+                    return True
+                return _a in ("1", "y", "yes", "好", "是")
+
             def _on_output(cmd: str, text: str) -> None:
                 """★ 工具输出**原样**给老板看 + 每块**带头行与分隔线**。
 
@@ -789,7 +810,8 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             try:
                 _ans, _conv, _meta = _chat.chat_turn(ctx.root, line, conv_id=_conv_id,
                                                      history=_chat_hist, on_run=_run_capture,
-                                                     on_progress=_on_progress, on_output=_on_output)
+                                                     on_progress=_on_progress, on_output=_on_output,
+                                                     on_approval=_ask_sh)
             except KeyboardInterrupt:                      # ★ 可打断: 断的是**这一轮**, 会话还在
                 print(_busy_clear(_tty) + "  （已中断这一轮; 会话还在 —— 接着说, 或输 /retry）")
                 continue

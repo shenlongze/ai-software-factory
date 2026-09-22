@@ -3380,6 +3380,17 @@ def _check_kanban_board() -> list[str]:
         bad.append("看板没横排成多列（不是看板的样子 ✗）")
     if "数据源" not in _out:
         bad.append("看板没标数据源（一数据一权威源要写清 ✗）")
+    # ★ Founder 点单: ① 默认**按项目分屏**（[n/N] 表头）② `--limit N` 可调条数
+    if _out.count("═") == 0:
+        bad.append("看板没按项目分屏（表头应有 [n/N] ✗ —— Founder 要三个项目各一屏）")
+    _two = _sp.run([".venv/bin/factory", "kanban", "--limit", "2", "--project", "P-019cc935"],
+                   capture_output=True, text=True, timeout=90).stdout
+    if _two.count("待办 (") < 1:
+        bad.append("`--limit` 跑了但没出看板 ✗")
+    _all = _sp.run([".venv/bin/factory", "kanban", "--all", "--project", "P-019cc935"],
+                   capture_output=True, text=True, timeout=90).stdout
+    if len(_all.splitlines()) < len(_two.splitlines()):
+        bad.append("`--all` 比 `--limit` 还短（条数开关没生效 ✗）")
     return bad
 
 

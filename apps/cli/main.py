@@ -1815,6 +1815,49 @@ def _dispatch_kanban(ctx: FactoryContext, args: Any) -> dict:
     """
     rows = _task_rows(ctx.root)
     pid = str(getattr(args, "project", "") or "").strip()
+
+    # ★ Founder: "看板按项目分屏（三个项目各一屏）" ⇒ 默认**每个项目各一屏**;
+    #   `--project X` 只看一个 · `--merged` 合成一块（默认不再是合在一起 ✓）
+    if not pid and not bool(getattr(args, "merged", False)):
+        import argparse as _ap
+
+        _pids = sorted({str(r.get("project") or "") for r in rows if str(r.get("project") or "")})
+        if len(_pids) > 1:
+            # ★ 表头带项目名 + 说明（真数据: 取 org 项目库 + 会话需求原话, 不编 ✗）
+            _name: dict[str, str] = {}
+            _notes: dict[str, str] = {}
+            try:
+                from ai_factory_os.services.organization.projects import ProjectStore
+
+                from apps.cli.commands import _project_notes
+
+                _proj = ProjectStore(ctx.root / "org").list_projects() or []
+                _pdicts = []
+                for _rec in _proj:
+                    _d = _rec.to_dict() if hasattr(_rec, "to_dict") else dict(_rec)
+                    _name[str(_d.get("id") or "")] = str(_d.get("name") or "")
+                    _pdicts.append(_d)
+                _notes = _project_notes(ctx.root, _pdicts) or {}
+            except Exception:  # noqa: BLE001 — 拿不到就不写表头说明 ✓
+                pass
+            out: list[str] = []
+            _tail: list[str] = []
+            _n = len(_pids)
+            for _i, _p in enumerate(_pids, 1):
+                _sub = _ap.Namespace(**{**vars(args), "project": _p, "merged": True})
+                _ls = list(_dispatch_kanban(ctx, _sub).get("lines") or [])
+                # 数据源只在最后写一次 ✓（每屏都写=噪音 ✗）
+                _keep = [x for x in _ls if "数据源" not in x and "列 = 任务实际流转顺序" not in x]
+                _tail = [x for x in _ls if x not in _keep] or _tail
+                _head = f"  ══ [{_i}/{_n}] {_name.get(_p) or _p}"
+                _note = (_notes.get(_p) or "").strip()
+                _head += f"（{_p}）" if _name.get(_p) else ""
+                _head += ("  " + _note[:40]) if _note and _note != "（未记录说明）" else ""
+                out.append(_head)
+                out.extend(_keep)
+                out.append("")
+            out.extend(_tail)
+            return {"lines": out}
     if pid:
         rows = [r for r in rows if pid in str(r.get("project") or "")]
 
@@ -1868,7 +1911,8 @@ def _dispatch_kanban(ctx: FactoryContext, args: Any) -> dict:
     from apps.cli.textwidth import ljust_display as _lj, truncate_display as _tr
 
     shown = [(k, lb) for k, lb in COLS if buckets[k] or k in ("todo", "in_progress")]
-    _per_col = 10 if not show_all else 999
+    _limit = int(getattr(args, "limit", 10) or 10)
+    _per_col = 999 if show_all else max(1, _limit)
     _colw = 30                                    # 每列宽（含缩进）
     _fits = max(1, (_term_cols() - 4) // _colw)
     L.append(f"  看板 · {'项目 ' + pid if pid else '全部'} · 共 {len(rows)} 个任务"
@@ -1896,11 +1940,11 @@ def _dispatch_kanban(ctx: FactoryContext, args: Any) -> dict:
         for key, label in shown:
             items = buckets[key]
             L.append(f"  ┌─ {label}（{len(items)}）")
-            for r in (items if show_all else items[:5]):
+            for r in (items if show_all else items[:_per_col]):
                 L.append(f"  │  {_tr(str(r.get('id') or ''), 22):22s} {_tr(str(r.get('title') or ''), 40)}"
                          f" {str(r.get('project') or '')[:16]}")
             if len(items) > 5 and not show_all:
-                L.append(f"  │  … 另 {len(items) - 5} 条（--all 看全部）")
+                L.append(f"  │  … 另 {len(items) - _per_col} 条（--all 看全部 / --limit N 调条数）")
             L.append("  └" + "─" * 40)
     if other:
         L.append(f"  （另有 {len(other)} 条状态未识别）")

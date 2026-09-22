@@ -25,6 +25,9 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
     json_opt(p_kb)
     p_kb.add_argument("--project", default="", help="只看某个项目 (可选)")
     p_kb.add_argument("--all", action="store_true", help="每列不限条数")
+    p_kb.add_argument("--limit", type=int, default=10, help="每列显示条数（默认 10; 与 --all 互斥时以 --all 为准）")
+    p_kb.add_argument("--merged", action="store_true",
+                      help="所有项目合成一块看板（默认: 每个项目各一屏 ✓）")
     p_kb.add_argument("--group", default="status",
                       choices=["status", "project", "role", "agent"],
                       help="分列维度: status(默认)/project/role/agent")

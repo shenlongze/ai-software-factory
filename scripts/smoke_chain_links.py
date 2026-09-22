@@ -2274,10 +2274,13 @@ def _check_cli_chat() -> list[str]:
         if "工厂状态" not in buf.getvalue():
             bad.append("`/status` 没当命令跑（/ 命令没通）")
         # ④ 写命令不许自动跑（chat_turn 现在返回 (answer, conv, meta)）
-        _a, _c2, _m2 = C.chat_turn(Path.home() / ".factory", "帮我跑一下任务树", conv_id="",
+        _tf7 = __import__("tempfile").TemporaryDirectory()     # ★ 用临时根: 会话落库别写进仓库 ✗
+        _a, _c2, _m2 = C.chat_turn(_tf7.name, "帮我跑一下任务树", conv_id="",
                                    on_run=lambda argv: (_ for _ in ()).throw(AssertionError("不该跑到这里")))
-        if not (_m2 or {}).get("elapsed"):
-            bad.append("回合信息里没有用时（Hermes 那样的回合信息没接）")
+        # ★ 注意: 这条只保证"写命令没被自动跑"（on_run 里挂了断言 ⇒ 跑到就炸）;
+        #   临时根下可能没有 LLM ⇒ 不苛求 meta 里的用时 ✓（用时由"三态可辨/会话"其它用例覆盖）
+        if _m2 and _m2.get("elapsed") is None and _m2.get("pending") is None:
+            bad.append("回合信息既没用时也没挂起（chat_turn 的 meta 没接）")
         # ★ "你点头它就执行"（Founder 选 A）: 写命令先挂起 → 回"好"才跑 → 回"不"就不跑
         #   全程用**临时根**, 不碰用户真实数据
         import tempfile as _tf2
@@ -3162,7 +3165,6 @@ def _check_general_command() -> list[str]:
            （实测踩到: 放后面会被当成"写命令挂起" ✗）
     """
     import inspect as _insp
-    from pathlib import Path as _P
 
     from apps.cli.domains import chat as _C
 
@@ -3178,11 +3180,12 @@ def _check_general_command() -> list[str]:
             self.n += 1
             return _Resp("RUN: sh echo ok-通用" if self.n == 1 else "答完了")
 
+    _tmp = __import__("tempfile").mkdtemp()      # ★ 临时根: 会话别落到 cwd/仓库 ✗
     _old = _C._provider
     asked, outs = [], []
     try:
         _C._provider = lambda: _Pv()
-        _C.chat_turn(_P.home(), "随便问一句", on_run=lambda argv: "",
+        _C.chat_turn(_tmp, "随便问一句", on_run=lambda argv: "",
                      on_output=lambda c, o: outs.append(o.strip()),
                      on_approval=lambda c: (asked.append(c), True)[1])
         if not asked or "sh" not in asked[0]:
@@ -3192,7 +3195,7 @@ def _check_general_command() -> list[str]:
         # 拒绝: 不许跑
         asked2, outs2 = [], []
         _C._provider = lambda: _Pv()
-        _C.chat_turn(_P.home(), "再问一次", on_run=lambda argv: "",
+        _C.chat_turn(_tmp, "再问一次", on_run=lambda argv: "",
                      on_output=lambda c, o: outs2.append(o.strip()),
                      on_approval=lambda c: (asked2.append(c), False)[1])
         if any("ok-通用" in o for o in outs2):

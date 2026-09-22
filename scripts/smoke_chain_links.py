@@ -3114,7 +3114,9 @@ def _check_three_marks() -> list[str]:
     # ★ 2026-09-21（Founder: "输入单独的区域 · Hermes 的回答单独的区域 · 执行也是独立的"）:
     #   四区独立: ① 输入区(横线**夹住**你敲的那行) ② 执行区(┊ 💻) ③ 回答区(框) ④ 状态栏(底部那行)
     if src.count("_rule_line()") < 2:
-        bad.append("输入区没被横线夹住（Founder 要的「输入单独的区域」✗）")
+        bad.append("用户区没做成「横线 + 原话 + 横线」（照 Hermes 实物 ✗）")
+    if "● {line}" not in src:
+        bad.append("用户区没有 `● <原话>`（历史里看不见谁说了什么 ✗）")
     if '" │ ".join(_sb)' not in src or "⚕ " not in src:
         bad.append("没有底部状态栏（Hermes 那行: 模型│用量│耗时 ✗）")
     if "tool_block(" not in src:

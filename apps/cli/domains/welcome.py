@@ -551,7 +551,6 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         pass
     while True:
         try:
-            print(_rule_line())          # ★ 输入区上边框（照 Hermes: 横线 + 提示符 = 输入区 ✓）
             line = input("factory> ").strip()
             # ★ 多行输入（照 Hermes 手感）: 行尾反斜杠 ⇒ 续行（贴长需求不用拆）
             while line.endswith("\\"):
@@ -634,9 +633,11 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         low = line.lower()
         # ★ 三态区分（Founder: "没有像 codex/Hermes 的 cli 那样: 用户/系统/执行 都有区分"）
         #   `你 ▸` = 你说的话;  `执行 ▸` = 它跑了什么;  `系统 ▸` = 平台提示;  `⚕` = 助手回答
-        if line:
-            # ★ 照 Hermes 的**分区**（Founder: "输入单独的区域 · 回答单独的区域 · 执行也是独立的"）:
-            #   输入区 = 上下两条横线**夹住你敲的那一行**; 不再把你的话重打一遍（重复 ✗ 实测被指）
+        if line and line.strip().lower() not in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
+            # ★ 照 Hermes 的**用户区**（Founder 给实物对过: 横线 + `● 你的话` + 横线）:
+            #   一行横线 · `● <老板原话>` · 一行横线 —— 这样历史里看得见"谁说了什么" ✓
+            print(_rule_line())
+            print(f"  ● {line}")
             print(_rule_line())
         if low in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
             break
@@ -903,7 +904,6 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 print("\n".join(_c + ln + _z for ln in _b.splitlines()) if _c else _b)
             else:
                 print()
-                print("  " + _head)
                 print("    " + _head)
                 print()
                 for _ln in _body.splitlines():

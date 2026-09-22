@@ -1,5 +1,21 @@
 # Changelog
 
+## [v1.3.6] — 2026-09-22
+
+**七域可下钻**（Founder 点单"kanban 的活动域" + "都要"）。
+
+### Added
+- `factory console <域>` —— 七个域各自能看**每一条**了（以前只有 `dashboard` 汇总 ✗）:
+  `activity`（活动: 时间/事件/来源/seq）· `projects` · `agents` · `decisions` · `cost` · `experience`
+  · 每个域都**复用 dashboard 同一份快照**（口径一致 ✓）· 只读（唯一副作用 = `console.viewed` 审计事件 ✓）
+  · `--limit N` 控条数 · 表格按**中文宽度**对齐 ✓ · 域里没数据就如实说空（**不编** ✗）
+- 通用转换 `_as_dict`: 快照里的元素可能是 dict / **pydantic 对象** / 字符串 —— 统一吃得下
+  （实测 `Decision` 直接 `.get` 会 AttributeError 崩 ✗）
+
+### Fixed
+- `decisions` 域不再崩（pydantic 对象）; 枚举前缀去掉（`AgentStatus.AVAILABLE` → `available` ✓）;
+  `experience` 是**聚合 dict**（总数/成功率/by_result）⇒ 按 key/value 出, 不再把 key 当条目 ✗
+
 ## [v1.3.5] — 2026-09-22
 
 **看板表头带上项目的中文说明**（接 v1.3.4 的 Note —— 那条"没取到"已修）。

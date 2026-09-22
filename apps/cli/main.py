@@ -1101,6 +1101,18 @@ def build_parser() -> Any:
     json_opt(p_c_dash)
     p_c_dash.add_argument("--limit", type=int, default=10,
                           help="最近决策/活动条数上限 (默认 10)")
+    # ★ 2026-09-22（Founder: 看板的"活动"域 + "都要"）: 七域**可下钻**
+    for _dom, _help in (
+        ("activity", "活动域: 最近事件流（谁在什么时候做了什么）"),
+        ("projects", "项目域: 项目清单（id/名字/状态）"),
+        ("agents", "Agent 域: 舰队与在跑状态"),
+        ("decisions", "决策域: 最近人工/系统决策"),
+        ("cost", "成本域: 用量与花费"),
+        ("experience", "经验域: 学习自治攒下的经验"),
+    ):
+        _pc = csub.add_parser(_dom, help=_help)
+        json_opt(_pc)
+        _pc.add_argument("--limit", type=int, default=20, help="条数上限（默认 20）")
     p_c_ap = csub.add_parser(
         "approvals", help="待人工审批清单 (只读不决定 — 决策权在 product approval "
                           "decide; 发 console.viewed)"
@@ -1970,6 +1982,100 @@ def _paint_kb(_key: str, label: str, items: list[dict]) -> str:
         return paint(_el, f"{label} ({len(items)})")
     except Exception:  # noqa: BLE001
         return f"{label} ({len(items)})"
+
+
+def _as_dict(x: Any) -> dict:
+    """把快照里的元素统一成 dict（dict / pydantic 对象 / 普通对象都吃得下 ✓）。
+
+    ★ 实测踩到: `Decision` 是 **pydantic 对象** ⇒ 直接 `.get` 会 AttributeError 崩 ✗
+    """
+    if isinstance(x, dict):
+        return x
+    for _m in ("model_dump", "dict"):
+        _f = getattr(x, _m, None)
+        if callable(_f):
+            try:
+                _d = _f()
+                if isinstance(_d, dict):
+                    return _d
+            except Exception:  # noqa: BLE001
+                pass
+    try:
+        return dict(vars(x))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _print_console_domain(r: dict) -> None:
+    """`console <域>` 输出 —— 表格/清单（中文宽度对齐; 空就说空, 不编 ✗）。"""
+    from apps.cli.textwidth import ljust_display as _lj, truncate_display as _tr
+
+    dom = str(r.get("domain") or "")
+    snap = r.get("snapshot") or {}
+    title = {"activity": "活动域 · 最近事件流", "projects": "项目域", "agents": "Agent 域",
+             "decisions": "决策域", "cost": "成本域", "experience": "经验域"}.get(dom, dom)
+    print(f"  {title}（只读 · 与 console dashboard 同一份快照 ✓）")
+    print()
+    heads: list[str] = []
+    rows: list[list[str]] = []
+    if dom == "activity":
+        heads = ["时间", "事件", "来源", "seq"]
+        for _e in (snap.get("activity") or []):
+            e = _as_dict(_e)
+            _t = str(e.get("type") or "-")
+            _t = _t.replace("EventType.", "").lower().replace("_", ".")   # 真字段; 不编"动作/结果" ✗
+            rows.append([str(e.get("timestamp") or "-")[:19], _t, str(e.get("source") or "-"),
+                         str(e.get("seq") or "-")])
+    elif dom == "projects":
+        heads = ["ID", "项目", "状态"]
+        for _p in (snap.get("projects") or []):
+            p = _as_dict(_p)
+            rows.append([str(p.get("id") or p.get("project") or "-"),
+                         str(p.get("name") or p.get("title") or "-"), str(p.get("status") or "-")])
+    elif dom == "agents":
+        heads = ["Agent", "状态"]
+        for _a in (snap.get("agents") or []):
+            a = _as_dict(_a)
+            _st = str(a.get("status") or "-").replace("AgentStatus.", "").lower()
+            rows.append([str(a.get("id") or a.get("name") or "-"), _st])
+    elif dom == "decisions":
+        heads = ["决策类型", "摘要"]
+        import re as _re
+
+        for _d in (snap.get("decisions") or []):
+            s = str(_d)
+            _m = _re.search(r"decision_type='([^']+)'", s)
+            _summary = _re.sub(r"\s+", " ", _re.sub(r"(id|decision_type)='[^']*'", "", s)).strip(" ,")
+            rows.append([(_m.group(1) if _m else "-"), _summary[:60]])
+    elif dom == "cost":
+        heads = ["项", "值"]
+        c = snap.get("cost") or {}
+        rows = [["总花费", f"${float(c.get('total_cost') or 0):.6f}"], ["调用数", str(c.get("calls") or 0)]]
+    elif dom == "experience":
+        heads = ["项", "值"]
+        _x = snap.get("experience") or {}
+        if isinstance(_x, dict):
+            _tt = _x.get("total")
+            _sr = _x.get("success_rate")
+            rows.append(["经验总数", str(_tt if _tt is not None else "-")])
+            rows.append(["成功率", f"{float(_sr):.0%}" if isinstance(_sr, (int, float)) else "-"])
+            for _k, _v in (_x.get("by_result") or {}).items():
+                rows.append([f"  · {_k}", str(_v)])
+        else:
+            for i, _one in enumerate(_x or [], 1):
+                rows.append([str(i), str(_one)[:60]])
+    if not rows:
+        print("  （这一域现在没有数据 —— 如实说空, 不编 ✗）")
+    else:
+        _cols = list(zip(*rows))
+        widths = [max(len(h), max((len(_tr(str(x), 40)) for x in col), default=0))
+                  for h, col in zip(heads, _cols)]
+        print("  " + "  ".join(_lj(h, w) for h, w in zip(heads, widths)))
+        print("  " + "  ".join("-" * w for w in widths))
+        for row in rows:
+            print("  " + "  ".join(_lj(_tr(str(c), 40), w) for c, w in zip(row, widths)))
+    if r.get("event_seq"):
+        print(f"\n  事件  console.viewed seq={r['event_seq']}")
 
 
 def _print_kanban(r: dict) -> None:
@@ -4632,7 +4738,29 @@ def _dispatch_console(ctx: FactoryContext, args: Any) -> dict:
         return cmd_console_dashboard(ctx, args)
     if args.console_command == "approvals":
         return cmd_console_approvals(ctx, args)
+    if args.console_command in ("activity", "projects", "agents", "decisions", "cost", "experience"):
+        return cmd_console_domain(ctx, args)
     raise CliError(f"unknown console command: {args.console_command}", exit_code=2)
+
+
+def cmd_console_domain(ctx: FactoryContext, args: Any) -> dict:
+    """factory console <域> —— 七域**下钻**（只读; 复用 dashboard 同一份快照 ⇒ 口径一致 ✓）。
+
+    ★ 2026-09-22（Founder: "kanban 的'活动'域" + "都要"）: 以前只有七域汇总, 想看某域里**每条**得自己猜 ✗。
+    """
+    from ai_factory_os.infrastructure.events.types import EventType
+
+    from apps.cli.commands import SOURCE, _open_console_service   # 复用 console 那套（同一份快照 ✓）
+
+    dom = str(args.console_command)
+    with ctx.logger_scope() as logger:
+        service = _open_console_service(ctx)
+        if service is None:
+            raise CliError("factory-console 未安装 (缺 factory-console/ 包)", exit_code=7)
+        snap = service.dashboard(recent_limit=int(getattr(args, "limit", 20) or 20))
+        ev = logger.record(EventType.CONSOLE_VIEWED, source=SOURCE, stage="viewed",
+                           action=f"view console {dom}", result="OK")
+        return {"domain": dom, "snapshot": snap, "event_seq": getattr(ev, "seq", None)}
 
 
 def _dispatch_org(ctx: FactoryContext, args: Any) -> dict:
@@ -4763,6 +4891,9 @@ def _print_output(args: Any, result: dict) -> None:
         _print_create(result)
     elif args.command == "arch":
         _print_arch(args, result)
+    elif args.command == "console" and args.console_command in (
+            "activity", "projects", "agents", "decisions", "cost", "experience"):
+        _print_console_domain(result)
     elif args.command == "kanban":
         _print_kanban(result)
     elif args.command == "update":

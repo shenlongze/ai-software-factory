@@ -3437,6 +3437,43 @@ def _check_version_discipline() -> list[str]:
     return bad
 
 
+def _check_console_domains() -> list[str]:
+    """★ 七域下钻（Founder: "kanban 的活动域" + "都要"）。
+
+    判据: ① `activity` 能出真表（时间/事件/来源/seq 四列, 值不是 "-" 噪声 ✓）
+         ② 七个域都能跑（rc=0, 不崩 —— 实测 decisions 崩过 ✗）
+         ③ 域里没数据就**如实说空**（不含编造 ✗）
+         ④ 只读: 复用 dashboard 同一份快照（口径一致 ✓）
+    """
+    import subprocess as _sp
+
+    bad: list[str] = []
+    _doms = ("activity", "projects", "agents", "decisions", "cost", "experience")
+    for d in _doms:
+        r = _sp.run([".venv/bin/factory", "console", d, "--limit", "3"],
+                    capture_output=True, text=True, timeout=90)
+        if r.returncode != 0:
+            bad.append(f"`console {d}` 跑挂了（rc={r.returncode}）✗")
+        if "Traceback" in (r.stdout + r.stderr):
+            bad.append(f"`console {d}` 抛异常 ✗")
+    _act = _sp.run([".venv/bin/factory", "console", "activity", "--limit", "3"],
+                   capture_output=True, text=True, timeout=90).stdout
+    for _h in ("时间", "事件", "来源"):
+        if _h not in _act:
+            bad.append(f"活动域缺列「{_h}」（看不出谁在什么时候做了什么 ✗）")
+    if "EventType." in _act:
+        bad.append("活动域还露着枚举前缀（EventType.X ✗ 不好看）")
+    _src = Path("apps/cli/main.py").read_text(encoding="utf-8")
+    if "_open_console_service" not in _src.split("def cmd_console_domain")[1][:600]:
+        bad.append("域视图没复用 dashboard 的快照（口径会不一致 ✗）")
+    return bad
+
+
+def test_console_domains() -> None:
+    """七域: 都能跑 · 活动域有真列 · 不露枚举前缀 · 复用同一快照。"""
+    assert _check_console_domains() == []
+
+
 def test_version_discipline() -> None:
     """版本号: 三处一致 · 不倒退 · 规矩有文档且挂入口。"""
     assert _check_version_discipline() == []
@@ -3514,6 +3551,7 @@ def main() -> int:
     results.append(("边打边提示（prompt_toolkit: 一打 / 就出候选）", not _check_live_hint(), "；".join(_check_live_hint())))
     results.append(("看板（横排列·中文对齐·带数据源）", not _check_kanban_board(), "；".join(_check_kanban_board())))
     results.append(("版本号规矩（三处一致·不倒退·文档+入口）", not _check_version_discipline(), "；".join(_check_version_discipline())))
+    results.append(("七域下钻（console <域> 都能跑·活动域有真列）", not _check_console_domains(), "；".join(_check_console_domains())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

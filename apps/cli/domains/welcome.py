@@ -471,6 +471,18 @@ def ask_choice(title: str, lines: list[str], options: list[str], *, default: int
         return (int(_s) - 1) if _s.isdigit() and 1 <= int(_s) <= len(options) else default
 
 
+def _menu_for(prefix: str) -> list[tuple[str, str]]:
+    """`/` 提示的候选（会话命令 + factory 命令, 都带 / 前缀 ✓）—— 边打边过滤 ✓。"""
+    items: list[tuple[str, str]] = []
+    for name, desc in SESSION_COMMANDS.items():
+        items.append((name, desc))
+    for c in sorted(_top_commands()):
+        if "/" + c not in SESSION_COMMANDS:
+            items.append(("/" + c, "factory 命令（也可不带 / 直接敲）"))
+    pfx = str(prefix or "").lower()
+    return [(n, d) for n, d in items if n.lower().startswith(pfx)]
+
+
 def _install_completer() -> None:
     """装上 readline 补全: 打 `/` 后按 TAB 能补会话命令 + factory 命令名。
 

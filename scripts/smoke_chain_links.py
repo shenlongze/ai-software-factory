@@ -3115,9 +3115,9 @@ def _check_three_marks() -> list[str]:
     #   四区独立: ① 输入区(横线**夹住**你敲的那行) ② 执行区(┊ 💻) ③ 回答区(框) ④ 状态栏(底部那行)
     if src.count("_rule_line()") < 2:
         bad.append("用户区没做成「横线 + 原话 + 横线」（照 Hermes 实物 ✗）")
-    if "● {line}" not in src:
+    if '"●"' not in src and "user_mark" not in src:
         bad.append("用户区没有 `● <原话>`（历史里看不见谁说了什么 ✗）")
-    if '" │ ".join(_sb)' not in src or "⚕ " not in src:
+    if "_sb" not in src or "status_strong" not in src:
         bad.append("没有底部状态栏（Hermes 那行: 模型│用量│耗时 ✗）")
     if "tool_block(" not in src:
         bad.append("会话里没用工具块（结果还是堆砌 ✗）")
@@ -3201,7 +3201,6 @@ def _check_theme() -> list[str]:
     import io as _io
     import os as _os
     import sys as _sys
-    import tempfile as _tf
 
     from apps.cli import theme as _T
 

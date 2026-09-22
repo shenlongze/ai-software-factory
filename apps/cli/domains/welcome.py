@@ -362,6 +362,28 @@ def _ask_permission(cmd: str, *, tty: bool, always: set[str]) -> str:
     return "once" if ans == "1" else "deny"
 
 
+def _rule_line() -> str:
+    """通栏横线（分区用; 照 Hermes 的输入区上下边框）。"""
+    return "  " + "─" * max(40, min(_term_width(), 96) - 2)
+
+
+def status_bar(meta: dict) -> str:
+    """回答区之后的状态栏（照 Hermes 底部: 模型 │ 用量 │ 成本 │ 耗时 │ 查了几次）。"""
+    bits: list[str] = []
+    if meta.get("model"):
+        bits.append(str(meta["model"]))
+    _pt, _ct = meta.get("prompt_tokens"), meta.get("completion_tokens")
+    if _pt or _ct:
+        bits.append(f"↑{_pt or 0} ↓{_ct or 0}")
+    if meta.get("cost") is not None:
+        bits.append(f"${float(meta['cost']):.6f}")
+    if meta.get("seconds") is not None:
+        bits.append(f"{float(meta['seconds']):.1f}s")
+    if meta.get("tool_calls"):
+        bits.append(f"查了 {meta['tool_calls']} 次")
+    return "  ⚕ " + " │ ".join(bits) if bits else ""
+
+
 def _install_completer() -> None:
     """装上 readline 补全: 打 `/` 后按 TAB 能补会话命令 + factory 命令名。
 
@@ -529,6 +551,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         pass
     while True:
         try:
+            print(_rule_line())          # ★ 输入区上边框（照 Hermes: 横线 + 提示符 = 输入区 ✓）
             line = input("factory> ").strip()
             # ★ 多行输入（照 Hermes 手感）: 行尾反斜杠 ⇒ 续行（贴长需求不用拆）
             while line.endswith("\\"):
@@ -611,13 +634,10 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         low = line.lower()
         # ★ 三态区分（Founder: "没有像 codex/Hermes 的 cli 那样: 用户/系统/执行 都有区分"）
         #   `你 ▸` = 你说的话;  `执行 ▸` = 它跑了什么;  `系统 ▸` = 平台提示;  `⚕` = 助手回答
-        if line and low not in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
-            # ★ 照 Hermes 的**分区**（Founder: "Hermes 和 codex 都比较清晰, factory 就比较乱, 没有分区"）
-            #   用户回合: 上下各一条通栏线 + `● <原话>`
-            _rule = "  " + "─" * max(40, min(_term_width(), 96) - 2)
-            print(_rule)
-            print(f"  ● {line}")
-            print(_rule)
+        if line:
+            # ★ 照 Hermes 的**分区**（Founder: "输入单独的区域 · 回答单独的区域 · 执行也是独立的"）:
+            #   输入区 = 上下两条横线**夹住你敲的那一行**; 不再把你的话重打一遍（重复 ✗ 实测被指）
+            print(_rule_line())
         if low in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
             break
         if low in ("help", "h", "?", "/h", "/?"):
@@ -860,24 +880,36 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             print()
             # Hermes 风格: 标题里带这轮的模型/用量/成本/用时（真值）
             _u = _meta.get("usage") or {}
-            _bits = [f"⚕ AI Factory OS · {_meta.get('model') or '?'}"]
+            # ★ 照 Hermes 的分区: 输入区(横线夹住) · 执行区(┊ 💻) · **回答区**(框) · **状态栏**(底下那行)
+            #   ⇒ 模型/用量/成本/耗时 **不再挤在框标题里**，改到底部状态栏 ✓
+            _sb: list[str] = []
+            if _meta.get("model"):
+                _sb.append(str(_meta["model"]))
             if _u.get("prompt_tokens") is not None:
-                _bits.append(f"tokens {_u.get('prompt_tokens')}↑/{_u.get('completion_tokens')}↓")
+                _sb.append(f"↑{_u.get('prompt_tokens')} ↓{_u.get('completion_tokens')}")
             if _u.get("estimated_cost_usd") is not None:
-                _bits.append(f"${float(_u['estimated_cost_usd']):.6f}")
-            _bits.append(f"{_t3.monotonic() - _t0:.1f}s")
-            _head = " · ".join(_bits)
+                _sb.append(f"${float(_u['estimated_cost_usd']):.6f}")
+            _sb.append(f"{_t3.monotonic() - _t0:.1f}s")
+            _rounds = int(_meta.get("rounds") or 1)
+            if _rounds > 1:
+                _sb.append(f"查了 {_rounds - 1} 次")
+            _head = "⚕ AI Factory OS"
             from apps.cli.markdown import render_md as _md   # ★ 终端渲染 markdown（Founder: "cli 好像不支持markdown格式"）
             _body = _md(_ans or "（没答上来; 换句话再说一次?）", indent="")
             if _use_box():
-                _b = box(_head, _body)
+                # ★ 标题只留名字（用量/耗时挪到**状态栏** —— 照 Hermes: 框是回答区, 底部那行才是状态 ✓）
+                _b = box("⚕ AI Factory OS", _body)
                 _c, _z = _border_color(), _color_off()
                 print("\n".join(_c + ln + _z for ln in _b.splitlines()) if _c else _b)
             else:
                 print()
                 print("  " + _head)
+                print("    " + _head)
+                print()
                 for _ln in _body.splitlines():
                     print(_ln if not _ln else "    " + _ln)
+            if _sb:
+                print("  ⚕ " + " │ ".join(_sb))
                 print()
             # ★ 它念了写命令 ⇒ 明确问一句（并显示**精确**命令, 让你看清要跑什么）
             _pend = list(_meta.get("pending") or [])

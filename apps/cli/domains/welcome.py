@@ -344,6 +344,7 @@ SESSION_COMMANDS: dict[str, str] = {
     "/tools": "它都能跑哪些命令（只读自动 / 写要你点头）",
     "/clear": "清屏",
     "/commands": "常用命令总表（表格: 命令 / 作用 / 是否改数据）",
+    "/colors": "色板预览（每个界面元素上一遍色, 指着说哪不对）",
 }
 
 
@@ -700,6 +701,14 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             ]
             print("  常用命令（带 / 执行; 不带 / 就是跟我说人话）")
             print(_rt2(["命令", "作用", "改数据"], _rows2))
+            continue
+        if low in ("/colors", "/theme"):
+            from apps.cli.theme import PALETTE, color_enabled, paint
+
+            print(f"  色板（{'终端: 已上色' if color_enabled() else '非终端/NO_COLOR: 不上色'}）")
+            for _el, _hex in PALETTE.items():
+                print("   " + paint(_el, f"  {_el:<16} {_hex}  ████ 示例文字  ").rstrip())
+            print("   想调哪个就说元素名（例: 工具行再深一点）")
             continue
         if low in ("/new", "/clear", "/cost", "/model", "/tools", "/stop", "/retry", "/sessions"):
             if low == "/clear":

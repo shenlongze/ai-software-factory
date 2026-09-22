@@ -53,12 +53,33 @@ def _hex_rgb(h: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
+def _truecolor() -> bool:
+    """终端认不认 24 位真彩色 —— ★ 只认 `COLORTERM`。
+
+    macOS 自带 Terminal.app **不支持真彩** ✗（发了 `38;2;r;g;b` 会被忽略 ⇒ 用户看不到颜色 ✗）;
+    它认 **256 色**。所以: 没有 `COLORTERM=truecolor|24bit` 就退回 256 色 ✓。
+    """
+    return "truecolor" in os.environ.get("COLORTERM", "").lower() or "24bit" in os.environ.get("COLORTERM", "").lower()
+
+
+def _to_256(r: int, g: int, b: int) -> int:
+    """真彩 → xterm-256 色号（6×6×6 色立方; 够用且各家终端都认 ✓）。"""
+    def _q(v: int) -> int:
+        return 0 if v < 48 else 1 if v < 114 else (v - 35) // 40
+    return 16 + 36 * _q(r) + 6 * _q(g) + _q(b)
+
+
 def paint(element: str, text: str, *, force: bool | None = None) -> str:
-    """给一段文字上色（按元素取色; 不需要上色就原样返回 ✓）。"""
+    """给一段文字上色（按元素取色; 不需要上色就原样返回 ✓）。
+
+    真彩可用 ⇒ 24 位; 否则 ⇒ **256 色**（macOS Terminal.app 这类只认 256 色的终端也能看到 ✓）。
+    """
     if not text or not color_enabled(force):
         return text
     r, g, b = _hex_rgb(PALETTE.get(element, "#f5f5f7"))
-    return f"\033[38;2;{r};{g};{b}m{text}\033[0m"
+    if _truecolor():
+        return f"\033[38;2;{r};{g};{b}m{text}\033[0m"
+    return f"\033[38;5;{_to_256(r, g, b)}m{text}\033[0m"
 
 
 def dim(text: str, *, force: bool | None = None) -> str:

@@ -3229,6 +3229,8 @@ def _check_theme() -> list[str]:
     from apps.cli import theme as _T
 
     bad: list[str] = []
+    if "/colors" not in _W.SESSION_COMMANDS:
+        bad.append("没有 /colors 色板预览（界面色不好对着指 ✗）")
     for el in ("body", "banner_border", "banner_title", "input_rule", "user_mark", "tool_prefix",
                "response_border", "response_label", "status_text", "status_strong",
                "status_dim", "good", "warn", "bad"):

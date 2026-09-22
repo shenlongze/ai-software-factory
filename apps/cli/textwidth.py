@@ -23,3 +23,23 @@ def pad(s: object, width: int) -> str:
     """右侧补空格到指定**显示宽度**（超出则原样返回, 不截断）。"""
     text = str(s)
     return text + " " * max(0, width - display_width(text))
+
+
+def ljust_display(s: str, width: int) -> str:
+    """按**显示宽度**左对齐补空格（中文算 2 —— 表格/看板列对齐都用它 ✓）。"""
+    return s + " " * max(0, width - display_width(s))
+
+
+def truncate_display(s: str, width: int, ellipsis: str = "…") -> str:
+    """按**显示宽度**截断（中文算 2; 超出加省略号 ✓）。"""
+    if display_width(s) <= width:
+        return s
+    out, used = "", 0
+    limit = max(0, width - display_width(ellipsis))
+    for ch in s:
+        w = display_width(ch)
+        if used + w > limit:
+            break
+        out += ch
+        used += w
+    return out + ellipsis

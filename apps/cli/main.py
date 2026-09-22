@@ -1864,25 +1864,70 @@ def _dispatch_kanban(ctx: FactoryContext, args: Any) -> dict:
         st = str(r.get("status") or "").strip().lower()
         (buckets[st] if st in buckets else other).append(r)
 
-    L.append(f"=== 看板（{'项目含 ' + pid if pid else '全部'} · 共 {len(rows)} 个任务）===")
+    # ★ 2026-09-21 改成**横排四列**（真看板的样子; Founder 说"kanban"）+ 中文宽度对齐 + 主题色
+    from apps.cli.textwidth import ljust_display as _lj, truncate_display as _tr
+
+    shown = [(k, lb) for k, lb in COLS if buckets[k] or k in ("todo", "in_progress")]
+    _per_col = 10 if not show_all else 999
+    _colw = 30                                    # 每列宽（含缩进）
+    _fits = max(1, (_term_cols() - 4) // _colw)
+    L.append(f"  看板 · {'项目 ' + pid if pid else '全部'} · 共 {len(rows)} 个任务"
+             + (f" · 只显示前 {_fits} 列" if len(shown) > _fits else ""))
     L.append("")
-    for key, label in COLS:
-        items = buckets[key]
-        if not items and key not in ("todo", "in_progress"):
-            continue                       # 空列不刷屏 ✓（todo/进行中 恒显示 ✓）
-        L.append(f"  ┌─ {label}（{len(items)}）")
-        for r in (items if show_all else items[:5]):
-            L.append(f"  │  {str(r.get('id'))[:20]:22s} {str(r.get('title'))[:38]:40s}"
-                     f" {str(r.get('project') or '')[:16]}")
-        if len(items) > 5 and not show_all:
-            L.append(f"  │  … 另 {len(items) - 5} 条（--all 看全部）")
-        L.append("  └" + "─" * 40)
+    if _fits >= 2:                                # 横排（真看板 ✓）
+        for _i in range(0, len(shown), _fits):
+            _grp = shown[_i:_i + _fits]
+            L.append("  " + "".join(_lj(_paint_kb(k, lb, buckets[k]), _colw) for k, lb in _grp))
+            _lists = [(buckets[k] if show_all else buckets[k][:_per_col], buckets[k]) for k, _ in _grp]
+            for _row in range(max((len(x) for x, _ in _lists), default=0)):
+                _cells: list[str] = []
+                for _items, _allitems in _lists:
+                    if _row < len(_items):
+                        _r = _items[_row]
+                        _t = _tr(str(_r.get("title") or ""), _colw - 15)
+                        _cells.append(_lj("  " + _t, _colw))
+                    elif _row == len(_items) and len(_allitems) > len(_items):
+                        _cells.append(_lj(f"  … 另 {len(_allitems) - len(_items)} 条", _colw))
+                    else:
+                        _cells.append(" " * _colw)
+                L.append("".join(_cells).rstrip())
+            L.append("")
+    else:                                         # 太窄 ⇒ 退回竖排（照旧 ✓）
+        for key, label in shown:
+            items = buckets[key]
+            L.append(f"  ┌─ {label}（{len(items)}）")
+            for r in (items if show_all else items[:5]):
+                L.append(f"  │  {_tr(str(r.get('id') or ''), 22):22s} {_tr(str(r.get('title') or ''), 40)}"
+                         f" {str(r.get('project') or '')[:16]}")
+            if len(items) > 5 and not show_all:
+                L.append(f"  │  … 另 {len(items) - 5} 条（--all 看全部）")
+            L.append("  └" + "─" * 40)
     if other:
         L.append(f"  （另有 {len(other)} 条状态未识别）")
-    L.append("")
     L.append("  数据源: 与 `factory task list` 同一份（①tasks ②backlog ③分配记录 ④**任务树的叶=开发任务**）✓")
     L.append("          列 = 任务实际流转顺序 ✓（叶状态 pending→claimed→completed 直接映射到列）")
     return {"lines": L}
+
+
+def _term_cols() -> int:
+    """终端列数（拿不到给 100; 用于决定看板列数 ✓）。"""
+    try:
+        import shutil as _sh
+
+        return _sh.get_terminal_size((100, 30)).columns
+    except Exception:  # noqa: BLE001
+        return 100
+
+
+def _paint_kb(_key: str, label: str, items: list[dict]) -> str:
+    """列头（带计数 + 主题色: 待办=中性 / 进行中=琥珀 / 完成=绿 / 取消=灰 ✓）。"""
+    try:
+        from apps.cli.theme import paint
+
+        _el = {"in_progress": "warn", "done": "good", "cancelled": "status_dim"}.get(_key, "status_strong")
+        return paint(_el, f"{label} ({len(items)})")
+    except Exception:  # noqa: BLE001
+        return f"{label} ({len(items)})"
 
 
 def _print_kanban(r: dict) -> None:

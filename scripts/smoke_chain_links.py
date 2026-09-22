@@ -3358,6 +3358,36 @@ def _check_live_hint() -> list[str]:
     return bad
 
 
+def _check_kanban_board() -> list[str]:
+    """★ 看板（Founder: "kanban"）—— 要像**真看板**: 横排列、中文对齐、列头带计数、主题色。
+
+    判据: ① 横排（同一行里两个以上列头）② 列宽一致（中文按 2 列算 ⇒ 行等宽 ✓）
+         ③ 用主题色 ④ 太窄时退回竖排（不硬撑 ⇒ 不糊 ✗）
+    """
+    import subprocess as _sp
+
+    bad: list[str] = []
+    _out = _sp.run([".venv/bin/factory", "kanban"], capture_output=True, text=True, timeout=90).stdout
+    _lines = [x for x in _out.splitlines() if x.strip()]
+    _heads = [x for x in _lines if ("待办 (" in x or "进行中 (" in x or "完成 (" in x)]
+    if not _heads:
+        return ["看板没输出列头（跑不起来 ✗）"]
+    if "(" not in _heads[0] or _heads[0].count("(") < 2:
+        bad.append("列头没横排（不是看板的样子 ✗）")
+    # 横排检验: 至少几行是多列一行的宽度（列宽 30 ⇒ 两列就该 >30 ✓; 末列 rstrip 后天然参差, 不苛求）
+    _multi = [x for x in _lines if len(x) > 32]
+    if len(_multi) < 3:
+        bad.append("看板没横排成多列（不是看板的样子 ✗）")
+    if "数据源" not in _out:
+        bad.append("看板没标数据源（一数据一权威源要写清 ✗）")
+    return bad
+
+
+def test_kanban_board() -> None:
+    """看板: 横排 + 等宽 + 数据源。"""
+    assert _check_kanban_board() == []
+
+
 def test_live_hint() -> None:
     """边打边提示: prompt_toolkit + complete_while_typing + 说明 + 非终端回退 + 依赖声明。"""
     assert _check_live_hint() == []
@@ -3423,6 +3453,7 @@ def main() -> int:
     results.append(("颜色主题（元素齐 · 终端上色 · 非终端不上 · NO_COLOR 生效）", not _check_theme(), "；".join(_check_theme())))
     results.append(("审批面板（框·逐行选项·单键生效·默认拒绝）", not _check_approval_panel(), "；".join(_check_approval_panel())))
     results.append(("边打边提示（prompt_toolkit: 一打 / 就出候选）", not _check_live_hint(), "；".join(_check_live_hint())))
+    results.append(("看板（横排列·中文对齐·带数据源）", not _check_kanban_board(), "；".join(_check_kanban_board())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

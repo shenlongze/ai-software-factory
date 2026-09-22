@@ -2893,6 +2893,50 @@ def _check_output_readability() -> list[str]:
     return bad
 
 
+def _check_slash_discoverability() -> list[str]:
+    """★ `/` 的可发现性（Founder: "Hermes 中有输入 / 后就有命令提示功能" + "factory 内命令不需要 /?"）。
+
+    判据: ① 单独打 `/` 回车 ⇒ 出命令表（不用记命令）② TAB 能补全 `/命令`（会话命令 + factory 命令都补）
+         ③ `exit` 等会话词**不带 /** 也能用（两种写法等价 —— 老板问的那个点）
+    """
+    import contextlib as _c
+    import inspect as _insp
+    import io as _io
+    import sys as _sys
+
+    from apps.cli import main as _cli
+    from apps.cli.domains import welcome as _W
+
+    bad: list[str] = []
+    src = _insp.getsource(_W.run_shell)
+    if "_install_completer()" not in src:
+        bad.append("没装 TAB 补全（打 / 后没法补命令 ✗）")
+    if 'line.strip() == "/"' not in src:
+        bad.append("单独打 / 回车没出命令表（不可发现 ✗）")
+    names = sorted({*_W.SESSION_COMMANDS, *("/" + c for c in _W._top_commands())})
+    if "/status" not in names or "/new" not in names:
+        bad.append("补全候选没同时覆盖 factory 命令与会话命令 ✗")
+    # 行为: 打 "/" ⇒ 命令表; 打 "exit"（不带 /）⇒ 能退出
+    buf = _io.StringIO()
+    _sys.stdin = _io.StringIO("/" + chr(10) + "exit" + chr(10))
+    try:
+        with _c.redirect_stdout(buf):
+            _cli(["start"])
+    except SystemExit:
+        pass
+    out = buf.getvalue()
+    if "/sessions" not in out or "/cost" not in out:
+        bad.append("打 / 回车没列出会话命令表 ✗")
+    if "已退出" not in out:
+        bad.append("`exit`（不带 /）没能退出 —— 老板问的「两种写法」不成立 ✗")
+    return bad
+
+
+def test_slash_discoverability() -> None:
+    """/ 的可发现性: 单独 / 出命令表 · TAB 补全 · 不带 / 的会话词照旧可用。"""
+    assert _check_slash_discoverability() == []
+
+
 def test_output_readability() -> None:
     """输出可读性: status 表格化 · 中文对齐 · -h 当求助 · /commands 总表 · 框宽 ≤88。"""
     assert _check_output_readability() == []
@@ -3194,6 +3238,7 @@ def main() -> int:
     results.append(("PRD 门用同一份需求（真需求不误杀·拿不到就不过滤）", not _check_gate_uses_same_requirement(), "；".join(_check_gate_uses_same_requirement())))
     results.append(("三态可辨（你 · 系统 · 执行 · 助手 + 结果成块）", not _check_three_marks(), "；".join(_check_three_marks())))
     results.append(("通用命令通道（sh: 先审批·会真跑·拒绝不跑）", not _check_general_command(), "；".join(_check_general_command())))
+    results.append(("斜杠可发现性（/ 出命令表 · TAB 补全 · 不带/也行）", not _check_slash_discoverability(), "；".join(_check_slash_discoverability())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

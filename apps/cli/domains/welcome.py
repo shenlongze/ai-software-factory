@@ -362,6 +362,33 @@ def _ask_permission(cmd: str, *, tty: bool, always: set[str]) -> str:
     return "once" if ans == "1" else "deny"
 
 
+def _install_completer() -> None:
+    """装上 readline 补全: 打 `/` 后按 TAB 能补会话命令 + factory 命令名。
+
+    ★ 2026-09-21（Founder: "Hermes 中有输入 / 后就有命令提示功能"）—— 抄它的可发现性:
+      ① TAB 补全 `/xxx` ② 单独打一个 `/` 回车 ⇒ 直接出命令表（不用记）
+    """
+    try:
+        import readline
+    except Exception:  # noqa: BLE001 — 没有 readline 就算了（不影响用）
+        return
+    # ★ 两类都带 `/` 前缀一起补（factory 命令也支持 /status 写法 ✓ —— Founder: "factory 内命令不需要 /"?）
+    names = sorted({*SESSION_COMMANDS, *("/" + c for c in _top_commands())})
+
+    def _comp(text: str, state: int):
+        buf = readline.get_line_buffer()
+        if not buf.startswith("/"):
+            return None
+        opts = [n + " " for n in names if n.startswith(buf)]
+        return opts[state] if state < len(opts) else None
+
+    try:
+        readline.set_completer(_comp)
+        readline.parse_and_bind("tab: complete")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 #: 会话里三类信息各自的前缀（Founder: "没有像 codex/Hermes 的 cli 那样: 用户/系统/执行 都有区分"）
 MARK_USER = "你 ▸"
 MARK_SYS = "系统 ▸"
@@ -478,6 +505,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
     _tty = bool(getattr(sys.stdin, "isatty", lambda: False)() and
                 getattr(sys.stdout, "isatty", lambda: False)())
     _code_fp = _code_fingerprint()      # ★ 用来发现"窗口还跑着旧代码"（Founder 实测踩到 ✗）
+    _install_completer()                # ★ TAB 补全 /命令（照 Hermes）
     # ★ F2 多轮上下文持久化（跨重启还记得）: 启动时接上**最近一次会话**的最后几条消息。
     try:
         import json as _json
@@ -597,6 +625,8 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             continue
         from apps.cli.domains import chat as _chat0
 
+        if line.strip() == "/":        # ★ 打一个 "/" 回车 ⇒ 出命令表（照 Hermes 的可发现性）
+            low = "/help"
         if low in ("/help", "-h", "--help", "-help", "?"):   # ★ 裸 -h 也算求助（Founder 敲过 ✗）
             from apps.cli.main import _render_table as _rt
 

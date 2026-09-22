@@ -3141,7 +3141,7 @@ def _check_three_marks() -> list[str]:
     # ★ Founder: "输入框需要 加分割线 factory>" ⇒ 提示符**上方**必须有横线（─ / factory> / ● 你的话）
     if src.count("_rule_line()") < 1:
         bad.append("输入区没有横线（Founder 要在 factory> 上方加分割线 ✗）")
-    if src.index("_rule_line()") > src.index('input("factory> ")'):
+    if src.index("_rule_line()") > src.index('_read_input("factory> "'):
         bad.append("横线不在提示符**上方**（位置不对 ✗）")
     if '"●"' not in src and "user_mark" not in src:
         bad.append("用户区没有 `● <原话>`（历史里看不见谁说了什么 ✗）")
@@ -3327,6 +3327,42 @@ def test_approval_panel() -> None:
     assert _check_approval_panel() == []
 
 
+def _check_live_hint() -> list[str]:
+    from pathlib import Path
+    """★ "一打 / 就出命令提示"（Founder 要 Hermes 那种; 两版手搓失败后**改抄它的设计** ✓）。
+
+    判据: ① 输入层用 **prompt_toolkit**（Hermes 的 REPL 就是它 ✓）② 开了 `complete_while_typing`
+         （边打边弹 ✓, 不是按 TAB 才弹 ✗）③ 补全只在 `/` 开头时给候选 · 带说明（display_meta ✓）
+         ④ 非终端回退 input()（脚本/管道行为不变 ✓）⑤ 依赖写进 pyproject（打包要带上 ✓）
+    """
+    import inspect as _insp
+
+    from apps.cli.domains import welcome as _W
+
+    bad: list[str] = []
+    if "prompt_toolkit" not in str(_insp.getsource(_W)):
+        bad.append("输入层没用 prompt_toolkit（Hermes 的做法；手搓两版都失败 ✗）")
+    src = _insp.getsource(_W._make_session)
+    if "complete_while_typing=True" not in src:
+        bad.append("没开 complete_while_typing（那就退化成按 TAB 才提示 ✗）")
+    if "display_meta" not in src:
+        bad.append("候选不带说明（Hermes 的菜单是带说明的 ✗）")
+    if "startswith(\"/\")" not in src:
+        bad.append("补全没限制在 `/` 开头（会到处弹候选 ✗）")
+    isrc = _insp.getsource(_W._read_input)
+    if "isatty" not in isrc or "input(" not in isrc:
+        bad.append("非终端没回退 input()（管道/脚本会被 prompt_toolkit 搞坏 ✗）")
+    _pp = Path("pyproject.toml").read_text(encoding="utf-8")
+    if "prompt_toolkit" not in _pp:
+        bad.append("pyproject 没声明 prompt_toolkit（重新安装会缺依赖 ✗）")
+    return bad
+
+
+def test_live_hint() -> None:
+    """边打边提示: prompt_toolkit + complete_while_typing + 说明 + 非终端回退 + 依赖声明。"""
+    assert _check_live_hint() == []
+
+
 def test_theme() -> None:
     """主题: 元素齐全 · 终端上色 · 非终端不上色 · NO_COLOR 生效。"""
     assert _check_theme() == []
@@ -3386,6 +3422,7 @@ def main() -> int:
     results.append(("斜杠可发现性（/ 出命令表 · TAB 补全 · 不带/也行）", not _check_slash_discoverability(), "；".join(_check_slash_discoverability())))
     results.append(("颜色主题（元素齐 · 终端上色 · 非终端不上 · NO_COLOR 生效）", not _check_theme(), "；".join(_check_theme())))
     results.append(("审批面板（框·逐行选项·单键生效·默认拒绝）", not _check_approval_panel(), "；".join(_check_approval_panel())))
+    results.append(("边打边提示（prompt_toolkit: 一打 / 就出候选）", not _check_live_hint(), "；".join(_check_live_hint())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

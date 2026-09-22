@@ -471,6 +471,52 @@ def ask_choice(title: str, lines: list[str], options: list[str], *, default: int
         return (int(_s) - 1) if _s.isdigit() and 1 <= int(_s) <= len(options) else default
 
 
+def _make_session(root: Path | str):
+    """用 **prompt_toolkit** 做输入（照 Hermes: 它的 REPL 就是 prompt_toolkit）。
+
+    ⇒ 拿到它自带能力: **边打边弹补全菜单**（打进 `/` 立刻列出命令 ✓）、历史、方向键、样式。
+    """
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+    from prompt_toolkit.completion import Completer, Completion
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.styles import Style
+
+    class _CmdCompleter(Completer):
+        def get_completions(self, document, _event):
+            text = document.text_before_cursor
+            if not text.startswith("/"):
+                return
+            for name, desc in _menu_for(text):
+                yield Completion(name, start_position=-len(text), display_meta=desc)
+
+    return PromptSession(
+        completer=_CmdCompleter(),
+        complete_while_typing=True,        # ★ 一打 "/" 就出候选（不用 TAB、不用回车 ✓）
+        history=FileHistory(str(Path(root) / ".cli_history")),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=Style.from_dict({"prompt": "#FFD700", "completion-menu.completion": "bg:#1a1a2e #FFF8DC",
+                               "completion-menu.completion.current": "bg:#333355 #FFD700",
+                               "completion-menu.meta.completion": "bg:#1a1a2e #B8860B"}),
+    )
+
+
+def _read_input(prompt: str, *, root: Path | str) -> str:
+    """读一行: 终端 ⇒ prompt_toolkit（边打边提示 ✓）; 非终端/缺库 ⇒ input()（脚本照旧 ✓）。"""
+    if not (getattr(sys.stdin, "isatty", lambda: False)() and getattr(sys.stdout, "isatty", lambda: False)()):
+        return input(prompt)
+    try:
+        global _SESSION
+        if _SESSION is None:
+            _SESSION = _make_session(root)
+        return _SESSION.prompt(prompt)
+    except Exception:  # noqa: BLE001 — 兜底: 不让输入层把会话搞崩 ✗
+        return input(prompt)
+
+
+_SESSION = None
+
+
 def _menu_for(prefix: str) -> list[tuple[str, str]]:
     """`/` 提示的候选（会话命令 + factory 命令, 都带 / 前缀 ✓）—— 边打边过滤 ✓。"""
     items: list[tuple[str, str]] = []
@@ -654,7 +700,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         try:
             # ★ Founder: "输入框需要 加分割线 factory>" ⇒ 提示符**上方**一条横线（照 Hermes: ─── / ❯ / ───）
             print(_rule_line())
-            line = input("factory> ").strip()
+            line = _read_input("factory> ", root=root).strip()
             # ★ 多行输入（照 Hermes 手感）: 行尾反斜杠 ⇒ 续行（贴长需求不用拆）
             while line.endswith("\\"):
                 try:

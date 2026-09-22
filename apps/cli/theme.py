@@ -35,6 +35,7 @@ PALETTE: dict[str, str] = {
     "warn": "#ffd60a",              # ⚠ 提醒
     "bad": "#ff453a",               # ✗ 失败
     "code": "#64d2ff",              # 行内 `代码`
+    "body": "#f5f5f7",              # 正文（照 Hermes 的 banner_text 位置; 深色终端适用）
 }
 
 
@@ -61,5 +62,8 @@ def paint(element: str, text: str, *, force: bool | None = None) -> str:
 
 
 def dim(text: str, *, force: bool | None = None) -> str:
-    """暗一点（分隔符/耗时这类次要文字）。"""
-    return f"\033[2m{text}\033[0m" if text and color_enabled(force) else text
+    """次要文字 —— ★ 用**实色灰**（`status_dim`）而不是 ANSI 的 `2m` 半透明:
+
+    `\033[2m` 在很多终端里会糊成看不清 ✗（Founder: "字体颜色"）; Hermes 也是给实色。
+    """
+    return paint("status_dim", text, force=force)

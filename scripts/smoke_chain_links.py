@@ -3229,7 +3229,7 @@ def _check_theme() -> list[str]:
     from apps.cli import theme as _T
 
     bad: list[str] = []
-    for el in ("banner_border", "banner_title", "input_rule", "user_mark", "tool_prefix",
+    for el in ("body", "banner_border", "banner_title", "input_rule", "user_mark", "tool_prefix",
                "response_border", "response_label", "status_text", "status_strong",
                "status_dim", "good", "warn", "bad"):
         if el not in _T.PALETTE:
@@ -3252,6 +3252,9 @@ def _check_theme() -> list[str]:
         # 强制开时必须有颜色
         if "\033[38;2;" not in _T.paint("response_border", "x", force=True):
             bad.append("真彩 ANSI 没生成（终端里显示不出颜色 ✗）")
+        # ★ Founder: "字体颜色" ⇒ 次要文字用**实色灰**, 不许用 ANSI `2m`（很多终端糊成一片 ✗）
+        if "\033[2m" in _T.dim("x", force=True):
+            bad.append("次要文字还在用 `2m` 半透明（终端里常看不清 ✗）")
     finally:
         _sys.stdout = old_out
     return bad

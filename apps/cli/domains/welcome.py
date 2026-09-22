@@ -923,6 +923,9 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             _head = "⚕ AI Factory OS"
             from apps.cli.markdown import render_md as _md   # ★ 终端渲染 markdown（Founder: "cli 好像不支持markdown格式"）
             _body = _md(_ans or "（没答上来; 换句话再说一次?）", indent="")
+            from apps.cli.theme import paint as _pb    # ★ 正文色（照 Hermes 的 banner_text ✓）
+
+            _body = "\n".join(_pb("body", _ln) if _ln.strip() else _ln for _ln in _body.splitlines())
             if _use_box():
                 # ★ 标题只留名字（用量/耗时挪到**状态栏** —— 照 Hermes: 框是回答区, 底部那行才是状态 ✓）
                 _b = box("⚕ AI Factory OS", _body)

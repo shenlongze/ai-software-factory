@@ -3773,6 +3773,34 @@ def _check_apply_guard() -> list[str]:
     return bad
 
 
+def _check_classification_green() -> list[str]:
+    """★ 分类铁律 R20/R23 必须绿（都曾被打破过 ✓ —— 防回归）。
+
+    · R20: SSoT 域清单 vs 实际目录 一致（`contracts/entity` 曾漏登记 ✗）
+    · R23: 每个顶层 CLI 命令都在 `apps/cli/registry.py` 有域归属（新增 `serve` 时我漏登记 ✗）
+    """
+    import sys as _sys
+
+    _sys.path.insert(0, "scripts")
+    bad: list[str] = []
+    try:
+        import check_classification as _CC
+    except Exception as exc:  # noqa: BLE001
+        return [f"分类守卫导入失败: {type(exc).__name__} ✗"]
+    _r20 = _CC.rule_r20() or []
+    _r23 = _CC.rule_r23() or []
+    if _r20:
+        bad.append(f"R20 清单不一致（{len(_r20)} 项 ✗）")
+    if _r23:
+        bad.append(f"R23 有未登记的顶层命令（{len(_r23)} 项 ✗）")
+    return bad
+
+
+def test_classification_green() -> None:
+    """分类铁律 R20/R23 必须绿（防回归）。"""
+    assert _check_classification_green() == []
+
+
 def test_apply_guard() -> None:
     """回写防护: 干净套用 · 脏目标拒绝并说清 · 模糊套用要标注复核。"""
     assert _check_apply_guard() == []
@@ -3898,6 +3926,7 @@ def main() -> int:
     results.append(("真流式（stream:true · 分块 · 非终端不流式 · 回退）", not _check_streaming(), "；".join(_check_streaming())))
     results.append(("运行锁（跨进程拒绝 · 陈旧接管 · 不删别人的）", not _check_run_lock(), "；".join(_check_run_lock())))
     results.append(("回写防护（目标脏就拒绝 · 模糊套用要标注）", not _check_apply_guard(), "；".join(_check_apply_guard())))
+    results.append(("分类铁律 R20/R23（清单一致 · 命令全登记）", not _check_classification_green(), "；".join(_check_classification_green())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

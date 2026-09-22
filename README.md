@@ -5,7 +5,7 @@
 >
 > 本地部署 · 全事件审计 · Apache-2.0
 
-`v1.3.13`（以 `pyproject.toml` 为准）· CLI 在役 · API 可起（暂无前端）
+`v1.3.14`（以 `pyproject.toml` 为准）· CLI 在役 · API 可起（暂无前端）
 
 ---
 

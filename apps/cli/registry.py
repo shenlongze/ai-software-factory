@@ -66,24 +66,27 @@ FACTORY_CLI: dict[str, tuple[str, ...]] = {
 #: 新 CLI（`ai_factory_os/api/cli/`, **真顶层 24 个** —— 子命令不在此列）→ 域。
 #: 注: 它的 handler 已有命名前缀（26 组）, 但与架构域不一一对应; 本表是**按域**的权威。
 API_CLI: dict[str, tuple[str, ...]] = {
-    "conversation": ("console", "conversation"),   # console=只读视图; conversation=会话入口（2026-09-15 补, 链路第 1 环）
+    "conversation": ("console", "conversation", "start"),   # ★ start = 起交互式会话（第 1 环入口）   # console=只读视图; conversation=会话入口（2026-09-15 补, 链路第 1 环）
     "understanding": ("understand", "product"),
     "architecture": ("arch",),
     "decomposition": ("task", "tasktree", "kanban"),
-    "orchestration": ("workflow", "project"),
+    "orchestration": ("workflow", "project", "chain"),      # ★ chain = 全链从头跑（需求→…→执行）
     "execution": ("execution", "exec", "runtime", "run", "run-status"),
     "validation": ("validate", "change", "evd", "verification"),
     "delivery": (),
-    "learning": ("intelligence",),
+    "learning": ("intelligence", "knowledge"),              # ★ knowledge = 知识面（与经验同域）
     "operations": ("checkpoint", "recover", "backup"),
     "metrics": ("dashboard", "metrics"),
-    "audit": ("event",),
+    "audit": ("event", "memory"),                           # ★ memory = 记忆/实体账（审计面）
     "governance": ("approval",),
-    "organization": ("agent", "skill", "org"),
+    "organization": ("agent", "skill", "org", "tool", "mcp"),  # ★ 工具与 MCP 属组织面
     # init/status 是**无赋值写法**的顶层命令（`sub.add_parser("init", ...)`），
     # 第一次提取时被正则漏掉 —— 由 R23 守卫抓回（2026-09-15）。
     "platform": ("init", "status", "demo", "git", "provider", "workspace",
-                 "create", "history", "plugin", "update"),
+                 "create", "history", "plugin", "update",
+                 # ★ 2026-09-22（R23 报红 10 个未登记, 其中 `serve` 是新增发布命令时**我漏登记了** ✗）:
+                 #   help=帮助中心 · serve=起 API+界面 · llm=LLM 面 · discover=环境扫描
+                 "help", "serve", "llm", "discover"),
 }
 
 #: 两套 CLI **同名**的命令 —— 合并时必须**逐一裁决**, 不能按名字简单合并。

@@ -32,10 +32,10 @@
 三份清单，各自为唯一权威；`services/` 与 `api/domains/` 的目录必须与本节一致，
 漂移由守卫 `scripts/check_classification.py` 报红（R20/R21）。
 
-**契约域（`contracts/`，12）**
+**契约域（`contracts/`，13）**
 
 `identity` · `organization` · `work` · `resource` · `execution` · `governance` ·
-`learning` · `conversation` · `scheduling` · `events` · `errors` · `llm`
+`learning` · `conversation` · `scheduling` · `events` · `errors` · `llm` · `entity`
 
 **服务域（`services/`，11）**
 

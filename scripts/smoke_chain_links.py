@@ -3143,8 +3143,8 @@ def _check_three_marks() -> list[str]:
         bad.append("输入区没有横线（Founder 要在 factory> 上方加分割线 ✗）")
     if src.index("_rule_line()") > src.index('_read_input("factory> "'):
         bad.append("横线不在提示符**上方**（位置不对 ✗）")
-    if '"●"' not in src and "user_mark" not in src:
-        bad.append("用户区没有 `● <原话>`（历史里看不见谁说了什么 ✗）")
+    if "_rule_line()" not in src or src.count("_rule_line()") < 2:
+        bad.append("输入区没被上下两条横线夹住（Founder: 上面一条 + 下面一条 ✗）")
     # （"留白"那条已由"提示符上方横线"取代 —— 横线本身就是分隔 ✓）
     if "_sb" not in src or "status_strong" not in src:
         bad.append("没有底部状态栏（Hermes 那行: 模型│用量│耗时 ✗）")
@@ -3680,6 +3680,60 @@ def _check_streaming() -> list[str]:
     return bad
 
 
+def _check_run_lock() -> list[str]:
+    """★ 仓库级跨进程锁（Founder 问: "同一个仓库同一时间 两个人改？？？"）。
+
+    判据（用**真子进程**验, 不是自己读自己 ✓）:
+      ① 抢到锁后, **另一个进程**来抢必须被拒（RunLockError, 且能说清"谁在跑"）
+      ② 陈旧锁（PID 已死）⇒ 自动接管（并如实说明接管了 ✓, 不假装没锁过）
+      ③ 释放**只删自己的**（PID 不符 ⇒ 不删别人的 ✗）
+      ④ `run` 走的是带锁包装器（跨进程防护真接上了 ✓）
+    """
+    import json as _json
+    import subprocess as _sp
+    import sys as _sys
+    import tempfile as _tf
+    from pathlib import Path as _PP
+
+    _sys.path.insert(0, ".")
+    from ai_factory_os.services.work import runlock as _L
+
+    bad: list[str] = []
+    root = _PP(_tf.mkdtemp())
+    _L.acquire(root, "P-x", command="factory run")
+    code = ("import sys; sys.path.insert(0,'.');"
+            "from ai_factory_os.services.work import runlock as L;"
+            f"from pathlib import Path; r=Path({str(root)!r});"
+            "\ntry:\n    L.acquire(r,'P-x')\n    print('ACQ')\nexcept L.RunLockError as e:\n    print('REFUSED', str(e)[:40])\n")
+    out = _sp.run([".venv/bin/python", "-c", code], capture_output=True, text=True, cwd=".").stdout
+    if "REFUSED" not in out:
+        bad.append("另一个进程也能抢到锁（跨进程防护是假的 ✗）")
+    if "PID" not in out:
+        bad.append("拒绝时没说清谁在跑（老板不知道等谁 ✗）")
+    (root / "projects" / "P-x" / ".run.lock").write_text(
+        _json.dumps({"pid": 999999, "host": __import__("socket").gethostname()}), encoding="utf-8")
+    if not _L.acquire(root, "P-x").get("took_over"):
+        bad.append("陈旧锁没自动接管（会永久卡住 ✗）")
+    (root / "projects" / "P-x" / ".run.lock").write_text(
+        _json.dumps({"pid": 888888, "host": "other"}), encoding="utf-8")
+    if _L.release(root, "P-x"):
+        bad.append("删了别人的锁（正在跑的人会被静默解锁 ✗）")
+    import importlib as _il
+
+    _src = _il.import_module("apps.cli.main")
+    import inspect as _insp
+
+    _all = _insp.getsource(_src)
+    if "_dispatch_run_locked" not in _all or "result = _dispatch_run_locked(ctx, args)" not in _all:
+        bad.append("`run` 没接带锁包装器（跨进程防护没生效 ✗）")
+    return bad
+
+
+def test_run_lock() -> None:
+    """运行锁: 跨进程拒绝 · 陈旧接管 · 不删别人的 · run 已接。"""
+    assert _check_run_lock() == []
+
+
 def test_streaming() -> None:
     """真流式: 带 stream:true · 分块有序 · 全文完整 · 非终端不流式 · 失败回退。"""
     assert _check_streaming() == []
@@ -3793,6 +3847,7 @@ def main() -> int:
     results.append(("发布交付链（一条命令起 API + 最小界面）", not _check_release_chain(), "；".join(_check_release_chain())))
     results.append(("打包数据文件（html 进包 + 真装真跑脚本）", not _check_packaging_data(), "；".join(_check_packaging_data())))
     results.append(("真流式（stream:true · 分块 · 非终端不流式 · 回退）", not _check_streaming(), "；".join(_check_streaming())))
+    results.append(("运行锁（跨进程拒绝 · 陈旧接管 · 不删别人的）", not _check_run_lock(), "；".join(_check_run_lock())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

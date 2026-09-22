@@ -436,6 +436,8 @@ def build_parser() -> Any:
     # ★ --plan: 按拓扑序跑整棵任务树（第 1 刀; 走 scheduler 平面）
     p_run.add_argument("--plan", default="", help="任务树 id（factory tasktree list）⇒ 跑整棵树")
     p_run.add_argument("--parallel", type=int, default=3, help="批内并发上限（默认 3）")
+    p_run.add_argument("--force", action="store_true",
+                        help="强抢运行锁（★ 会覆盖另一个进程的改动 ✗ 慎用）")
     p_run.add_argument("--limit", type=int, default=0,
                        help="★ 本次最多跑几个执行（0=不限; 小步试跑用 —— 199 叶的树不限量会一路跑完）")
     p_run.add_argument("--budget", type=float, default=1.0e9,
@@ -1478,7 +1480,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "execution":
             result = _dispatch_execution(ctx, args)
         elif args.command == "run":
-            result = _dispatch_run(ctx, args)
+            result = _dispatch_run_locked(ctx, args)
         elif args.command == "run-status":
             result = _dispatch_run_status(ctx, args)
         elif args.command == "checkpoint":
@@ -1621,6 +1623,36 @@ def _dispatch_workflow(ctx: FactoryContext, args: Any) -> dict:
     if args.workflow_command == "status":
         return cmd_workflow_status(ctx, args)
     raise CliError(f"unknown workflow command: {args.workflow_command}", exit_code=2)
+
+
+def _dispatch_run_locked(ctx: FactoryContext, args: Any) -> dict:
+    """`run` 外面套一层**仓库级跨进程锁**（Founder 问: "同一个仓库同一时间 两个人改？？？"）。
+
+    为什么必须有（真实现状）:
+      · `claim_leaf()` 是 CAS ⇒ **同一进程内**两个 agent 不会拿同一张卡 ✓
+      · 但**跨进程**（两个终端各跑一个 run）没有锁 ✗, 而一个项目只有一个工作副本
+        ⇒ 同一张卡可能被双领、同一文件互相覆盖且不报错 ✗
+    行为: 抢不到 ⇒ **拒绝开跑**并把"谁在跑"告诉老板 ✓; 陈旧锁（PID 已死）自动接管 ✓;
+      `--force` 强抢（会覆盖对方改动 ✗, 必须显式要求）; 无论成败都释放（只删自己的 ✓）。
+    """
+    from ai_factory_os.services.work import runlock as _rl
+
+    _pid = str(getattr(args, "project", "") or "")
+    _cmd = f"factory run --project {_pid}" if _pid else "factory run"
+    _force = bool(getattr(args, "force", False))
+    try:
+        _info = _rl.acquire(ctx.root, _pid, command=_cmd, force=_force)
+    except _rl.RunLockError as exc:
+        raise CliError(f"{exc}", exit_code=3) from exc
+    if _info.get("took_over") and _info.get("note"):
+        print(f"  {_info['note']}")
+    try:
+        return _dispatch_run(ctx, args)
+    finally:
+        if _rl.release(ctx.root, _pid):
+            pass                                     # 释放成功（静默 ✓）
+        else:
+            print("  ⚠ 锁没释放（PID 不符/已不存在）—— 不删别人的锁 ✗")
 
 
 def _dispatch_runtime(ctx: FactoryContext, args: Any) -> dict:

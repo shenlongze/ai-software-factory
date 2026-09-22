@@ -472,6 +472,23 @@ def ask_choice(title: str, lines: list[str], options: list[str], *, default: int
         return (int(_s) - 1) if _s.isdigit() and 1 <= int(_s) <= len(options) else default
 
 
+#: 底部工具栏的活状态（shell 随回合更新; 工具栏读它 ⇒ 常驻一行 ✓）
+_TOOLBAR: dict[str, str] = {"model": "", "project": "", "extra": ""}
+
+
+def _toolbar_text() -> str:
+    """会话最下方**常驻**那一行（Founder: "直接固定到会话最下方"）—— 读真值, 读不到就不显示该段 ✓。"""
+    bits: list[str] = []
+    if _TOOLBAR.get("model"):
+        bits.append(_TOOLBAR["model"])
+    if _TOOLBAR.get("project"):
+        bits.append(_TOOLBAR["project"])
+    if _TOOLBAR.get("extra"):
+        bits.append(_TOOLBAR["extra"])
+    bits.append("/ 看命令 · exit 退出")
+    return "  ⚕ " + " │ ".join(bits)
+
+
 def _make_session(root: Path | str):
     """用 **prompt_toolkit** 做输入（照 Hermes: 它的 REPL 就是 prompt_toolkit）。
 
@@ -496,6 +513,8 @@ def _make_session(root: Path | str):
         complete_while_typing=True,        # ★ 一打 "/" 就出候选（不用 TAB、不用回车 ✓）
         history=FileHistory(str(Path(root) / ".cli_history")),
         auto_suggest=AutoSuggestFromHistory(),
+        bottom_toolbar=_toolbar_text,        # ★ 常驻会话最下方（照 Founder 的话 ✓）
+        reserve_space_for_menu=4,
         style=Style.from_dict({"prompt": "#FFD700", "completion-menu.completion": "bg:#1a1a2e #FFF8DC",
                                "completion-menu.completion.current": "bg:#333355 #FFD700",
                                "completion-menu.meta.completion": "bg:#1a1a2e #B8860B"}),
@@ -682,6 +701,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             _mline = ""
         if _mline:
             print(f"    模型: {_mline.replace('供应商 ', '').replace('模型 ', '')}")
+            _TOOLBAR["model"] = _mline.replace("供应商 ", "").replace("模型 ", "").split(" · ")[-1]
 
     _conv_id = ""
     _chat_hist: list[dict[str, str]] = []
@@ -803,11 +823,10 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         # ★ 三态区分（Founder: "没有像 codex/Hermes 的 cli 那样: 用户/系统/执行 都有区分"）
         #   `你 ▸` = 你说的话;  `执行 ▸` = 它跑了什么;  `系统 ▸` = 平台提示;  `⚕` = 助手回答
         if line and line.strip().lower() not in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
-            # ★ 照 Hermes 的**用户区**（Founder 给实物对过: 横线 + `● 你的话` + 横线）:
-            #   一行横线 · `● <老板原话>` · 一行横线 —— 这样历史里看得见"谁说了什么" ✓
-            from apps.cli.theme import paint as _paint
-
-            print("  " + _paint("user_mark", "●") + " " + line)
+            # ★ Founder: "下面也加个分割线 —— 这是用户输入的地方"
+            #   输入区 = 上一条横线 + `factory> 你敲的那行` + **下一条横线**（夹住 ✓）
+            #   底下不再补 `● 你的话` —— 输入行本身就在框里, 重复一遍 = 噪音 ✗
+            print(_rule_line())
         if low in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
             break
         if low in ("help", "h", "?", "/h", "/?"):
@@ -1108,6 +1127,11 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             _u = _meta.get("usage") or {}
             # ★ 照 Hermes 的分区: 输入区(横线夹住) · 执行区(┊ 💻) · **回答区**(框) · **状态栏**(底下那行)
             #   ⇒ 模型/用量/成本/耗时 **不再挤在框标题里**，改到底部状态栏 ✓
+            try:                                  # 工具栏保持真值（模型 / 归属项目 ✓）
+                _TOOLBAR["model"] = str(_meta.get("model") or "")
+                _TOOLBAR["project"] = f"项目 {_sel_project}" if _sel_project else ""
+            except Exception:  # noqa: BLE001
+                pass
             _sb: list[str] = []
             if _sel_project:
                 _sb.append(_sel_project)          # ★ 归属项目显示在状态栏（一眼看到在跟谁说话 ✓）

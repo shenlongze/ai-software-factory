@@ -406,6 +406,70 @@ def status_bar(meta: dict) -> str:
     return "  ⚕ " + " │ ".join(bits) if bits else ""
 
 
+def _rule_panel(title: str, lines: list[str], options: list[str]) -> None:
+    """只**画**审批面板（不读键盘）—— 用于"下一行输入决定"的那种流程 ✓。"""
+    from apps.cli.theme import paint
+
+    w = min(_term_width(), 92)
+    head = f"  ╭─ {title} "
+    print()
+    print(paint("warn", head) + paint("warn", "─" * max(0, w - _dw(head) - 1)) + paint("warn", "╮"))
+    for ln in lines:
+        print(paint("warn", "  │ ") + ln)
+    print(paint("warn", "  │"))
+    for i, opt in enumerate(options):
+        print(paint("warn", "  │ ") + f"  {i + 1}  {opt}")
+    print(paint("warn", "  ╰" + "─" * max(0, w - 4) + "╯"))
+
+
+def ask_choice(title: str, lines: list[str], options: list[str], *, default: int = 0) -> int:
+    """审批面板（照 Hermes 的 `⚠️ Dangerous Command` 框）—— 醒目 + 逐行选项 + **按数字即生效**。
+
+    ★ Founder 实测三点: ① 选项不能挤一行 ② 要醒目 ③ 要快捷（按 1/2/3 直接出结果, 不用回车 ✗）
+    返回选项下标（0 起）; 非终端 / Esc / q ⇒ 返回 default（默认为 0 = 最保守的那个）。
+    """
+    from apps.cli.theme import paint
+
+    w = min(_term_width(), 92)
+    head = f"  ╭─ {title} "
+    print()
+    print(paint("warn", head) + paint("warn", "─" * max(0, w - _dw(head) - 1)) + paint("warn", "╮"))
+    for ln in lines:
+        print(paint("warn", "  │ ") + ln)
+    print(paint("warn", "  │"))
+    for i, opt in enumerate(options):
+        print(paint("warn", "  │ ") + f"  {i + 1}  {opt}")
+    print(paint("warn", "  ╰" + "─" * max(0, w - 4) + "╯"))
+    _is_tty = bool(getattr(sys.stdin, "isatty", lambda: False)() and getattr(sys.stdout, "isatty", lambda: False)())
+    if not _is_tty:
+        return default
+    print(f"  按键选择（1-{len(options)}; Esc/q = 拒绝）: ", end="", flush=True)
+    try:
+        import termios
+        import tty as _tty_mod
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            _tty_mod.setcbreak(fd)          # ★ 单键: 不用回车 ✓
+            while True:
+                ch = sys.stdin.read(1)
+                if ch in ("\x03", "\x1b", "q", "Q"):
+                    print("拒绝")
+                    return default
+                if ch.isdigit() and 1 <= int(ch) <= len(options):
+                    print(str(ch))
+                    return int(ch) - 1
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    except Exception:  # noqa: BLE001 — 没有 termios（非 POSIX）就退回按行输入
+        try:
+            _s = input().strip()
+        except (EOFError, KeyboardInterrupt):
+            return default
+        return (int(_s) - 1) if _s.isdigit() and 1 <= int(_s) <= len(options) else default
+
+
 def _install_completer() -> None:
     """装上 readline 补全: 打 `/` 后按 TAB 能补会话命令 + factory 命令名。
 
@@ -836,19 +900,18 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                     return True
                 if not _tty:
                     return False
-                print()
-                print(f"  {MARK_SYS} ⏸ 要跑一条**通用命令**（不是 factory 自己的命令）")
-                print(f"     命令: {cmd}")
-                print("     1) 允许这一次   2) 本会话总是允许   3) 拒绝")
-                try:
-                    _a = input("     > ").strip().lower()
-                except (EOFError, KeyboardInterrupt):
-                    return False
-                if _a in ("2", "总是", "all"):
+                _pick = ask_choice(
+                    "⚠️  需要你确认（通用命令）",
+                    ["这条不是 factory 自己的命令（可能联网 / 读文件 / 跑脚本）:",
+                     "",
+                     f"  命令: {cmd}"],
+                    ["允许这一次", "本会话总是允许（这类不再问）", "拒绝"],
+                    default=2)
+                if _pick == 1:
                     _always.add(key)
                     print(f"  {MARK_SYS} 记住了: 本会话 {key} 不再问")
                     return True
-                return _a in ("1", "y", "yes", "好", "是")
+                return _pick == 0
 
             def _on_output(cmd: str, text: str) -> None:
                 """★ 工具输出**原样**给老板看 + 每块**带头行与分隔线**。
@@ -957,14 +1020,11 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             if _pend:
                 _pending_cmd = str(_pend[0])
                 print()
-                print(f"  {MARK_SYS} ⏸ 待你点头（这条会改数据）")
-                print()
-                print(f"     命令: factory {_pending_cmd}")
-                print()
-                print("     1) 允许这一次")
-                print("     2) 本会话总是允许（不再问这类）")
-                print("     3) 拒绝")
-                print("     （也可以自己敲 /命令 直接跑）")
+                # ★ 跟通用命令用**同一个审批面板**（Founder: ① 不能挤一行 ② 要醒目 ③ 要快捷 ✓）
+                _rule_panel("⚠️  需要你确认（这条会改数据）",
+                            [f"  命令: factory {_pending_cmd}", "",
+                             "  想跳过这一步: 自己敲 /命令 直接跑 ✓"],
+                            ["允许这一次", "本会话总是允许（这类不再问）", "拒绝"])
             continue
         argv = line.split()
         # `/命令` 写错了 ⇒ 一句短提示（不再是 argparse 整屏 usage ✗）

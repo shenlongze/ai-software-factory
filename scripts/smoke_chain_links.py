@@ -3277,6 +3277,51 @@ def _check_theme() -> list[str]:
     return bad
 
 
+def _check_approval_panel() -> list[str]:
+    """★ 审批面板（Founder 三条: ① 选项不能挤一行 ② 要醒目 ③ 要快捷）。
+
+    判据: ① 面板是**框**（╭ ╰ 都有）+ 选项**逐行**（不是一行三个 ✗）
+         ② **单键即生效**（termios cbreak; 不用回车 ✓）③ 非终端/Esc ⇒ **默认拒绝**（最保守 ✓）
+         ④ 写命令的"待你点头"也走同一个面板 ✓
+    """
+    import io as _io
+    import sys as _sys
+
+    from apps.cli.domains import welcome as _W
+
+    bad: list[str] = []
+    out = _io.StringIO()
+    _old = _sys.stdout
+    try:
+        _sys.stdout = out
+        _W._rule_panel("⚠️  测试", ["  命令: sh x"], ["允许这一次", "总是允许", "拒绝"])
+    finally:
+        _sys.stdout = _old
+    s = out.getvalue()
+    if "╭" not in s or "╰" not in s:
+        bad.append("审批不是**框**（不醒目 ✗）")
+    if s.count("  1  ") == 0 or "  3  " not in s:
+        bad.append("选项没逐行（Founder: 不能挤一行 ✗）")
+    if "允许这一次   2" in s:
+        bad.append("选项还是挤在一行 ✗")
+    import inspect as _Insp
+
+    src = _Insp.getsource(_W.ask_choice)
+    if "setcbreak" not in src:
+        bad.append("不是单键即时生效（还要回车 ✗ —— Founder 要快捷）")
+    if "default" not in src or "Esc" not in src:
+        bad.append("没有保守缺省/取消路径（Esc 该=拒绝 ✗）")
+    rsrc = _Insp.getsource(_W.run_shell)
+    if "_rule_panel(" not in rsrc:
+        bad.append("写命令的待你点头没走审批面板 ✗")
+    return bad
+
+
+def test_approval_panel() -> None:
+    """审批面板: 框+逐行选项 · 单键生效 · 默认拒绝 · 写命令同款。"""
+    assert _check_approval_panel() == []
+
+
 def test_theme() -> None:
     """主题: 元素齐全 · 终端上色 · 非终端不上色 · NO_COLOR 生效。"""
     assert _check_theme() == []
@@ -3335,6 +3380,7 @@ def main() -> int:
     results.append(("通用命令通道（sh: 先审批·会真跑·拒绝不跑）", not _check_general_command(), "；".join(_check_general_command())))
     results.append(("斜杠可发现性（/ 出命令表 · TAB 补全 · 不带/也行）", not _check_slash_discoverability(), "；".join(_check_slash_discoverability())))
     results.append(("颜色主题（元素齐 · 终端上色 · 非终端不上 · NO_COLOR 生效）", not _check_theme(), "；".join(_check_theme())))
+    results.append(("审批面板（框·逐行选项·单键生效·默认拒绝）", not _check_approval_panel(), "；".join(_check_approval_panel())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

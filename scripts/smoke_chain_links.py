@@ -2291,7 +2291,7 @@ def _check_cli_chat() -> list[str]:
             for feed, must_have, must_not in (
                 # 第一句是"消息"（触发它念出写命令 ⇒ 建挂起）, 第二句才是点头/摇头
                 ("帮我备份一下" + _NL + "不" + _NL + "exit" + _NL, ["待你点头", "已取消"], ["备份完成"]),
-                ("帮我备份一下" + _NL + "好" + _NL + "exit" + _NL, ["待你点头", "┊ 💻 $ factory backup create", "备份完成"], []),
+                ("帮我备份一下" + _NL + "好" + _NL + "exit" + _NL, ["需要你确认", "┊ 💻 $ factory backup create", "备份完成"], []),
             ):
                 _sys = __import__("sys")
                 old_in = _sys.stdin
@@ -2885,7 +2885,7 @@ def _check_output_readability() -> list[str]:
     # ★ 2026-09-21（Founder: "这里应该统一采用列表的形式, 不能在同一行"）:
     #   ① 待你点头 = 列表（三档各占一行）; ② 工具输出不能被 strip 吃掉头行前导空格（表格歪 ✗）
     _wsrc2 = _insp.getsource(_W.run_shell)
-    for _need, _why in (("1) 允许这一次", "待你点头没做成列表（挤在同一行 ✗）"),
+    for _need, _why in (("_rule_panel(", "待你点头没做成面板（Founder: 不能挤一行/要醒目 ✗）"),
                         ("rstrip()", "工具输出对整段 strip（头行前导空格被吃 ⇒ 表格歪 ✗）")):
         if _need not in _wsrc2:
             bad.append(_why)

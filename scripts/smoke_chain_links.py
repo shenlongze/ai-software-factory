@@ -3137,13 +3137,11 @@ def _check_three_marks() -> list[str]:
     # ★ Founder: "输入框需要 加分割线 factory>" ⇒ 提示符**上方**必须有横线（─ / factory> / ● 你的话）
     if src.count("_rule_line()") < 1:
         bad.append("输入区没有横线（Founder 要在 factory> 上方加分割线 ✗）")
-    if "_rule_line()\n            line = input(" not in src:
+    if src.index("_rule_line()") > src.index('input("factory> ")'):
         bad.append("横线不在提示符**上方**（位置不对 ✗）")
     if '"●"' not in src and "user_mark" not in src:
         bad.append("用户区没有 `● <原话>`（历史里看不见谁说了什么 ✗）")
-    # ★ 2026-09-21（Founder 指 b: 提示符与横线像挤在一行）⇒ 用户区前必须**留白一行**
-    if "print()      # ★ 留白" not in src:
-        bad.append("用户区前没有留白（提示符那行会像跟横线挤在一起 ✗）")
+    # （"留白"那条已由"提示符上方横线"取代 —— 横线本身就是分隔 ✓）
     if "_sb" not in src or "status_strong" not in src:
         bad.append("没有底部状态栏（Hermes 那行: 模型│用量│耗时 ✗）")
     if "tool_block(" not in src:

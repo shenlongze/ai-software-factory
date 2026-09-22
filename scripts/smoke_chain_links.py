@@ -3069,7 +3069,7 @@ def _check_three_marks() -> list[str]:
     src = _insp.getsource(_W.run_shell)
     if "MARK_USER" not in src and "● {line}" not in src:
         bad.append("用户的话没有回声/分区（用户/执行/系统 分不清 ✗ —— Founder 要 Hermes 那种分区）")
-    if "─" * 20 not in src:
+    if chr(34) + "─" + chr(34) + " *" not in src:
         bad.append("用户回合没有通栏分隔线（没有分区 ✗）")
     if "tool_block(" not in src:
         bad.append("会话里没用工具块（结果还是堆砌 ✗）")

@@ -3134,6 +3134,9 @@ def _check_three_marks() -> list[str]:
     if src.count("_rule_line()") < 2:
         bad.append("用户区没做成「横线 + 原话 + 横线」（照 Hermes 实物 ✗）")
     if '"●"' not in src and "user_mark" not in src:
+    # ★ 2026-09-21（Founder 指 b: 提示符与横线像挤在一行）⇒ 用户区前必须**留白一行**
+    if "print()      # ★ 留白" not in src:
+        bad.append("用户区前没有留白（提示符那行会像跟横线挤在一起 ✗）")
         bad.append("用户区没有 `● <原话>`（历史里看不见谁说了什么 ✗）")
     if "_sb" not in src or "status_strong" not in src:
         bad.append("没有底部状态栏（Hermes 那行: 模型│用量│耗时 ✗）")

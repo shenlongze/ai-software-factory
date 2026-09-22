@@ -659,6 +659,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
         if line and line.strip().lower() not in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
             # ★ 照 Hermes 的**用户区**（Founder 给实物对过: 横线 + `● 你的话` + 横线）:
             #   一行横线 · `● <老板原话>` · 一行横线 —— 这样历史里看得见"谁说了什么" ✓
+            print()      # ★ 留白（提示符那行与用户区之间 —— 免得看着像挤在一起 ✗）
             print(_rule_line())
             from apps.cli.theme import paint as _paint
 

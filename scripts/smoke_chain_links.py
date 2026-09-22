@@ -3570,6 +3570,35 @@ def _check_release_chain() -> list[str]:
     return bad
 
 
+def _check_packaging_data() -> list[str]:
+    """★ 打包数据文件（干净环境真装真跑抓到的真 bug: `index.html` 没进 wheel ⇒ `/` 报 500 ✗）。
+
+    判据: ① pyproject 声明了 `apps.api` 的 html 数据文件 ② `scripts/check_wheel.sh` 存在（发版必跑 ✓）
+         ③ 检查脚本里 `/` 端点必须探（专抓这类病 ✓）
+    """
+    from pathlib import Path as _PP
+
+    bad: list[str] = []
+    _pp = _PP("pyproject.toml").read_text(encoding="utf-8")
+    if "[tool.setuptools.package-data]" not in _pp or "*.html" not in _pp:
+        bad.append("没声明 html 数据文件（index.html 进不了 wheel ⇒ 装完 / 报 500 ✗）")
+    _sh = _PP("scripts/check_wheel.sh")
+    if not _sh.is_file():
+        bad.append("缺 scripts/check_wheel.sh（发版必须干净环境真装真跑 ✗）")
+    else:
+        _body = _sh.read_text(encoding="utf-8")
+        if '"/"' not in _body or "200" not in _body:
+            bad.append("检查脚本没探 / 是否 200（抓不到数据文件没打进包 ✗）")
+        if "pkill" in _body:
+            bad.append("检查脚本用了 pkill（必须按精确 PID 收拾 ✗）")
+    return bad
+
+
+def test_packaging_data() -> None:
+    """打包: 数据文件已声明 · 真装真跑脚本在 · 脚本探 `/` · 不用 pkill。"""
+    assert _check_packaging_data() == []
+
+
 def test_release_chain() -> None:
     """发布链: 命令齐 · 真起服务 · 绑本机 · API 路由齐。"""
     assert _check_release_chain() == []
@@ -3671,6 +3700,7 @@ def main() -> int:
     results.append(("会话归属项目（/project · 进提示词 · 可清空）", not _check_session_project(), "；".join(_check_session_project())))
     results.append(("口径归一（dashboard 三个数 == status）", not _check_dashboard_authority(), "；".join(_check_dashboard_authority())))
     results.append(("发布交付链（一条命令起 API + 最小界面）", not _check_release_chain(), "；".join(_check_release_chain())))
+    results.append(("打包数据文件（html 进包 + 真装真跑脚本）", not _check_packaging_data(), "；".join(_check_packaging_data())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

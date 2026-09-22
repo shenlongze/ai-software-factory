@@ -25,11 +25,16 @@
 
 1. 三处同步版本号 + CHANGELOG 一节（按 `Added / Fixed / Changed / Known gaps` 分组，逐条带证据 ✓）
 2. 门禁全绿：`pytest` · `scripts/smoke_chain_links.py`（守卫）· `bash scripts/verify.sh` · `ruff check apps src scripts`
-3. 提交 + 打 tag：`git tag -a vX.Y.Z -m "…"` ⇒ `git push origin HEAD:main` + `git push origin vX.Y.Z`
-4. **重装**（editable 装的元数据不会自己更新 ✗）：
+3. **干净环境真装真跑**（必跑, 不许跳 ✗）：`bash scripts/check_wheel.sh`
+   —— 它会: 构建 wheel → 建干净 venv（用仓库 3.12 解释器）→ 装上 → 跑真命令 →
+   起服务探 `/` 与 `/api/trees` **必须 200**（专抓"数据文件没打进包"）。
+   ★ 为什么必须: editable 安装**看不出打包病** ✗。两次真实事故都靠它才发现 ——
+   v1.3.1 的 wheel 空壳、v1.3.9 的 `index.html` 没打进包（装完 `/` 报 HTTP 500）。
+4. 提交 + 打 tag：`git tag -a vX.Y.Z -m "…"` ⇒ `git push origin HEAD:main` + `git push origin vX.Y.Z`
+5. **重装**（editable 装的元数据不会自己更新 ✗）：
    `.venv/bin/pip install -e .` + `~/factory-venv/bin/pip install -e .`（你 PATH 上那个）
    ⇒ 用 `factory -v` 复核真的显示新版本号 ✓
-5. `gh release create vX.Y.Z --title … --notes-file … --latest`
+6. `gh release create vX.Y.Z --title … --notes-file … --latest`
 6. 回报里给：版本号 · tag · Release 链接 · 门禁读数
 
 ## 四、守卫

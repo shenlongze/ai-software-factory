@@ -1,5 +1,23 @@
 # Changelog
 
+## [v1.3.10] — 2026-09-22
+
+**干净环境真装真跑** —— 并因此抓到并修掉一个真打包病。
+
+### Fixed
+- ★ **`apps/api/index.html` 没进 wheel**：wheel 里缺这个数据文件 ⇒ 干净环境装完
+  `factory serve` 起得来、`/api/trees` 200，但 **`/` 报 HTTP 500** ✗
+  （`pyproject.toml` 缺 `[tool.setuptools.package-data]` 声明）
+  ⇒ 已声明 `"apps.api" = ["*.html"]`；重装后 `/` → **HTTP 200** ✓
+  这条正是 Founder 的规矩"发布前必须干净环境真装真跑"要抓的东西（editable 看不出来 ✗）
+
+### Added
+- `scripts/check_wheel.sh` —— 发版**必跑**的干净环境检查（任一条不过 ⇒ 非 0 ⇒ 不许发版）:
+  建 wheel → 干净 venv（仓库 3.12 解释器）→ 装上 → 跑真命令（project list / status /
+  console activity / kanban）→ 起服务探 `/` 与 `/api/trees` **必须 200**
+  · 收尾按**精确 PID** 停服务（不用 pkill ✗）
+- `docs/release.md` 补上这一步（含"为什么必须"：editable 看不出打包病）
+
 ## [v1.3.9] — 2026-09-22
 
 **发布交付链: 一条命令起 API + 最小界面**（Founder 点单）。

@@ -3134,8 +3134,11 @@ def _check_three_marks() -> list[str]:
     src = _insp.getsource(_W.run_shell)
     # ★ 2026-09-21（Founder: "输入单独的区域 · Hermes 的回答单独的区域 · 执行也是独立的"）:
     #   四区独立: ① 输入区(横线**夹住**你敲的那行) ② 执行区(┊ 💻) ③ 回答区(框) ④ 状态栏(底部那行)
-    if src.count("_rule_line()") < 2:
-        bad.append("用户区没做成「横线 + 原话 + 横线」（照 Hermes 实物 ✗）")
+    # ★ Founder: "输入框需要 加分割线 factory>" ⇒ 提示符**上方**必须有横线（─ / factory> / ● 你的话）
+    if src.count("_rule_line()") < 1:
+        bad.append("输入区没有横线（Founder 要在 factory> 上方加分割线 ✗）")
+    if "_rule_line()\n            line = input(" not in src:
+        bad.append("横线不在提示符**上方**（位置不对 ✗）")
     if '"●"' not in src and "user_mark" not in src:
         bad.append("用户区没有 `● <原话>`（历史里看不见谁说了什么 ✗）")
     # ★ 2026-09-21（Founder 指 b: 提示符与横线像挤在一行）⇒ 用户区前必须**留白一行**

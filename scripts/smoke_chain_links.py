@@ -3500,6 +3500,46 @@ def _check_session_project() -> list[str]:
     return bad
 
 
+def _check_dashboard_authority() -> list[str]:
+    """★ 口径归一（Founder 点单: "dashboard 六个视图口径全归一"）。
+
+    判据: dashboard 的**项目数 / 任务数 / 完成数**必须与权威 `status` **完全相等** ✓
+    （以前 dashboard 说 0 个项目 0 个任务, status 说 3 个 1000 叶 ✗ —— 各读各的源）
+    """
+    import json as _json
+    import subprocess as _sp
+
+    bad: list[str] = []
+
+    def _j(*a) -> dict:
+        out = _sp.run([".venv/bin/factory", *a], capture_output=True, text=True, timeout=120).stdout
+        try:
+            return _json.loads(out)
+        except Exception:  # noqa: BLE001
+            return {}
+
+    s = _j("status", "--json")
+    dev = s.get("dev_tasks") or {}
+    d = (_j("dashboard", "--view", "tasks", "--json").get("snapshot") or {})
+    _st_proj, _st_leaf, _st_done = s.get("projects_count"), dev.get("leaves"), dev.get("done")
+    _db_proj = (d.get("projects") or {}).get("total")
+    _db_task, _db_done = (d.get("tasks") or {}).get("total"), (d.get("tasks") or {}).get("done")
+    if _st_proj is None or _db_proj is None:
+        bad.append("拿不到项目数（status 或 dashboard 缺字段 ✗）")
+    elif int(_st_proj) != int(_db_proj):
+        bad.append(f"项目数不一致: status={_st_proj} dashboard={_db_proj} ✗（口径没归一）")
+    if _st_leaf is not None and _db_task is not None and int(_st_leaf) != int(_db_task):
+        bad.append(f"任务数不一致: status={_st_leaf} dashboard={_db_task} ✗")
+    if _st_done is not None and _db_done is not None and int(_st_done) != int(_db_done):
+        bad.append(f"完成数不一致: status={_st_done} dashboard={_db_done} ✗")
+    return bad
+
+
+def test_dashboard_authority() -> None:
+    """口径归一: dashboard 的三个数必须等于 status（同源）。"""
+    assert _check_dashboard_authority() == []
+
+
 def test_session_project() -> None:
     """会话归属项目: 命令 · 候选 · 进提示词 · 可清空 · 状态栏可见。"""
     assert _check_session_project() == []
@@ -3589,6 +3629,7 @@ def main() -> int:
     results.append(("版本号规矩（三处一致·不倒退·文档+入口）", not _check_version_discipline(), "；".join(_check_version_discipline())))
     results.append(("七域下钻（console <域> 都能跑·活动域有真列）", not _check_console_domains(), "；".join(_check_console_domains())))
     results.append(("会话归属项目（/project · 进提示词 · 可清空）", not _check_session_project(), "；".join(_check_session_project())))
+    results.append(("口径归一（dashboard 三个数 == status）", not _check_dashboard_authority(), "；".join(_check_dashboard_authority())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

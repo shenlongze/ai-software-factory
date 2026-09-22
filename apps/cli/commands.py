@@ -1878,6 +1878,41 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             include_lifecycle=view == "lifecycle",  # Phase 9d (ADR-0029)
         )
         snapshot = collector.collect()
+        # ★ 2026-09-22（Founder 点单: "dashboard 六个视图口径全归一"）:
+        #   projects / tasks 两处计数历史上各读各的（workspace 定义 + 旧 TaskStore 空表）
+        #   ⇒ dashboard 说"0 个项目 / 0 个任务", 而 status 说"3 个 / 1000 叶" ✗
+        #   这里用**权威源**（与 status / project list / kanban 同源）覆盖, 口径才对得上 ✓。
+        try:
+            from ai_factory_os.services.organization.projects import ProjectStore
+            from ai_factory_os.services.work import progress as _prog
+
+            _org = ProjectStore(ctx.root / "org").list_projects() or []
+            _prows = [{"id": str(getattr(r, "id", "") or ""), "name": str(getattr(r, "name", "") or ""),
+                       "status": str(getattr(r, "status", "") or "")} for r in _org]
+            _sm = _prog.summary(ctx.root)
+            _by = dict(_sm.get("by_status") or {})
+            for _fld, _val in (("total", len(_prows)),):
+                try:
+                    setattr(snapshot.projects, _fld, _val)
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                snapshot.projects.items = _prows
+            except Exception:  # noqa: BLE001
+                pass
+            for _fld, _val in (("total", int(_sm.get("leaves") or _sm.get("total") or 0)),
+                               ("done", int(_by.get("completed") or 0)),
+                               ("active", int(_by.get("pending") or 0) + int(_by.get("claimed") or 0))):
+                try:
+                    setattr(snapshot.tasks, _fld, _val)
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                snapshot.tasks.by_status = _by
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception:  # noqa: BLE001 — 覆盖失败保持原样（不编 ✗）
+            pass
         ev = logger.record(
             EventType.WORKSPACE_DASHBOARD_VIEWED if workspace else EventType.DASHBOARD_VIEWED,
             source=SOURCE, project_id=args.project,

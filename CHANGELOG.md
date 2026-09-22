@@ -1,5 +1,17 @@
 # Changelog
 
+## [v1.3.8] — 2026-09-22
+
+**dashboard 与 status 口径归一**（Founder 点单）—— 同一件事两个数 ✗ 的问题。
+
+### Fixed
+- dashboard 的 `projects` / `tasks` 视图历史上**各读各的源**: workspace 项目定义 + 旧 `TaskStore`
+  ⇒ 它说"0 个项目 / 0 个任务", 而 `status` 说"3 个项目 / 1000 个叶" ✗
+  ⇒ 现在在命令层用**权威源覆盖**（与 `status` / `project list` / `kanban` 同一份）:
+  项目数 = org 项目库; 任务数/完成数/按状态 = `services/work/progress`（任务树的叶 = 执行真账本 ✓）
+  实测: dashboard 项目 3 · 任务 1000 · 完成 9 · by_status {pending 808, completed 9, cancelled 182, claimed 1}
+        == `status` 的三个数 ✓
+
 ## [v1.3.7] — 2026-09-22
 
 **会话能"归属某个项目"**（Founder 点单）—— 以前话题里项目是模糊的, 模型按全局数据答 ✗。

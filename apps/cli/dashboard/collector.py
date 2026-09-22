@@ -208,6 +208,9 @@ class DashboardCollector:
             checkpoints=self._collect_checkpoints(),
             catalog=self._collect_catalog(),
             projects=self._collect_projects(),
+            # ★ 2026-09-22（Founder 点单"dashboard 六个视图口径全归一"）: 下面用**权威源**覆盖
+            #   projects/tasks 两处计数 —— 它们以前各读各的（旧 TaskStore 空表 + workspace 定义）
+            #   导致 dashboard 说 0 个项目 / 0 个任务, 而 status 说 3 个 / 1000 叶 ✗。
             metrics=self._collect_metrics(),
             factory_metrics=self._collect_factory_metrics(),
             recent_events=self._collect_recent_events(),

@@ -2632,9 +2632,14 @@ def _check_hermes_style_ui() -> list[str]:
         bad.append("没有圆角框顶栏（Hermes 风格的分块没做）")
     if not lines[-1].startswith("  ╰"):
         bad.append("没有圆角框底栏")
-    widths = {W._dw(ln) for ln in lines}
-    if len(widths) != 1:
-        bad.append(f"框线宽度不齐（实得 {sorted(widths)} —— 中文宽度算错会歪）")
+    # ★ 新版回答区（Founder: "左右的框就不要了"）: **只有上下两条线**等宽; 内容行缩进 6 格 ✓
+    _w_top, _w_bot = W._dw(lines[0]), W._dw(lines[-1])
+    if _w_top != _w_bot:
+        bad.append(f"上下两条线不等宽（顶 {_w_top} / 底 {_w_bot} —— 看着歪 ✗）")
+    for _ln in lines[1:-1]:
+        if _ln.strip() and not _ln.startswith("      "):
+            bad.append(f"内容行没缩进/带了左右边框: {_ln[:20]!r}（Founder 明确不要左右框 ✗）")
+            break
     if any("project show" in ln and "`" not in ln for ln in lines):
         bad.append("反引号内容被拆行（命令名断成两半）")
     pl = W.process_line("factory status", 0.4)

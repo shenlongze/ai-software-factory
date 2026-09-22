@@ -19,24 +19,27 @@ import sys
 
 #: 元素 → 颜色（Apple 系统色; 与 Hermes 的元素名对齐）
 PALETTE: dict[str, str] = {
-    # ★ Founder: "不要蓝色" ⇒ 界面**中性灰白**（语义色只留 绿=好 / 黄=提醒 / 红=错）
-    "banner_border": "#8e8e93",     # 开场框边框（中性灰）
-    "banner_title": "#f5f5f7",      # 开场标题（近白）
-    "banner_dim": "#8e8e93",        # 次要说明
-    "prompt": "#f5f5f7",            # 输入提示符
-    "input_rule": "#3a3a3c",        # 用户区横线（深灰）
-    "user_mark": "#f5f5f7",         # `● 你的话` 的圆点（白, 不是蓝 ✗）
-    "tool_prefix": "#8e8e93",       # `┊` 与耗时（灰）
-    "response_border": "#8e8e93",   # 回答框边框（中性灰）
-    "response_label": "#f5f5f7",    # 回答框标题
-    "status_text": "#c7c7cc",       # 状态栏文字
-    "status_strong": "#f5f5f7",     # 状态栏数值
-    "status_dim": "#8e8e93",        # 状态栏分隔符 / 次要文字
-    "good": "#30d158",              # ✔ 成功（绿）
-    "warn": "#ffd60a",              # ⚠ 提醒（黄）
-    "bad": "#ff453a",               # ✗ 失败（红）
-    "code": "#e5e5ea",              # 行内 `代码`（浅灰, 不用蓝 ✗）
-    "body": "#f5f5f7",              # 正文（近白; 深色终端适用）
+    # ★ 采用 **Hermes 的配色**（Founder: "可以采用 Hermes 的颜色搭配"）
+    #   出处: ~/.hermes/hermes-agent/hermes_cli/skin_engine.py 的默认皮肤（金/铜色系）
+    #   映射: 左边是我们的元素名（与它的元素名一一对应）, 右边是它的原值。
+    "banner_border": "#CD7F32",     # ← banner_border   铜色（面板边框）
+    "banner_title": "#FFD700",      # ← banner_title    金色（标题）
+    "banner_accent": "#FFBF00",     # ← banner_accent   琥珀（小标题/强调）
+    "banner_dim": "#B8860B",        # ← banner_dim      暗金（次要文字/分隔标签）
+    "prompt": "#FFF8DC",            # ← prompt          米白（提示符文字）
+    "input_rule": "#CD7F32",        # ← input_rule      铜色（输入区横线）
+    "user_mark": "#FFBF00",         # ← ui_accent       琥珀（`● 你的话` 的圆点）
+    "tool_prefix": "#8B8682",       # ← status_bar_dim  灰（`┊` 与耗时）
+    "response_border": "#FFD700",   # ← response_border 金色（回答框边框）
+    "response_label": "#FFD700",    # ← banner_title    金色（回答框标题）
+    "status_text": "#C0C0C0",       # ← status_bar_text  银灰（状态栏文字）
+    "status_strong": "#FFD700",     # ← status_bar_strong 亮金（状态栏数值）
+    "status_dim": "#8B8682",        # ← status_bar_dim  灰（状态栏分隔符）
+    "good": "#4CAF50",              # ← ui_ok           绿（成功）
+    "warn": "#FFA726",              # ← ui_warn         橙（提醒）
+    "bad": "#EF5350",               # ← ui_error        红（失败）
+    "code": "#FFBF00",              # ← ui_accent       琥珀（行内 `代码`）
+    "body": "#FFF8DC",              # ← banner_text     米白（正文）
 }
 
 

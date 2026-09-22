@@ -3240,6 +3240,15 @@ def _check_theme() -> list[str]:
     for h in _T.PALETTE.values():
         if not (h.startswith("#") and len(h) == 7):
             bad.append(f"色号格式不对: {h}")
+    # ★ Founder: "可以采用 Hermes 的颜色搭配" ⇒ 逐值对齐它的默认皮肤（防我以后乱改 ✗）
+    from apps.cli.theme import PALETTE as _P
+    _hermes = {"banner_border": "#CD7F32", "banner_title": "#FFD700", "banner_accent": "#FFBF00",
+               "banner_dim": "#B8860B", "prompt": "#FFF8DC", "input_rule": "#CD7F32",
+               "response_border": "#FFD700", "status_text": "#C0C0C0", "status_strong": "#FFD700",
+               "status_dim": "#8B8682", "body": "#FFF8DC", "code": "#FFBF00"}
+    for _el, _want in _hermes.items():
+        if _P.get(_el) != _want:
+            bad.append(f"元素 {_el} 没对齐 Hermes（应 {_want}, 实 {_P.get(_el)} ✗）")
     # ★ Founder: "字体颜色 不要蓝色" ⇒ 界面里**不许有偏蓝**的颜色（语义色只留 绿/黄/红 ✓）
     for _el, _h in _T.PALETTE.items():
         _r, _g, _b = _T._hex_rgb(_h)

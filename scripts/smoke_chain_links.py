@@ -3383,6 +3383,49 @@ def _check_kanban_board() -> list[str]:
     return bad
 
 
+def _check_version_discipline() -> list[str]:
+    """★ Founder 规矩: "以后每改一下, 都递增最后版本号"（见 docs/release.md）。
+
+    判据: ① `pyproject` / `README` / `CHANGELOG` **三处版本号一致** ✓
+         ② 版本号**不低于最近 tag**（防倒退/防忘记递增 ✗）
+         ③ `docs/release.md` 存在且被 `AGENTS.md` 挂着入口（进入即读 ✓）
+    """
+    import re as _re
+    import subprocess as _sp
+    from pathlib import Path as _P
+
+    bad: list[str] = []
+    _pp = _re.search(r'version\s*=\s*"([^"]+)"', _P("pyproject.toml").read_text(encoding="utf-8"))
+    if not _pp:
+        return ["pyproject 里读不到版本号 ✗"]
+    ver = _pp.group(1)
+    _rm = _re.search(r"`v(\d+\.\d+\.\d+)`", _P("README.md").read_text(encoding="utf-8"))
+    _cl = _re.search(r"## \[v(\d+\.\d+\.\d+)\]", _P("CHANGELOG.md").read_text(encoding="utf-8"))
+    if not _rm or _rm.group(1) != ver:
+        bad.append(f"README 版本号与 pyproject 不一致（{ver} vs {_rm.group(1) if _rm else '无'} ✗）")
+    if not _cl or _cl.group(1) != ver:
+        bad.append(f"CHANGELOG 最新条目与 pyproject 不一致（{ver} vs {_cl.group(1) if _cl else '无'} ✗）")
+    _tag = _sp.run(["git", "tag", "--list", "v*", "--sort=-v:refname"], capture_output=True, text=True).stdout.split()
+    if _tag:
+        _t = _tag[0].lstrip("v")
+
+        def _k(s: str) -> tuple[int, ...]:
+            return tuple(int(x) for x in _re.findall(r"\d+", s)[:3])
+
+        if _k(ver) < _k(_t):
+            bad.append(f"版本号 {ver} **低于**最近 tag {_tag[0]}（Founder 规矩: 每改必递增 ✗）")
+    if not _P("docs/release.md").is_file():
+        bad.append("缺 docs/release.md（发版规矩要落文档 ✗）")
+    if "docs/release.md" not in _P("AGENTS.md").read_text(encoding="utf-8"):
+        bad.append("AGENTS.md 没挂 docs/release.md 的入口（进入即读 ✗）")
+    return bad
+
+
+def test_version_discipline() -> None:
+    """版本号: 三处一致 · 不倒退 · 规矩有文档且挂入口。"""
+    assert _check_version_discipline() == []
+
+
 def test_kanban_board() -> None:
     """看板: 横排 + 等宽 + 数据源。"""
     assert _check_kanban_board() == []
@@ -3454,6 +3497,7 @@ def main() -> int:
     results.append(("审批面板（框·逐行选项·单键生效·默认拒绝）", not _check_approval_panel(), "；".join(_check_approval_panel())))
     results.append(("边打边提示（prompt_toolkit: 一打 / 就出候选）", not _check_live_hint(), "；".join(_check_live_hint())))
     results.append(("看板（横排列·中文对齐·带数据源）", not _check_kanban_board(), "；".join(_check_kanban_board())))
+    results.append(("版本号规矩（三处一致·不倒退·文档+入口）", not _check_version_discipline(), "；".join(_check_version_discipline())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

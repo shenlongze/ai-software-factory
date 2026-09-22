@@ -123,11 +123,13 @@ def _version() -> str:
 def render_welcome(root: Path | str) -> str:
     """欢迎屏文本（首屏就是它）。"""
     d = _data_overview(root)
+    from apps.cli.theme import paint as _paint   # ★ banner 上色（Hermes 的 banner_border/title 同位 ✓）
+    _bc, _bt = _paint("banner_border", "─" * 62), _paint("banner_title", _pad(f"AI Factory OS  v{_version()}", 60))
     lines = [
         "",
-        "  ╭──────────────────────────────────────────────────────────────╮",
-        "  │  " + _pad(f"AI Factory OS  v{_version()}", 60) + "│",
-        "  ╰──────────────────────────────────────────────────────────────╯",
+        "  " + _paint("banner_border", "╭") + _bc + _paint("banner_border", "╮"),
+        "  " + _paint("banner_border", "│") + "  " + _bt + _paint("banner_border", "│"),
+        "  " + _paint("banner_border", "╰") + _bc + _paint("banner_border", "╯"),
         f"  你的数据（{root}）:",
         f"    项目 {d['projects']} · 任务树 {d['trees']} · 叶 {d['done']}/{d['leaves']} 完成 · 经验 {d['exp']} 条",
         "",
@@ -210,13 +212,13 @@ def _use_box() -> bool:
 
 
 def _border_color() -> str:
-    """回复框的边框色（Hermes 用 response_border 金/铜色系）; 非终端或 NO_COLOR ⇒ 不上色。"""
-    import os as _os
-    import sys as _sys
+    """回复框的边框色 —— 走 apps.cli.theme 的 `response_border`（与 Hermes 元素同位 ✓）。"""
+    from apps.cli.theme import PALETTE, _hex_rgb, color_enabled
 
-    if _os.environ.get("NO_COLOR") is not None or not getattr(_sys.stdout, "isatty", lambda: False)():
+    if not color_enabled():
         return ""
-    return "\033[33m"
+    r, g, b = _hex_rgb(PALETTE["response_border"])
+    return f"\033[38;2;{r};{g};{b}m"
 
 
 def _color_off() -> str:
@@ -364,7 +366,9 @@ def _ask_permission(cmd: str, *, tty: bool, always: set[str]) -> str:
 
 def _rule_line() -> str:
     """通栏横线（分区用; 照 Hermes 的输入区上下边框）。"""
-    return "  " + "─" * max(40, min(_term_width(), 96) - 2)
+    from apps.cli.theme import paint
+
+    return paint("input_rule", "  " + "─" * max(40, min(_term_width(), 96) - 2))
 
 
 def status_bar(meta: dict) -> str:
@@ -432,7 +436,9 @@ def tool_block(cmd: str, seconds: float | None, output: str, *, max_lines: int =
     _c = str(cmd or "").strip()
     if _c.startswith("factory "):
         _c = _c[len("factory "):]
-    head = f"  ┊ 💻 $ factory {_c}" + (f"   {seconds:.1f}s" if seconds is not None else "")
+    from apps.cli.theme import dim as _dim
+
+    head = _dim(f"  ┊ 💻 $ factory {_c}" + (f"   {seconds:.1f}s" if seconds is not None else ""))
     body = str(output or "").rstrip().splitlines() or ["（没有输出）"]
     _cap = 10 if len(body) > 40 else max_lines
     shown, out = body[:_cap], [head]
@@ -637,7 +643,9 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             # ★ 照 Hermes 的**用户区**（Founder 给实物对过: 横线 + `● 你的话` + 横线）:
             #   一行横线 · `● <老板原话>` · 一行横线 —— 这样历史里看得见"谁说了什么" ✓
             print(_rule_line())
-            print(f"  ● {line}")
+            from apps.cli.theme import paint as _paint
+
+            print("  " + _paint("user_mark", "●") + " " + line)
             print(_rule_line())
         if low in ("exit", "quit", "q", ":q", "/exit", "/quit", "/q"):
             break
@@ -909,7 +917,10 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 for _ln in _body.splitlines():
                     print(_ln if not _ln else "    " + _ln)
             if _sb:
-                print("  ⚕ " + " │ ".join(_sb))
+                from apps.cli.theme import paint as _pl
+
+                print("  " + _pl("status_strong", "⚕ " + str(_sb[0]))
+                      + _pl("status_dim", " │ ") + _pl("status_text", " │ ".join(str(x) for x in _sb[1:])))
                 print()
             # ★ 它念了写命令 ⇒ 明确问一句（并显示**精确**命令, 让你看清要跑什么）
             _pend = list(_meta.get("pending") or [])

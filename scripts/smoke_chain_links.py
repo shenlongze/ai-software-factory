@@ -3191,6 +3191,54 @@ def test_general_command() -> None:
     assert _check_general_command() == []
 
 
+def _check_theme() -> list[str]:
+    """★ 颜色（Founder: "颜色"）—— 结构与 Hermes 的 skin 一一对应, 但**只在终端里上色**。
+
+    判据: ① 元素表齐全（banner/input_rule/user_mark/tool_prefix/response_border/status_* /good/warn/bad ✓）
+         ② 终端里真的上色（pty 输出有 ANSI）③ **非终端一色都不上**（管道输出必须干净可断言 ✓）
+         ④ NO_COLOR=1 / FACTORY_UI=plain ⇒ 退化为纯文本 ✓
+    """
+    import io as _io
+    import os as _os
+    import sys as _sys
+    import tempfile as _tf
+
+    from apps.cli import theme as _T
+
+    bad: list[str] = []
+    for el in ("banner_border", "banner_title", "input_rule", "user_mark", "tool_prefix",
+               "response_border", "response_label", "status_text", "status_strong",
+               "status_dim", "good", "warn", "bad"):
+        if el not in _T.PALETTE:
+            bad.append(f"主题缺元素 {el}（与 Hermes 的 skin 对不上 ✗）")
+    for h in _T.PALETTE.values():
+        if not (h.startswith("#") and len(h) == 7):
+            bad.append(f"色号格式不对: {h}")
+    # 非终端不上色
+    old_out = _sys.stdout
+    try:
+        _sys.stdout = _io.StringIO()
+        if "\033" in _T.paint("response_border", "x"):
+            bad.append("非终端也上色了（管道输出会被污染 ✗）")
+        _sys.stdout = old_out
+        # NO_COLOR 关掉
+        _os.environ["NO_COLOR"] = "1"
+        if "\033" in _T.paint("response_border", "x", force=None):
+            bad.append("NO_COLOR=1 时还有颜色（用户明确要求纯文本 ✗）")
+        del _os.environ["NO_COLOR"]
+        # 强制开时必须有颜色
+        if "\033[38;2;" not in _T.paint("response_border", "x", force=True):
+            bad.append("真彩 ANSI 没生成（终端里显示不出颜色 ✗）")
+    finally:
+        _sys.stdout = old_out
+    return bad
+
+
+def test_theme() -> None:
+    """主题: 元素齐全 · 终端上色 · 非终端不上色 · NO_COLOR 生效。"""
+    assert _check_theme() == []
+
+
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory() as td:
@@ -3243,6 +3291,7 @@ def main() -> int:
     results.append(("三态可辨（你 · 系统 · 执行 · 助手 + 结果成块）", not _check_three_marks(), "；".join(_check_three_marks())))
     results.append(("通用命令通道（sh: 先审批·会真跑·拒绝不跑）", not _check_general_command(), "；".join(_check_general_command())))
     results.append(("斜杠可发现性（/ 出命令表 · TAB 补全 · 不带/也行）", not _check_slash_discoverability(), "；".join(_check_slash_discoverability())))
+    results.append(("颜色主题（元素齐 · 终端上色 · 非终端不上 · NO_COLOR 生效）", not _check_theme(), "；".join(_check_theme())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

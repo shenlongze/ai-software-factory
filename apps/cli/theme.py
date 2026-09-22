@@ -1,0 +1,65 @@
+"""CLI 主题（颜色）—— 结构与 Hermes 的 skin_engine 一一对应, 色板用 AI Factory 的 Apple 风。
+
+Hermes 的元素映射（`~/.hermes/hermes-agent/hermes_cli/skin_engine.py`）:
+  banner_border / banner_title / banner_accent / banner_dim / banner_text
+  prompt / input_rule / response_border / response_label
+  status_bar_bg / status_bar_text / status_bar_strong / status_bar_dim / good / warn / bad
+本模块照同一组元素给出**我们的取值**（Apple 系统色, 见 Founder 的 UI 偏好 #f5f5f7/#0071e3）。
+
+规矩:
+  · **只在终端里上色**（非终端一色都不上 —— 管道/脚本输出必须干净可断言 ✓）
+  · `NO_COLOR=1` 或 `FACTORY_UI=plain` ⇒ 全部退化为纯文本 ✓
+  · 真彩（24bit ANSI）; 不支持的环境自动忽略（终端会当作无效果 ✓）
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+#: 元素 → 颜色（Apple 系统色; 与 Hermes 的元素名对齐）
+PALETTE: dict[str, str] = {
+    "banner_border": "#0071e3",     # 开场框边框（Apple 蓝）
+    "banner_title": "#f5f5f7",      # 开场标题
+    "banner_dim": "#8e8e93",        # 次要说明
+    "prompt": "#f5f5f7",            # 输入提示符
+    "input_rule": "#3a3a3c",        # 用户区横线
+    "user_mark": "#0071e3",         # `● 你的话` 的圆点
+    "tool_prefix": "#8e8e93",       # `┊` 与耗时（暗）
+    "response_border": "#0071e3",   # 回答框边框
+    "response_label": "#f5f5f7",    # 回答框标题 `⚕ AI Factory OS`
+    "status_text": "#c7c7cc",       # 状态栏文字
+    "status_strong": "#f5f5f7",     # 状态栏数值（模型名等）
+    "status_dim": "#8e8e93",        # 状态栏分隔符
+    "good": "#30d158",              # ✔ 成功
+    "warn": "#ffd60a",              # ⚠ 提醒
+    "bad": "#ff453a",               # ✗ 失败
+    "code": "#64d2ff",              # 行内 `代码`
+}
+
+
+def color_enabled(force: bool | None = None) -> bool:
+    """要不要上色（非终端/NO_COLOR/plain ⇒ 否 ✓）。"""
+    if force is not None:
+        return force
+    if os.environ.get("NO_COLOR") is not None or os.environ.get("FACTORY_UI") == "plain":
+        return False
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
+def _hex_rgb(h: str) -> tuple[int, int, int]:
+    h = h.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def paint(element: str, text: str, *, force: bool | None = None) -> str:
+    """给一段文字上色（按元素取色; 不需要上色就原样返回 ✓）。"""
+    if not text or not color_enabled(force):
+        return text
+    r, g, b = _hex_rgb(PALETTE.get(element, "#f5f5f7"))
+    return f"\033[38;2;{r};{g};{b}m{text}\033[0m"
+
+
+def dim(text: str, *, force: bool | None = None) -> str:
+    """暗一点（分隔符/耗时这类次要文字）。"""
+    return f"\033[2m{text}\033[0m" if text and color_enabled(force) else text

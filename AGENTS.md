@@ -10,6 +10,12 @@
 > Web/API 层已按 **ADR-0038** 退役, **CLI(`apps/cli/`)是唯一入口面**。
 > ⇒ 当前判断以 `docs/ssot/architecture.md`(v0.3, 生效) 为准, 本文件待重写。
 
+## 开发规矩（进入即读）
+
+- **版本号**：**每改一次就递增末尾号**（Founder 2026-09-21 定）；三处同步
+  `pyproject.toml` / `README.md` / `CHANGELOG.md`。发版完整步骤见 `docs/release.md`（硬规矩 + 守卫）。
+- **CLI 界面**：改界面前先读 `docs/cli-design.md`（五个区 + 四条硬规则），先改文档再改代码。
+
 ## 0. 必读顺序
 1. README.md (根)
 2. **docs/ssot/architecture.md ← 当前架构 SSoT (v0.3, 状态: 生效)**

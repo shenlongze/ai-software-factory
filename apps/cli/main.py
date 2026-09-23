@@ -1502,6 +1502,14 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "history":
             result = _dispatch_history(ctx, args)
         elif args.command == "create":
+            if not str(getattr(args, "create_type", "") or "").strip():
+                # ★ 2026-09-22（Founder: "create 缺位置参数只回英文 required: create_type"）
+                print("  要建什么? 说清楚再跑 ✓")
+                print("    factory create company     建公司（含部门/角色）")
+                print("    factory create department  建部门（需 --company）")
+                print("    factory create project     建项目（--name/--repo-path 等）")
+                print("  想看某个的完整参数: factory create company -h")
+                return 2
             result = _dispatch_create(ctx, args)
         elif args.command == "plugin":
             result = _dispatch_plugin(ctx, args)
@@ -2574,6 +2582,18 @@ def _print_create(r: dict) -> None:
         return
     org_cli._print_result(args, result)
     # ★ 兜底: 下层没有这个 type 的打印分支时, 保证"建成了"看得见（禁静默）
+    # ★ 2026-09-22（Founder 点单: "factory create company 成功零输出"）:
+    #   company / department 也没打印分支 ⇒ 实测**真建好了却一个字不打**（静默成功 ✗）。补上 ✓
+    if result.get("ok") and str(r.get("create_type") or "") == "company":
+        c = dict(result.get("company") or {})
+        print(f"✔ 公司已创建: {c.get('name') or c.get('id')}  ({c.get('id')})")
+        print(f"  部门      {result.get('department_count', 0)} 个")
+        print(f"  下一步: factory org company show {c.get('id')}   ·   factory org employee list")
+        return
+    if result.get("ok") and str(r.get("create_type") or "") == "department":
+        d = dict(result.get("department") or {})
+        print(f"✔ 部门已创建: {d.get('name') or d.get('id')}  ({d.get('id')})")
+        return
     if result.get("ok") and str(r.get("create_type") or "") == "project":
         p = dict(result.get("project") or {})
         print(f"✔ 项目已创建: {p.get('name') or p.get('id')}  ({p.get('id')})")

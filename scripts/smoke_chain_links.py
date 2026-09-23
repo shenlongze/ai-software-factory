@@ -3796,6 +3796,56 @@ def _check_classification_green() -> list[str]:
     return bad
 
 
+def _check_create_ux() -> list[str]:
+    """★ `factory create` 的手感（Founder 点单: "create company 成功零输出" + "缺参回英文"）。
+
+    判据（**在临时根里跑** —— 注意用 `--root=` 参数 ✓, `FACTORY_ROOT` 环境变量**不被认** ✗ 我踩过）:
+      ① 缺类型 ⇒ 中文提示 + rc=2（不是 argparse 英文 ✗）
+      ② 乱写类型 ⇒ 中文错误 + rc=2
+      ③ `create company` ⇒ **必须有回执**（禁静默成功 ✗）且真的建出来
+    """
+    import subprocess as _sp
+    import tempfile as _tf
+    from pathlib import Path as _PP
+
+    bad: list[str] = []
+    tmp = _tf.mkdtemp(prefix="ftcheck.")
+    try:
+        r1 = _sp.run([".venv/bin/factory", f"--root={tmp}", "create"],
+                     capture_output=True, text=True, timeout=90)
+        _o1 = (r1.stdout or "") + (r1.stderr or "")
+        if r1.returncode != 2:
+            bad.append(f"缺类型没回 rc=2（实得 {r1.returncode} ✗）")
+        if "要建什么" not in _o1 or "company" not in _o1:
+            bad.append("缺类型没给中文提示（还是英文 argparse ✗）")
+        if "invalid choice" in _o1 or "the following arguments are required" in _o1:
+            bad.append("缺类型还甩 argparse 英文 ✗")
+        r2 = _sp.run([".venv/bin/factory", f"--root={tmp}", "create", "乱写"],
+                     capture_output=True, text=True, timeout=90)
+        _o2 = (r2.stdout or "") + (r2.stderr or "")
+        if "invalid choice" in _o2 or r2.returncode != 2:
+            bad.append("乱写类型没给中文错误 / rc 不对 ✗")
+        r3 = _sp.run([".venv/bin/factory", f"--root={tmp}", "create", "company", "--name", "门禁测试公司"],
+                     capture_output=True, text=True, timeout=120)
+        if not (r3.stdout or "").strip():
+            bad.append("`create company` **零输出**（静默成功, 用户以为失败 ✗）")
+        if "已创建" not in (r3.stdout or ""):
+            bad.append("`create company` 没给「建成了」的回执 ✗")
+        _cf = _PP(tmp) / "org" / "companies.json"
+        if not _cf.is_file() or "门禁测试公司" not in _cf.read_text(encoding="utf-8"):
+            bad.append("`create company` 说建成了但**没真建**（假成功 ✗）")
+    finally:
+        import shutil as _sh
+
+        _sh.rmtree(tmp, ignore_errors=True)
+    return bad
+
+
+def test_create_ux() -> None:
+    """create 手感: 缺参中文 · 乱写中文 · 建成有回执且真建出来。"""
+    assert _check_create_ux() == []
+
+
 def test_classification_green() -> None:
     """分类铁律 R20/R23 必须绿（防回归）。"""
     assert _check_classification_green() == []
@@ -3927,6 +3977,7 @@ def main() -> int:
     results.append(("运行锁（跨进程拒绝 · 陈旧接管 · 不删别人的）", not _check_run_lock(), "；".join(_check_run_lock())))
     results.append(("回写防护（目标脏就拒绝 · 模糊套用要标注）", not _check_apply_guard(), "；".join(_check_apply_guard())))
     results.append(("分类铁律 R20/R23（清单一致 · 命令全登记）", not _check_classification_green(), "；".join(_check_classification_green())))
+    results.append(("create 手感（缺参中文 · 建成有回执且真建）", not _check_create_ux(), "；".join(_check_create_ux())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

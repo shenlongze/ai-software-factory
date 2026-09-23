@@ -1,5 +1,22 @@
 # Changelog
 
+## [v1.3.15] — 2026-09-22
+
+**`factory create` 的手感**（Founder 点单: "create company 成功零输出" · "缺参回英文 required"）。
+
+### Fixed
+- **`create company` 静默成功** ✗：服务层只返回数据、打印由 CLI 负责，但 `_print_create` 的兜底
+  只覆盖了 `project` ⇒ company/department **真建好了却一个字不打**（用户以为失败）
+  ⇒ 补上回执：`✔ 公司已创建: X (C-xxxx) · 部门 N 个 · 下一步 …`（实测 `--root=<临时根>` 真建出来 ✓）
+- **缺类型甩 argparse 英文** ✗：`create_type` 改成可选（`nargs="?"`）+ 校验移到 dispatch
+  ⇒ 缺参给中文三条选项、乱写给中文错误，两者都 **rc=2**
+
+### Note（踩坑记录 ✓）
+- 我一开始用 `FACTORY_ROOT` 环境变量做隔离测试 ⇒ **它不被 CLI 认** ✗ ⇒ 测试写进了 Founder 的真实
+  `~/.factory/org/`（多出 4 个"测试公司"）⇒ 已**按 store API 逐条删除**, 现在只剩原有的 `AI Factory` ✓
+  · 正确姿势 = `factory --root=<目录>` 参数 ✓（守卫里已按这个写, 免得再犯）
+  · 教训: **动数据前先确认隔离开关真的生效**（跑完先看临时目录里有没有东西, 再谈别的 ✓）
+
 ## [v1.3.14] — 2026-09-22
 
 **架构/分类铁律存量红：修 2 条 + 存量盘点报告**（Founder: "继续"）。

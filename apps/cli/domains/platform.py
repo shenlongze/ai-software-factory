@@ -22,8 +22,10 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
     p_create = sub.add_parser(
         "create", help="统一创建入口 (company/department/project, §1.4.5 便捷铁律)"
     )
-    p_create.add_argument("create_type", choices=["company", "department", "project"],
-                          help="创建类型")
+    # ★ 2026-09-22: 不用 argparse 的 choices —— nargs="?" 下默认值 "" 会被判非法 ✗
+    #   校验放在 dispatch 里, 这样能给**中文**提示（缺参/写错都不甩英文 ✗）
+    p_create.add_argument("create_type", nargs="?", default="",
+                          help="创建类型 (company/department/project)")
     p_create.add_argument("--name", default="", help="名称 (company/department/project)")
     p_create.add_argument("--template", default="solo", choices=["solo", "software_company"],
                           help="公司模板 (company)")

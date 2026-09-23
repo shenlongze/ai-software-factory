@@ -1887,8 +1887,10 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             from ai_factory_os.services.work import progress as _prog
 
             _org = ProjectStore(ctx.root / "org").list_projects() or []
-            _prows = [{"id": str(getattr(r, "id", "") or ""), "name": str(getattr(r, "name", "") or ""),
-                       "status": str(getattr(r, "status", "") or "")} for r in _org]
+            from dashboard.models import ProjectSnapshot as _PS   # ★ 用模型对象（塞 dict 会触发 pydantic 告警 ✗）
+
+            _prows = [_PS(id=str(getattr(r, "id", "") or ""), name=str(getattr(r, "name", "") or ""),
+                          status=str(getattr(r, "status", "") or "") or "active") for r in _org]
             _sm = _prog.summary(ctx.root)
             _by = dict(_sm.get("by_status") or {})
             for _fld, _val in (("total", len(_prows)),):

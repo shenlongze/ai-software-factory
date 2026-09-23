@@ -3892,6 +3892,47 @@ def _check_all_views_authority() -> list[str]:
     return bad + ([f"（跳过拿不到参照的: {','.join(skipped)}）"] if skipped and bad else [])
 
 
+def _check_learning_domains() -> list[str]:
+    """★ 学习自治必须落在**多个域**上（Founder 点单第 6 件）。
+
+    判据:
+      1) `ExperienceDomain` 六域都在（provider/agent/skill/workflow/project/decision ✓）
+      2) 真实链路写经验时**不能只写一种 subject_type**（以前内核写死 "agent" ✗）
+         ⇒ 至少 workflow 域要有收尾钩子（`subject_type="workflow"`）
+      3) 钩子必须**失败安全**（学习故障不阻断执行 ✓）—— 写成 try/except 包住
+    """
+    import sys as _sys
+    from pathlib import Path as _PP
+
+    _sys.path.insert(0, "src")
+    bad: list[str] = []
+    try:
+        from ai_factory_os.services.learning.types import ExperienceDomain as _ED
+
+        _doms = {d.value for d in _ED}
+        for need in ("provider", "agent", "skill", "workflow", "project", "decision"):
+            if need not in _doms:
+                bad.append(f"ExperienceDomain 缺 {need} 域 ✗")
+    except Exception as exc:  # noqa: BLE001
+        return [f"读不到 ExperienceDomain: {type(exc).__name__} ✗"]
+    _src = _PP("apps/cli/commands.py").read_text(encoding="utf-8")
+    if 'subject_type="workflow"' not in _src:
+        bad.append("没有 workflow 域的收尾钩子（学习自治对工作流域等于没有 ✗）")
+    _i = _src.find("def _record_workflow_experience")
+    if _i < 0:
+        bad.append("缺 _record_workflow_experience ✗")
+    else:
+        _body = _src[_i : _i + 1800]
+        if "except Exception" not in _body:
+            bad.append("学习钩子没做失败安全（学习故障会阻断执行 ✗）")
+    return bad
+
+
+def test_learning_domains() -> None:
+    """学习域: 六域齐 · workflow 有钩子 · 钩子失败安全。"""
+    assert _check_learning_domains() == []
+
+
 def test_all_views_authority() -> None:
     """全视图口径: 每个视图 == 对应权威命令（拿不到参照则跳过）。"""
     assert [x for x in _check_all_views_authority() if not x.startswith("（跳过")] == []
@@ -4036,12 +4077,13 @@ def main() -> int:
     results.append(("create 手感（缺参中文 · 建成有回执且真建）", not _check_create_ux(), "；".join(_check_create_ux())))
     results.append(("全视图口径归一（projects/agents/executions/recovery/workflows/catalog）", not [x for x in _check_all_views_authority() if not x.startswith("（跳过")], "；".join(_check_all_views_authority())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
+    results.append(("学习自治多域（六域声明 · workflow 钩子 · 失败安全）", not _check_learning_domains(), "；".join(_check_learning_domains())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:
         print(f"   [{'PASS' if ok else 'FAIL'}] {label.ljust(width)}" + (f"   ← {detail}" if detail else ""))
         fails += 0 if ok else 1
-    print(f"\n{len(results) - fails}/{len(results)} 通过")
+    print("\n" + f"{len(results) - fails}/{len(results)} 通过")
     return 1 if fails else 0
 
 

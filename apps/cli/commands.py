@@ -686,6 +686,38 @@ def cmd_workflow_run(ctx: FactoryContext, args: Any) -> dict:
     }
 
 
+def _record_workflow_experience(ctx: FactoryContext, args: Any, run: Any) -> None:
+    """把一次 workflow run 的结果记成**workflow 域**的经验（Failed-safe ✓）。
+
+    ★ 2026-09-22（Founder 点单第 6 件: 学习自治扩展到其它域）:
+      `ExperienceDomain` 六域（provider/agent/skill/workflow/project/decision）**早就声明了** ✓,
+      但真实链路里只有执行内核写 `subject_type="agent"`（写死的 ✗）
+      ⇒ workflow 跑完一条经验都不落 ⇒ "学习自治"对工作流域等于没有 ✗
+      这里补 workflow 域的收尾钩子（与执行内核同款: 失败安全, 学习故障不阻断 ✓）。
+    """
+    try:
+        with ctx.logger_scope() as logger:
+            analyzer = _open_experience_analyzer(ctx, logger)
+            if analyzer is None:
+                return
+            steps = list(getattr(run, "step_states", []) or [])
+            failed = [s for s in steps if str(getattr(s, "result", "")) == "FAILED"
+                      or str(getattr(s, "status", "")) == "FAILED"]
+            done = [s for s in steps if str(getattr(s, "status", "")) == "COMPLETED"]
+            _ok = bool(steps) and not failed and len(done) == len(steps)
+            analyzer.record_experience(
+                subject_id=str(getattr(run, "workflow_id", "") or "workflow"),
+                subject_type="workflow",                       # ★ 关键: 不再一律 agent ✗
+                task_type=str(getattr(args, "task_id", "") or "orchestration")[:60],
+                capability=[],
+                result="success" if _ok else "failure",
+                score=1.0 if _ok else 0.5,
+                evidence=[str(getattr(run, "run_id", "") or "")],
+            )
+    except Exception:  # noqa: BLE001 — 学习故障不阻断执行 ✓
+        pass
+
+
 def _cmd_workflow_run_auto(ctx: FactoryContext, args: Any) -> dict:
     """workflow run --auto: 完整自动执行链路 (经 orchestration.pipeline 单一组合根)。
 
@@ -775,6 +807,7 @@ def cmd_workflow_status(ctx: FactoryContext, args: Any) -> dict:
     for st in steps:
         if st["status"] == "PENDING" and st["step_id"] == run.current_step:
             st["symbol"] = "▶"
+    _record_workflow_experience(ctx, args, run)   # ★ workflow 域经验（失败安全 ✓）
     return {
         "ok": True,
         "task_id": args.task_id,

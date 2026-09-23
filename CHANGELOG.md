@@ -1,5 +1,23 @@
 # Changelog
 
+## [v1.3.18] — 2026-09-22
+
+**学习自治扩展到 workflow 域**（Founder 点单第 6 件）。
+
+### 现状（读真代码）
+- `ExperienceDomain` **六域早就声明**（provider/agent/skill/workflow/project/decision ✓）
+- 但真实链路里**只有执行内核在写**，且 `subject_type="agent"` **写死** ✗
+  ⇒ workflow / skill / project / decision 四域**一条经验都不落** ⇒ "学习自治"对它们等于没有 ✗
+
+### Added
+- `_record_workflow_experience(ctx, args, run)`：workflow run 收尾时落一条 **workflow 域**经验
+  （subject_id=工作流 id · result 按步状态判成功/失败 · evidence=run_id · **失败安全**：学习故障不阻断执行 ✓）
+- `_cmd_workflow_run_auto` 收尾接上该钩子 ✓
+
+### Known gap（下一刀）
+- skill / project / decision 三域还没有落点（各自的"收尾"语义要单独定：skill=技能被用的效果 ·
+  project=里程碑 · decision=决策结果回头看）⇒ 单独一刀 ✓
+
 ## [v1.3.17] — 2026-09-22
 
 **全视图口径交叉核对**（Founder 点单第 9 件：dashboard 其余视图口径归一）。

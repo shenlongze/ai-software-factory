@@ -1,5 +1,21 @@
 # Changelog
 
+## [v1.3.17] — 2026-09-22
+
+**全视图口径交叉核对**（Founder 点单第 9 件：dashboard 其余视图口径归一）。
+
+### Added
+- 守卫「全视图口径归一」：**逐个视图 == 对应权威命令**（漂了就红 ✗）
+  projects==status · agents==status 舰队 · executions==`execution list` ·
+  recovery==`checkpoint list` · workflows==`workflow list` · catalog==`runtime catalog list`
+  · 拿不到参照的项**跳过并说明**（不按"全不符"误杀 ✓）
+
+### Note（实测后更正）
+- 先量了一遍**真差异** ⇒ 结论：这些视图**已经是同一个口径** ✓
+  agents 53==53 · executions 25==25 · recovery 2==2 · workflows 4==4 · catalog 3==3
+  ⇒ "只归一了 Tasks"是**过期情报** ✗（v1.3.8 已修 projects/tasks；其余本来就同源）
+  这一件的真价值 = **把它守住**（以前没有任何自动核对, 漂了没人知道 ✗）
+
 ## [v1.3.16] — 2026-09-22
 
 **解耦安装**（Founder: "factory 与仓库路径绑死 ⇒ pipx 解耦"）。

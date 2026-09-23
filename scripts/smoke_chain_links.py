@@ -3841,6 +3841,62 @@ def _check_create_ux() -> list[str]:
     return bad
 
 
+def _check_all_views_authority() -> list[str]:
+    """★ dashboard **全部视图**的口径归一（Founder 点单第 9 件）。
+
+    判据: 每个视图的数必须等于**它对应的权威命令**的数（拿不到参照 ⇒ 跳过并说明, 不按"全不符"过滤 ✗）:
+      · projects   == status.projects_count
+      · agents     == status.fleet_count
+      · executions == `execution list` 的 count
+      · recovery   == `checkpoint list` 的 count
+      · workflows  == `workflow list` 的 count
+      · catalog    == `runtime catalog list` 的 count
+    """
+    import json as _json
+    import subprocess as _sp
+
+    bad: list[str] = []
+    skipped: list[str] = []
+
+    def _j(*a) -> dict:
+        out = _sp.run([".venv/bin/factory", *a, "--json"], capture_output=True, text=True, timeout=120).stdout
+        try:
+            return _json.loads(out)
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def _snap(view: str) -> dict:
+        return (_j("dashboard", "--view", view).get("snapshot") or {})
+
+    st = _j("status")
+    pairs: list[tuple[str, object, object]] = []
+    _dp = (_snap("projects").get("projects") or {}).get("total")
+    pairs.append(("projects", st.get("projects_count"), _dp))
+    _da = (_snap("agents").get("agents") or {}).get("total")
+    pairs.append(("agents", st.get("fleet_count"), _da))
+    _de = (_snap("executions").get("executions") or {}).get("total")
+    pairs.append(("executions", _j("execution", "list").get("count"), _de))
+    _dr = (_snap("recovery").get("checkpoints") or {}).get("total")
+    pairs.append(("recovery", _j("checkpoint", "list").get("count"), _dr))
+    _dw = (_snap("workflows").get("workflows") or {}).get("definitions")
+    pairs.append(("workflows", _j("workflow", "list").get("count"), _dw))
+    _dc = (_snap("catalog").get("catalog") or {}).get("total")
+    pairs.append(("catalog", _j("runtime", "catalog", "list").get("count"), _dc))
+
+    for name, auth, dash in pairs:
+        if auth is None or dash is None:
+            skipped.append(name)                      # ★ 拿不到参照 ⇒ 跳过（不误杀 ✓）
+            continue
+        if int(auth) != int(dash):
+            bad.append(f"{name}: dashboard={dash} != 权威={auth} ✗（口径没归一）")
+    return bad + ([f"（跳过拿不到参照的: {','.join(skipped)}）"] if skipped and bad else [])
+
+
+def test_all_views_authority() -> None:
+    """全视图口径: 每个视图 == 对应权威命令（拿不到参照则跳过）。"""
+    assert [x for x in _check_all_views_authority() if not x.startswith("（跳过")] == []
+
+
 def test_create_ux() -> None:
     """create 手感: 缺参中文 · 乱写中文 · 建成有回执且真建出来。"""
     assert _check_create_ux() == []
@@ -3978,6 +4034,7 @@ def main() -> int:
     results.append(("回写防护（目标脏就拒绝 · 模糊套用要标注）", not _check_apply_guard(), "；".join(_check_apply_guard())))
     results.append(("分类铁律 R20/R23（清单一致 · 命令全登记）", not _check_classification_green(), "；".join(_check_classification_green())))
     results.append(("create 手感（缺参中文 · 建成有回执且真建）", not _check_create_ux(), "；".join(_check_create_ux())))
+    results.append(("全视图口径归一（projects/agents/executions/recovery/workflows/catalog）", not [x for x in _check_all_views_authority() if not x.startswith("（跳过")], "；".join(_check_all_views_authority())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     width = max(len(n) for n, _, _ in results)
     fails = 0

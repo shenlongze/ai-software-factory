@@ -1,5 +1,30 @@
 # Changelog
 
+## [v1.3.34] — 2026-09-24
+
+**修 `check_wheel.sh` 的进程泄漏**（我自己造的：12 个孤儿 `factory serve` ✗）。
+
+### 现场（实测清点）
+```
+ps -eo pid,etime,command | grep "factory serve"
+ 14605  01-12:52:29  … /tmp/checkwheel.swmgpL/venv/bin/factory serve --port 8095
+ …共 12 个，端口 8083–8095，全部来自我历次 check_wheel 的临时目录 ✗
+```
+
+### 根因（脚本第 58 行）
+- 启动写的是 `( … serve … ) &` —— **没有 `exec`** ⇒ `$!` 记的是**子 shell** 的 PID ✗，
+  `kill` 只杀掉壳、**把 python 留成孤儿** ✗ ⇒ 每跑一次留一个，攒到 12 个
+- 且失败路径没有兜底（清理只在正常路径）⇒ 失败时也不清 ✗
+
+### Fixed
+- 启动加 `exec`（子 shell **变身**成 python ⇒ `$!` 才是真 PID ✓）
+- `cleanup`：kill → 等它真退出（最多 5s）→ 仍不退则按**精确 PID** 强杀 → **复核**；
+  没停干净 **报红** ✗（不许静默留孤儿）
+- 实测：`check_wheel.sh 8082` ⇒ `service stopped (exact PID 67334, verified ✓)` + 复核**零残留** ✓
+
+### 清理（如实报告）
+- 12 个孤儿已**按精确 PID 逐个停掉**（未用 pkill ✗）⇒ 复核无残留 ✓
+
 ## [v1.3.33] — 2026-09-23
 
 **修 RuntimeStore 并发写（飞机大战真实测试炸出来的 bug ✗）**。

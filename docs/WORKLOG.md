@@ -36,6 +36,7 @@
 | v1.3.22 | 结构债 **R4 部分**：`ProviderRequest/Response/Interface/Error` 四个纯契约归位 `contracts/llm/`（infra 保留再导出 ⇒ 零破坏 ✓）；插件改从契约拿 ⇒ **R4 17 → 12** | 架构守卫 R4: 12 ✓ · pytest 74 ✓ · R4 剩余全是行为依赖（要设计 ✗）· R5 是模块放错层（待单独一刀 ✗） |
 | v1.3.23 | 结构债 **R9**：`contracts/entity/contract.py` 里带控制流的函数全部外移到 `services/resource/rules.py`（五件套的 rules ✓ 行为一字未改）; 契约只留数据（245 → 73 行）; 两处调用方改路径（契约不能反向 import ✗） | 架构守卫 **R9: 12 → 2** ✓ · pytest 74 ✓ · 真跑 `create_entity('conv')` ✓ |
 | v1.3.24 | **R3 跨域依赖图 + 断环方案**（纯分析, 不动代码 ✗）: 新增 `scripts/analyze_cross_domain.py`（复用守卫同一份 modules/edges ⇒ 不漂移）⇒ 报告含 mermaid 图 · 边数排行 · 环清单 · 三种断法 | 62 边 · **真环 1 个（6 域大环 ✗）** · 直接双向 8 对 · **像契约仅 12%** ⇒ R3 不能靠搬类型 ✗ · 第一版判定/环算法都有错, 已修正 ✓ |
+| v1.3.25 | **冷启动端到端测试**（Founder 建议「从头测试」; 干净根 --root=<tmp>, 全程不碰真实数据 ✓）: 链上半段通（会话→需求→PRD→分析→架构→拆解→确认 ✓ 门 12/12 · 70 叶带验收）; **下半段在冷启动下断了** ✗（run 恒为「无可推进/ unresolved」且不说原因）; 抓到 6 条真问题（招人不进调度池 · 招 devops/architect/writer 崩 · chain 结尾假地址 · 定位文案 · doctor 不存在却登记着） | 报告 `docs/reports/2026-09-22-冷启动端到端测试.md`（逐条带命令与输出 ✓）|
 过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |
 （生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |
 

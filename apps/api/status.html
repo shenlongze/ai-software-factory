@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Factory OS · 状态（v1.3.22）</title>
+<title>AI Factory OS · 状态（v1.3.23）</title>
 <style>
   :root{--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--ink2:#6e6e73;--line:#d2d2d7;
         --brand:#0071e3;--ok:#34c759;--warn:#ff9f0a;--bad:#ff3b30;--r:18px}
@@ -33,15 +33,16 @@
 </head>
 <body><div class="wrap">
   <h1>AI Factory OS · 状态</h1>
-  <p class="sub">v1.3.22 · 生成于 2026-09-24 01:29 ·
+  <p class="sub">v1.3.23 · 生成于 2026-09-24 01:36 ·
      数据来自 <code>docs/TODO.md</code> + <code>docs/WORKLOG.md</code> + 实时读数 ⇒ 不可能与文档漂移 ✓</p>
 
   <div class="cards">
-    <div class="card"><b>守卫</b><span>63/63 通过</span></div><div class="card"><b>pytest</b><span>74 passed, 7 warnings in 13.63s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 10/15 条规则通过（有红）· 跨层/跨域 import 边 215 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
+    <div class="card"><b>守卫</b><span>63/63 通过</span></div><div class="card"><b>pytest</b><span>74 passed, 7 warnings in 13.85s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 10/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
   </div>
 
   <h2>最近提交</h2>
-  <pre>95864dad refactor(arch): 结构债 R10 —— 10 个 models.py → types.py（引用三形式全覆盖）→ v1.3.21
+  <pre>0def7f76 refactor(arch): 结构债 R4 部分 —— 纯契约归位 contracts/llm（不新增功能 ✓）→ v1.3.22
+95864dad refactor(arch): 结构债 R10 —— 10 个 models.py → types.py（引用三形式全覆盖）→ v1.3.21
 43ae62b6 feat(trace): 留痕 —— 活清单 + 追加式日志 + /status 网页版（Founder: &quot;添加到 html 和 todolist 中, 要留痕&quot;）→ v1.3.20
 67538852 feat(learning): 学习自治再扩两域（skill / decision）→ v1.3.19
 edf80101 feat(learning): 学习自治扩展到 workflow 域（Founder 点单第 6 件）→ v1.3.18
@@ -54,15 +55,14 @@ e2563a7c docs(arch): 架构/分类铁律存量红 —— 修 R20/R23 + 盘点报
 0a3f416c feat(cli): 真流式（Founder 选 A′）→ v1.3.11
 774bd2e5 feat(release): 干净环境真装真跑（抓到并修掉 index.html 没打进包）→ v1.3.10
 58368904 feat(cli): 发布交付链 —— 一条命令起 API + 最小界面（Founder 点单）→ v1.3.9
-4d548acb fix(cli): dashboard 与 status 口径归一（Founder 点单）→ v1.3.8
-fd706682 feat(cli): 会话归属项目（Founder 点单）→ v1.3.7</pre>
+4d548acb fix(cli): dashboard 与 status 口径归一（Founder 点单）→ v1.3.8</pre>
 
   <h2>活清单（TODO.md）</h2>
   <h1>AI Factory OS · TODO（活清单）</h1>
 <blockquote>这份清单是**活的**：做完一条就更新状态、写上版本号和提交号（可核对 ✓）。</blockquote>
 <blockquote>每次改动都同时进 `docs/WORKLOG.md`（追加式, 不改历史 ⇒ 留痕 ✓）。</blockquote>
 <blockquote>网页版：`factory serve` 起来后看 `/status`（由 `scripts/build_status.py` 从这三个来源生成 ✓）。</blockquote>
-<p>最后更新：2026-09-22 · 当前版本 `v1.3.22`</p>
+<p>最后更新：2026-09-22 · 当前版本 `v1.3.23`</p>
 <p>---</p>
 <h2>1. 已完成（带痕迹）</h2>
 <table>
@@ -86,13 +86,13 @@ fd706682 feat(cli): 会话归属项目（Founder 点单）→ v1.3.7</pre>
 <tr><td>D17</td><td>学习自治扩 skill / decision 域</td><td>v1.3.19</td><td>`67538852`</td><td>证据用 Evidence 对象（防静默失效 ✓）</td></tr>
 <tr><td>D18</td><td>**留痕**：TODO 活清单 + 追加式日志 + `/status` 网页版（真源生成）</td><td>v1.3.20</td><td>`43ae62b6`</td><td>`/status` 200（干净安装也 200 ✓）</td></tr>
 <tr><td>D19</td><td>结构债 **R10**：10 个 `models.py` → `types.py` + 引用三形式全覆盖</td><td>v1.3.21</td><td>`95864dad`</td><td>架构守卫 **R10 绿（0 项）** · pytest 74 ✓</td></tr>
-<tr><td>D20</td><td>结构债 **R4 部分**：纯契约归位 `contracts/llm/`</td><td>v1.3.22</td><td>见下一条提交</td><td>R4 违规 **17 → 12** · pytest 74 ✓</td></tr>
+<tr><td>D20</td><td>结构债 **R4 部分**：纯契约归位 `contracts/llm/`</td><td>v1.3.22</td><td>`0def7f76`</td><td>R4 违规 **17 → 12** · pytest 74 ✓</td></tr>
+<tr><td>D21</td><td>结构债 **R9**：contracts 控制流外移 `services/resource/rules.py`</td><td>v1.3.23</td><td>见下一条提交</td><td>R9 违规 **12 → 2** · 真跑建实体 ✓</td></tr>
 </table>
 <h2>2. 待办（我能直接做）</h2>
 <table>
 <tr><th>#</th><th>事项</th><th>说明</th></tr>
 <tr><td>T2</td><td>结构债 **R5**（4）：`infrastructure` 越层依赖</td><td>方向性错误（infra → services/plugins）⇒ 搬类型 / 注入</td></tr>
-<tr><td>T4</td><td>结构债 **R9**（12）：`contracts` 不许含控制流</td><td>校验逻辑外移 `services/rules`</td></tr>
 <tr><td>T5</td><td>结构债 **R3**（60）：跨域 import 断环</td><td>先画依赖图再断（按域拆分后环仍在 ⇒ 断环用注入）</td></tr>
 <tr><td>T6</td><td>结构债 **R11**（86）：`services/&lt;域&gt;/` 五件套布局</td><td>最重：按域一次一域，每域一提交 + `--help` 对比</td></tr>
 <tr><td>T7</td><td>学习自治 **project 域**落点</td><td>语义要 Founder 定（树 confirm？chain 跑完？）</td></tr>
@@ -145,6 +145,7 @@ fd706682 feat(cli): 会话归属项目（Founder 点单）→ v1.3.7</pre>
 <p>| v1.3.21 | 结构债 **R10** 清掉：10 个 `models.py` → `types.py`（引用三形式全覆盖：相对/短名/全名）。</p>
 <table>
 <tr><th>v1.3.22</th><th>结构债 **R4 部分**：`ProviderRequest/Response/Interface/Error` 四个纯契约归位 `contracts/llm/`（infra 保留再导出 ⇒ 零破坏 ✓）；插件改从契约拿 ⇒ **R4 17 → 12**</th><th>架构守卫 R4: 12 ✓ · pytest 74 ✓ · R4 剩余全是行为依赖（要设计 ✗）· R5 是模块放错层（待单独一刀 ✗）</th></tr>
+<tr><td>v1.3.23</td><td>结构债 **R9**：`contracts/entity/contract.py` 里带控制流的函数全部外移到 `services/resource/rules.py`（五件套的 rules ✓ 行为一字未改）; 契约只留数据（245 → 73 行）; 两处调用方改路径（契约不能反向 import ✗）</td><td>架构守卫 **R9: 12 → 2** ✓ · pytest 74 ✓ · 真跑 `create_entity(&#x27;conv&#x27;)` ✓</td></tr>
 </table>
 <p>过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |</p>
 <p>（生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |</p>

@@ -1,5 +1,24 @@
 # Changelog
 
+## [v1.3.23] — 2026-09-22
+
+**结构债 R9：`contracts` 里的控制流外移**（Founder 点单 T4，且"不新增功能"⇒ 只搬不改 ✓）。
+
+### Fixed
+- `contracts/entity/contract.py`（245 行）里所有**带控制流的函数**外移到
+  `services/resource/rules.py`（**五件套的 `rules` ✓**，行为一字未改 ✓）：
+  `new_id` · `validate_entity_id` · `validate_entity` · `check_version` · `bump_version` ·
+  `lifecycle_transition` · `create_entity` · `make_command/response/event/error/page/realtime_event` ·
+  `relation_children/parents` · `ConcurrencyError`
+  · 契约只留**数据**（前缀表 / 字段 / 生命周期状态与转移 / 实体关系 / 错误码）⇒ 73 行 ✓
+  · **契约不能反向 import services** ✗ ⇒ 两处调用方改路径（`infrastructure/storage/entity_store.py` ·
+    `services/conversation/binding.py`）
+- **R9 违规 12 → 2** ✓（真跑验证：`create_entity('conv')` → `conv_xxx / CREATED` + 校验通过 ✓）
+
+### 存量剩 2（如实记）
+- `contracts/llm/provider.py` 里 `ModelSpec.estimate_cost_usd` / `ProviderConfig.key_env_var`
+  带 `if`（**原有**代码, 不是这次搬进去的）⇒ 这两个是"派生值助手"⇒ 归位方案要单独定 ⇒ 单列 TODO
+
 ## [v1.3.22] — 2026-09-22
 
 **结构债 R4：纯契约归位 `contracts/llm/`**（Founder 点单 T3，且明确"不新增功能"⇒ 只搬不改 ✓）。

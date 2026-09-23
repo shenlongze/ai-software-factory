@@ -34,6 +34,7 @@
 | v1.3.20 | **留痕**：活清单 `docs/TODO.md` + 追加式日志 `docs/WORKLOG.md` + 网页版 `/status`
 | v1.3.21 | 结构债 **R10** 清掉：10 个 `models.py` → `types.py`（引用三形式全覆盖：相对/短名/全名）。
 | v1.3.22 | 结构债 **R4 部分**：`ProviderRequest/Response/Interface/Error` 四个纯契约归位 `contracts/llm/`（infra 保留再导出 ⇒ 零破坏 ✓）；插件改从契约拿 ⇒ **R4 17 → 12** | 架构守卫 R4: 12 ✓ · pytest 74 ✓ · R4 剩余全是行为依赖（要设计 ✗）· R5 是模块放错层（待单独一刀 ✗） |
+| v1.3.23 | 结构债 **R9**：`contracts/entity/contract.py` 里带控制流的函数全部外移到 `services/resource/rules.py`（五件套的 rules ✓ 行为一字未改）; 契约只留数据（245 → 73 行）; 两处调用方改路径（契约不能反向 import ✗） | 架构守卫 **R9: 12 → 2** ✓ · pytest 74 ✓ · 真跑 `create_entity('conv')` ✓ |
 过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |
 （生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |
 

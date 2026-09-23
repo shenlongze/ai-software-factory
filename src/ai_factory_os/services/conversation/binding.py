@@ -30,7 +30,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from ai_factory_os.contracts.entity.contract import create_entity
+from ai_factory_os.services.resource.rules import create_entity
 from ai_factory_os.infrastructure.storage.entity_store import store_entity
 from ai_factory_os.services.conversation import understanding as pu
 

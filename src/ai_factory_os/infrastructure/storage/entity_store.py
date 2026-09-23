@@ -16,7 +16,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from ai_factory_os.contracts.entity.contract import (
+from ai_factory_os.services.resource.rules import (
     create_entity,
     validate_entity,
 )

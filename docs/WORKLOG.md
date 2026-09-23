@@ -37,6 +37,7 @@
 | v1.3.23 | 结构债 **R9**：`contracts/entity/contract.py` 里带控制流的函数全部外移到 `services/resource/rules.py`（五件套的 rules ✓ 行为一字未改）; 契约只留数据（245 → 73 行）; 两处调用方改路径（契约不能反向 import ✗） | 架构守卫 **R9: 12 → 2** ✓ · pytest 74 ✓ · 真跑 `create_entity('conv')` ✓ |
 | v1.3.24 | **R3 跨域依赖图 + 断环方案**（纯分析, 不动代码 ✗）: 新增 `scripts/analyze_cross_domain.py`（复用守卫同一份 modules/edges ⇒ 不漂移）⇒ 报告含 mermaid 图 · 边数排行 · 环清单 · 三种断法 | 62 边 · **真环 1 个（6 域大环 ✗）** · 直接双向 8 对 · **像契约仅 12%** ⇒ R3 不能靠搬类型 ✗ · 第一版判定/环算法都有错, 已修正 ✓ |
 | v1.3.25 | **冷启动端到端测试**（Founder 建议「从头测试」; 干净根 --root=<tmp>, 全程不碰真实数据 ✓）: 链上半段通（会话→需求→PRD→分析→架构→拆解→确认 ✓ 门 12/12 · 70 叶带验收）; **下半段在冷启动下断了** ✗（run 恒为「无可推进/ unresolved」且不说原因）; 抓到 6 条真问题（招人不进调度池 · 招 devops/architect/writer 崩 · chain 结尾假地址 · 定位文案 · doctor 不存在却登记着） | 报告 `docs/reports/2026-09-22-冷启动端到端测试.md`（逐条带命令与输出 ✓）|
+| v1.3.26 | **更正 + 撤掉我自己编的提示** ✗（Founder 点出「我们没有设计招人这个功能」）: 读原文核对 —— 产品链（ssot/product.md:24）是 Idea→目标表达→理解→**编排**→执行→…, **没有招人这一步**; 「招人」出身老区（services/organization/cli.py 自述 src/legacy/factory-org）; **是我 v1.3.15 在 create company 回执里自己写了「下一步去招人」** ✗ ⇒ 已撤, 只留如实回执 ✓; 测试结论同步更正: 真问题 = **编排这一环在冷启动没落地** | 门禁 pytest 74 · 守卫 63/63 · ruff 0 |
 过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |
 （生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |
 

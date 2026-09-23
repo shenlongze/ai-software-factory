@@ -2588,7 +2588,11 @@ def _print_create(r: dict) -> None:
         c = dict(result.get("company") or {})
         print(f"✔ 公司已创建: {c.get('name') or c.get('id')}  ({c.get('id')})")
         print(f"  部门      {result.get('department_count', 0)} 个")
-        print(f"  下一步: factory org company show {c.get('id')}   ·   factory org employee list")
+        # ★ 2026-09-23 撤掉（Founder: 「我们没有设计招人这个功能呢啊」）:
+        #   原来这里写「下一步: … factory org employee list」是**我自己编的** ✗ ——
+        #   "招人"是老区（src/legacy/factory-org）的命令面, 不在产品设计内
+        #   （SSoT product.md: Idea → 目标表达 → 理解 → **编排** → 执行 → … ⇒ 没有"招人"这一步）。
+        #   ⇒ 不发明下一步 ✓ 只如实给回执。
         return
     if result.get("ok") and str(r.get("create_type") or "") == "department":
         d = dict(result.get("department") or {})

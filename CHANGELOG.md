@@ -1,5 +1,22 @@
 # Changelog
 
+## [v1.3.16] — 2026-09-22
+
+**解耦安装**（Founder: "factory 与仓库路径绑死 ⇒ pipx 解耦"）。
+
+### Added
+- `README.md` 新增「装它」一节：开发用 editable / 只用来用**独立 venv + wheel**；
+  数据根规则（默认 `~/.factory`；换根用 `--root=` 参数 —— 环境变量 `FACTORY_ROOT` **不被认** ✗）；
+  以及怎么切 PATH 优先级
+- 解耦实测: 建 `~/.factory-cli` 独立 venv + 装 wheel ⇒ `apps.cli.main` 与 `ai_factory_os` 的
+  `__file__` 都指向**自己的 site-packages** ✓（**没碰仓库** ✓）、任意目录跑真命令 ✓、
+  `prompt_toolkit` ✓ 与 `apps/api/index.html` ✓ 都在包里 ⇒ **仓库删了也能跑**（真解耦 ✓）
+
+### Note（本机现状, 未擅自改你的环境 ✗）
+- 你 PATH 上仍是 `~/factory-venv/bin/factory`（指向仓库的 editable）⇒ 要用独立安装，
+  把它排到 `~/factory-venv/bin` 之前即可（一句 `export PATH=…`）—— 这个切换是**你的决定**, 我没动 ✓
+- 本机没装 `pipx`；独立 venv 达到同样效果（不额外装工具 ✓）
+
 ## [v1.3.15] — 2026-09-22
 
 **`factory create` 的手感**（Founder 点单: "create company 成功零输出" · "缺参回英文 required"）。

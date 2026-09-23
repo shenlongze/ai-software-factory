@@ -5,7 +5,21 @@
 >
 > 本地部署 · 全事件审计 · Apache-2.0
 
-`v1.3.15`（以 `pyproject.toml` 为准）· CLI 在役 · API 可起（暂无前端）
+`v1.3.16`（以 `pyproject.toml` 为准）· CLI 在役 · API 可起（`factory serve` 一条命令起界面+API）
+
+---
+
+## 装它（两种，按你的用途挑）
+
+| 用途 | 怎么装 | 特点 |
+|---|---|---|
+| **改代码 / 开发** | 仓库里 `python -m venv .venv && .venv/bin/pip install -e .` | editable：代码跟着仓库走，改了立刻生效 ✓ |
+| **只想用（不碰仓库）** | 建个独立 venv，装 wheel：<br>`python -m venv ~/.factory-cli && ~/.factory-cli/bin/pip install <wheel>` | **解耦**：读自己的 site-packages，仓库删了也能跑 ✓（实测 ✓） |
+
+- 造 wheel：`python -m pip wheel . -w /tmp/out --no-deps`（或 `pip install .` 直装）
+- 发版前**必跑**干净环境真装真跑：`bash scripts/check_wheel.sh`（构建 → 干净 venv → 装 → 跑真命令 → 探 `/` 与 `/api/trees` 必须 200）
+- **数据根**：默认 `~/.factory`（可用 `factory --root=<目录>` 换，测试务必用它 ✓ —— 环境变量 `FACTORY_ROOT` **不被认** ✗）
+- 想切到独立安装：让它排在 `~/factory-venv/bin` **之前**（`export PATH=…`）—— 谁的路径靠前就用谁 ✓
 
 ---
 

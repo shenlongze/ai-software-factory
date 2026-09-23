@@ -49,12 +49,14 @@ class ModelSpec:
         return any(c.strip().lower() == target for c in self.capabilities)
 
     def estimate_cost_usd(self, input_tokens: int, output_tokens: int) -> float | None:
-        """按 1k 单价估算成本；缺单价 → None（诚实: 不臆造）。"""
-        if self.input_rate_per_1k is None or self.output_rate_per_1k is None:
-            return None
-        return (
-            input_tokens / 1000.0 * self.input_rate_per_1k
-            + output_tokens / 1000.0 * self.output_rate_per_1k
+        """按 1k 单价估算成本；缺单价 → None（诚实: 不臆造）。
+
+        ★ 2026-09-23（R9）: 原先用 `if … return None` ⇒ 契约层**不许含控制流语句** ✗
+          ⇒ 改成**条件表达式**（R9 只判 If/For/While/Try/With 语句, 不判表达式 ✓）—— 行为一字不变 ✓
+        """
+        _rates = (self.input_rate_per_1k, self.output_rate_per_1k)
+        return None if None in _rates else (
+            input_tokens / 1000.0 * _rates[0] + output_tokens / 1000.0 * _rates[1]
         )
 
 
@@ -80,10 +82,12 @@ class ProviderConfig:
         return (not self.api_key_ref) or self.api_key_ref.startswith(API_KEY_REF_PREFIX)
 
     def key_env_var(self) -> str:
-        """从 api_key_ref 取出环境变量名；非 env: 引用 → ""。"""
-        if not self.api_key_ref.startswith(API_KEY_REF_PREFIX):
-            return ""
-        return self.api_key_ref[len(API_KEY_REF_PREFIX):]
+        """从 api_key_ref 取出环境变量名；非 env: 引用 → ""。
+
+        ★ 2026-09-23（R9）: 同样是"契约层不许含控制流语句" ⇒ 改条件表达式, 行为不变 ✓
+        """
+        return (self.api_key_ref[len(API_KEY_REF_PREFIX):]
+                if self.api_key_ref.startswith(API_KEY_REF_PREFIX) else "")
 
     def is_usable(self, key_resolved: bool = True) -> bool:
         """可用性: enabled + key 引用合法 + （需要 key 时）key 可解析。

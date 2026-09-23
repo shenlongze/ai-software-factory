@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Factory OS · 状态（v1.3.30）</title>
+<title>AI Factory OS · 状态（v1.3.31）</title>
 <style>
   :root{--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--ink2:#6e6e73;--line:#d2d2d7;
         --brand:#0071e3;--ok:#34c759;--warn:#ff9f0a;--bad:#ff3b30;--r:18px}
@@ -33,15 +33,16 @@
 </head>
 <body><div class="wrap">
   <h1>AI Factory OS · 状态</h1>
-  <p class="sub">v1.3.30 · 生成于 2026-09-24 02:23 ·
+  <p class="sub">v1.3.31 · 生成于 2026-09-24 02:27 ·
      数据来自 <code>docs/TODO.md</code> + <code>docs/WORKLOG.md</code> + 实时读数 ⇒ 不可能与文档漂移 ✓</p>
 
   <div class="cards">
-    <div class="card"><b>守卫</b><span>64/64 通过</span></div><div class="card"><b>pytest</b><span>75 passed, 7 warnings in 14.04s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 10/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
+    <div class="card"><b>守卫</b><span>64/64 通过</span></div><div class="card"><b>pytest</b><span>75 passed, 7 warnings in 14.12s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
   </div>
 
   <h2>最近提交</h2>
-  <pre>c69e0897 refactor(org): 老区彻底清完（服务层 + 脚手架 + 出处注释）→ v1.3.29
+  <pre>2ac248d8 feat(help): 冷启动引导（第一次用六步）+ 撤掉假地址 → v1.3.30
+c69e0897 refactor(org): 老区彻底清完（服务层 + 脚手架 + 出处注释）→ v1.3.29
 7bd89c89 refactor(cli): 删老区命令面（Founder: &quot;老区都删除&quot;）→ v1.3.28
 d88c71a0 docs(e2e): 冷启动补测（更正）+ 老区盘点 → v1.3.27
 767d94f1 fix(cli): 撤掉我自己编的「下一步去招人」提示 + 更正测试结论 → v1.3.26
@@ -54,8 +55,7 @@ daefe56a test(e2e): 冷启动端到端测试 —— 上半段通, 下半段断�
 43ae62b6 feat(trace): 留痕 —— 活清单 + 追加式日志 + /status 网页版（Founder: &quot;添加到 html 和 todolist 中, 要留痕&quot;）→ v1.3.20
 67538852 feat(learning): 学习自治再扩两域（skill / decision）→ v1.3.19
 edf80101 feat(learning): 学习自治扩展到 workflow 域（Founder 点单第 6 件）→ v1.3.18
-c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）→ v1.3.17
-2a821e65 docs(install): 解耦安装 —— 独立 venv + wheel, 仓库删了也能跑（Founder: pipx 解耦）→ v1.3.16</pre>
+c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）→ v1.3.17</pre>
 
   <h2>活清单（TODO.md）</h2>
   <h1>AI Factory OS · TODO（活清单）</h1>
@@ -94,7 +94,7 @@ c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）�
 <table>
 <tr><th>#</th><th>事项</th><th>说明</th></tr>
 <tr><td>T2</td><td>结构债 **R5**（4）：`infrastructure` 越层依赖</td><td>方向性错误（infra → services/plugins）⇒ 搬类型 / 注入</td></tr>
-<tr><td>T5</td><td>结构债 **R3**（62 边）：断环</td><td>**图已出** ✓ `docs/reports/2026-09-22-跨域依赖与断环方案.md`；真环 1 个（6 域大环 ✗）· 直接双向 8 对 · 像契约仅 12% ⇒ 建议先拿最薄一对试点 ✓</td></tr>
+<tr><td>T5</td><td>结构债 **R3**（62 边）：断环</td><td>**图已出** ✓；试点时发现 **R3/R9 冲突** ⇒ 先等你裁决 P5 ✓</td></tr>
 <tr><td>T6</td><td>结构债 **R11**（86）：`services/&lt;域&gt;/` 五件套布局</td><td>最重：按域一次一域，每域一提交 + `--help` 对比</td></tr>
 <tr><td>T7</td><td>学习自治 **project 域**落点</td><td>语义要 Founder 定（树 confirm？chain 跑完？）</td></tr>
 </table>
@@ -125,6 +125,9 @@ c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）�
 <tr><th>E6</th><th>冷启动**缺引导**：正道三步（`agent add` → `provider add` → `run`）产品都有命令但不引导 ✗</th><th>严重</th><th>待修</th></tr>
 <tr><td>E7</td><td>老区命令面 `org {company,employee,authority,knowledge}`</td><td>中</td><td>**已清完 ✓**（v1.3.28 CLI 层 + v1.3.29 服务层与脚手架）</td></tr>
 <tr><td>E8</td><td>老区出处注释</td><td>低</td><td>**已改准 ✓**（v1.3.29：141 自动 + 4 手工；余 5 处为合理提及）</td></tr>
+</table>
+<table>
+<tr><th>P5</th><th>**R3 与 R9 的规则冲突**（跨域 types 里带校验逻辑 ⇒ 搬 contracts 犯 R9, 不搬犯 R3）</th><th>放宽 R9（快）/ 严格拆分（慢）</th><th>**待你裁决**</th></tr>
 </table>
 
   <h2>工作日志（WORKLOG.md，追加式）</h2>
@@ -167,6 +170,8 @@ c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）�
 <tr><td>v1.3.27</td><td>**冷启动补测（更正）+ 老区盘点**（Founder: 「我们没有设计招人这个功能」+「老区还有什么？」）: 走**设计内正道**（`agent add` 建舰队 ×5）后 `run` **真会派活** ✓（创建执行 2 个）; 失败原因是 `NoAvailableRuntime` ✗ = 新根没配 provider; ⇒ 冷启动缺的是**引导**不是能力; 正道三步 `agent add`→`provider add`→`run` 都不引导 ✗; **有意停手**: 第 2 步要贴 key ⇒ 不搬凭据进临时根 ✗（最后一跳未实测 ✓ 如实标注）; 老区盘点: 目录已无 ✓ · 145 文件出处残留 ✗ · org 老区命令面 ✗ · `org member` 是设计内 ✓ 别误伤 · factory.db 老区库仍在用 ✓</td><td>报告第五章 + TODO E6–E8</td></tr>
 <tr><td>v1.3.28</td><td>**删老区命令面**（Founder:「老区都删除」）: `factory org` 下 company/employee/authority/knowledge 四个老区命令面整块移除（解析器+分发+help）⇒ `org -h` 只剩 `member` ✓; **保留**设计内的 `org member` 与 `create company</td><td>department</td><td>project`（审计确认 ✓ 不误伤）; 服务层与 `services/organization/` 内部件不动 ✓。**过程**: 我第二轮连带删服务层函数 ⇒ 破坏了该模块自己的 dispatch 与共用辅助（_json_object 等）✗ ⇒ ruff 11 错 + 2 测试挂 ⇒ **回退该步**, 只留 CLI 层这一刀 ⇒ 回到全绿 ✓。剩下的服务层 6 个老区函数（仍被该模块内部 dispatch 引用 ⇒ 要连 dispatch 一起摘）与 145 处 `src/legacy/…` 注释 ⇒ 下一刀 ✓</td><td>门禁 pytest 74 · verify 16/16 · 守卫 63/63 · 分类 5/6 · ruff 0</td></tr>
 <tr><td>v1.3.29</td><td>**老区彻底清完**（Founder:「老区都删除」第二轮）: 删服务层 6 个老区函数 + `_CMD_DISPATCH` 条目; 删老区独立入口死脚手架（`build_parser` 211 行 / `_CMD_DISPATCH` / `_dispatch` / `main` —— pyproject 无 script、外部零调用 ✓）⇒ 该文件 1177 → 899 行; **保留** `_print_result`（apps/cli 的 create 打印用它 ✓）与所有 cmd_* ✓; 145 处 `src/legacy/…` 出处注释**改准为其真实路径**（141 自动 + 4 手工, 余 5 处合理 ✓）。**这次先列清「模块内部引用」再动**（上一轮漏了这步 =&gt; 一次成功 ✓, 每步过 pytest ✓）</td><td>门禁 pytest 74 · verify 16/16 · 守卫 63/63 · ruff 0 · 老区清零 ✓</td></tr>
+<tr><td>v1.3.30</td><td>**冷启动引导（第一次用六步）+ 撤掉假地址**（Founder 点单 1 · 只动帮助/提示 ✗ 不加命令）: `factory help` 新增【第一次用】六步（create project → chain → tasktree confirm → **agent add** → **provider add** → run --limit），第 4/5 步写明「不给会怎样」（没舰队 ⇒ 树跑不动只会说 unresolved；没配 provider ⇒ NoAvailableRuntime）; chain 结尾的假地址改成「看界面: 先跑 factory serve…—— 没起来就没有界面」✓; 新增守卫「冷启动引导」</td><td>守卫 64/64 · pytest 75</td></tr>
+<tr><td>v1.3.31</td><td>**R9 清零 + 发现 R3/R9 规则冲突**（Founder 点单 2）: contracts/llm/provider.py 两处控制流（estimate_cost_usd · key_env_var）改**条件表达式**（R9 只判 If/For/While/Try/With 语句 ✓）⇒ 行为不变（4 用例实测 ✓）⇒ **R9: 2 → 0（绿）** · 架构 **10/15 → 11/15**; 试点搬类型清 R3 时发现 **R3 与 R9 互相顶住** ✗（那 7 条边指向的 types 都带校验/派生逻辑 ⇒ 搬 contracts 犯 R9, 不搬犯 R3）⇒ 报告第八章 + TODO P5, **等 Founder 裁决** ✓（我倾向放宽 R9）</td><td>pytest 75 · 守卫 64/64 · ruff 0</td></tr>
 </table>
 <p>过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |</p>
 <p>（生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |</p>

@@ -36,61 +36,17 @@ ProviderConfigChecker: 配置检查工具 — 枚举内置 Provider 的 key 环�
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
-
-from pydantic import BaseModel, Field, field_validator
-
-class ProviderError(Exception):
-    """Provider 调用失败 (无 key / HTTP 错误 / 网络错误 / 解析失败)。
-
-    消息以稳定前缀开头 (如 \"anthropic api key missing: ...\") 供测试/审计断言;
-    Runtime 捕获后转 ExecutionResult failed (error=消息) + org.execution.failed。
-    """
+from typing import Any
 
 
-class ProviderRequest(BaseModel):
-    """Provider 最小输入 (设计 §3): 任务上下文 + 沙箱路径 + token 预算。"""
-
-    task_context: str
-    sandbox_path: str = ""
-    max_tokens: int = 4096
-
-    @field_validator("sandbox_path", mode="before")
-    @classmethod
-    def _path_none(cls, v: Any) -> Any:
-        return v if v is not None else ""
-
-
-class ProviderResponse(BaseModel):
-    """Provider 最小输出 (设计 §3): content + usage + error。"""
-
-    content: str = ""
-    usage: dict[str, Any] = Field(default_factory=dict)
-    error: str | None = None
-
-    @field_validator("usage", mode="before")
-    @classmethod
-    def _usage_none(cls, v: Any) -> Any:
-        return v if v is not None else {}
-
-    @property
-    def ok(self) -> bool:
-        """调用成功判定 (error 为空即成功)。"""
-        return not self.error
-
-
-@runtime_checkable
-class ProviderInterface(Protocol):
-    """统一 Provider 接口 (Agent/Registry 只依赖此 Protocol)。
-
-    provider_id: 注册表键 (如 \"anthropic\" / \"mock\"); generate(request) →
-    ProviderResponse (失败也返回 response, error 承载原因 — 不抛裸异常,
-    除 ProviderError 配置缺口外)。
-    """
-
-    provider_id: str
-
-    def generate(self, request: ProviderRequest) -> ProviderResponse: ...
+# ★ 2026-09-22: 三个纯契约已归位到 contracts/llm/provider.py（R4/R5 结构债）;
+#   这里**再导出**以零破坏（旧 import 路径照旧可用 ✓）。
+from ai_factory_os.contracts.llm.provider import (  # noqa: E402,F401 —— 再导出: 旧 import 路径不能断 ✓（ruff --fix 曾把它当垃圾删掉 ✗）
+    ProviderError,
+    ProviderInterface,
+    ProviderRequest,
+    ProviderResponse,
+)
 
 
 class ProviderRegistry:

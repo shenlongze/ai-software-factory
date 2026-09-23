@@ -1,5 +1,26 @@
 # Changelog
 
+## [v1.3.22] — 2026-09-22
+
+**结构债 R4：纯契约归位 `contracts/llm/`**（Founder 点单 T3，且明确"不新增功能"⇒ 只搬不改 ✓）。
+
+### Fixed
+- `ProviderRequest` / `ProviderResponse` / `ProviderInterface` / `ProviderError` 四个**纯契约**
+  （pydantic 模型 + Protocol + 普通异常，零 infra 依赖）从 `infrastructure/llm/provider.py`
+  **归位**到 `contracts/llm/provider.py` ✓
+  · `infrastructure` 侧保留**再导出**（旧 import 路径照旧可用 ⇒ 零破坏 ✓）
+  · `plugins/agents/*`（architect/developer/pm/tester/uxui）改从 **contracts** 拿 ⇒
+    **R4 违规 17 → 12** ✓
+- 踩到两个坑（如实记 ✓）：文档字符串里写着 `from pydantic import …` ⇒ 我的"是否已有该 import"检查被骗 ✗；
+  以及我一次替换把 `ProviderError` 也换到了 contracts（它当时还没搬 ✗）⇒ 都靠 pytest 抓住并修 ✓
+
+### 未做（要设计, 不是搬运 ✗）
+- R4 剩 12 处是**行为依赖**（plugins → `services.execution.*` / `services.work.decomposition` 等）
+  ⇒ 要注入或改归属, 属重构级 ⇒ 单列
+- R5（4 处）是**桥接模块放错层**（`infrastructure/storage/loader.py` 依赖 plugins、
+  `infrastructure/llm/providers/integration.py` 依赖 services）⇒ 修法是**搬家 + 改调用方**,
+  半吊子修法（函数内 import 之类）等于糊弄守卫 ✗ ⇒ 不做, 待单独一刀
+
 ## [v1.3.21] — 2026-09-22
 
 **结构债 R10 清了：10 个 `models.py` → `types.py`**（Founder 点单 T1）。

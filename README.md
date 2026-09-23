@@ -5,7 +5,7 @@
 >
 > 本地部署 · 全事件审计 · Apache-2.0
 
-`v1.3.21`（以 `pyproject.toml` 为准）· CLI 在役 · API 可起（`factory serve` 一条命令起界面+API）
+`v1.3.22`（以 `pyproject.toml` 为准）· CLI 在役 · API 可起（`factory serve` 一条命令起界面+API）
 
 ---
 

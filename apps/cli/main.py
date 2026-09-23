@@ -56,16 +56,9 @@ from .commands import (
     cmd_intelligence_experience_list,
     cmd_intelligence_recommend,
     cmd_metrics,
-    cmd_org_authority_check,
-    cmd_org_company_create,
-    cmd_org_company_show,
-    cmd_org_employee_hire,
-    cmd_org_employee_list,
     cmd_org_member_list,
     cmd_org_member_set,
     cmd_project_org,
-    cmd_org_knowledge_add,
-    cmd_org_knowledge_list,
     cmd_exec_approval_apply,
     cmd_exec_approval_approve,
     cmd_exec_approval_deny,
@@ -1128,30 +1121,10 @@ def build_parser() -> Any:
 
     # factory org <sub> (Phase 16A, ADR-0036: factory-org Extension — 组织管理)
     p_org = sub.add_parser(
-        "org", help="组织管理: Company/Employee/Authority/Knowledge (factory-org Extension, 独立数据空间 <root>/org/, 发 org.* 事件)"
+        "org", help="组织管理: 舰队成员归属 member (给成员设公司/部门 — 派活按归属筛人)"
     )
     json_opt(p_org)
     osub = p_org.add_subparsers(dest="org_command", required=True)
-
-    # factory org company <sub>
-    p_org_company = osub.add_parser("company", help="公司管理 (模板实例化, 发 org.company.* 事件)")
-    json_opt(p_org_company)
-    ocsub = p_org_company.add_subparsers(dest="company_command", required=True)
-    p_oc_create = ocsub.add_parser(
-        "create", help="模板实例化公司: software_company / solo (发 org.company.created 链)"
-    )
-    json_opt(p_oc_create)
-    p_oc_create.add_argument(
-        "--template", default="solo", choices=["software_company", "solo"],
-        help="公司模板 (默认 solo)"
-    )
-    p_oc_create.add_argument("--name", required=True, help="公司名称")
-    p_oc_create.add_argument("--id", default=None, help="公司 ID (默认自动生成 C-xxx)")
-    p_oc_show = ocsub.add_parser(
-        "show", help="公司详情 + 部门/角色 (发 org.company.viewed 审计)"
-    )
-    json_opt(p_oc_show)
-    p_oc_show.add_argument("company_id")
 
     # factory org member <sub>（舰队成员归属 —— 多公司/多部门落到执行）
     p_org_mem = osub.add_parser(
@@ -1167,58 +1140,6 @@ def build_parser() -> Any:
     p_om_s.add_argument("--company", default="", help="公司 id（必填）")
     p_om_s.add_argument("--department", default="", help="部门 id（可选）")
     p_om_s.add_argument("--all", action="store_true", help="把所有未归属成员一次设到该公司")
-
-    # factory org employee <sub>
-    p_org_emp = osub.add_parser("employee", help="员工管理 (发 org.employee.* 事件)")
-    json_opt(p_org_emp)
-    oesub = p_org_emp.add_subparsers(dest="employee_command", required=True)
-    p_oe_hire = oesub.add_parser(
-        "hire", help="员工入职 (发 org.employee.joined → role_assigned → capability_added)"
-    )
-    json_opt(p_oe_hire)
-    p_oe_hire.add_argument("--company", required=True, help="公司 ID")
-    p_oe_hire.add_argument("--role", required=True, help="角色 id 或名称 (如 developer)")
-    p_oe_hire.add_argument("--capabilities", default="", help="能力列表, 逗号分隔 (如 python,java)")
-    p_oe_hire.add_argument("--name", default=None, help="员工姓名 (默认自动生成)")
-    p_oe_hire.add_argument("--id", default=None, help="员工 ID (默认自动生成 E-xxx)")
-    p_oe_list = oesub.add_parser(
-        "list", help="员工清单: 按公司/角色/能力过滤 (发 org.employee.viewed 审计)"
-    )
-    json_opt(p_oe_list)
-    p_oe_list.add_argument("--company", default=None, help="按公司过滤")
-    p_oe_list.add_argument("--role", default=None, help="按角色过滤 (id 或名称)")
-    p_oe_list.add_argument("--capability", default=None, help="按能力过滤")
-
-    # factory org authority <sub>
-    p_org_auth = osub.add_parser("authority", help="权限校验 (Default Deny: 未声明即拒绝)")
-    json_opt(p_org_auth)
-    oasub = p_org_auth.add_subparsers(dest="authority_command", required=True)
-    p_oa_check = oasub.add_parser(
-        "check", help="权限校验: --employee EID 或 --role ROLE (发 org.authority.checked 审计)"
-    )
-    json_opt(p_oa_check)
-    p_oa_check.add_argument("--employee", default=None, help="员工 ID (按员工角色集校验)")
-    p_oa_check.add_argument("--role", default=None, help="角色 id 或名称 (按单一角色校验)")
-    p_oa_check.add_argument("--company", default=None, help="角色名解析域 (可选)")
-    p_oa_check.add_argument("--permission", required=True, help="权限 (如 release.approve)")
-
-    # factory org knowledge <sub>
-    p_org_kn = osub.add_parser("knowledge", help="企业知识管理 (公司隔离, 发 org.knowledge.* 事件)")
-    json_opt(p_org_kn)
-    oksub = p_org_kn.add_subparsers(dest="knowledge_command", required=True)
-    p_ok_add = oksub.add_parser(
-        "add", help="知识入库 (发 org.knowledge.bound; 公司知识 A↔B 隔离)"
-    )
-    json_opt(p_ok_add)
-    p_ok_add.add_argument("--company", required=True, help="公司 ID")
-    p_ok_add.add_argument("--domain", required=True, help="知识域 (如 docs/tech/sop)")
-    p_ok_add.add_argument("--content", required=True, help="知识内容")
-    p_ok_add.add_argument("--id", default=None, help="知识 ID (默认自动生成 K-xxx)")
-    p_ok_list = oksub.add_parser(
-        "list", help="公司知识清单 (发 org.knowledge.viewed 审计)"
-    )
-    json_opt(p_ok_list)
-    p_ok_list.add_argument("--company", required=True, help="公司 ID")
 
     # factory exec <sub> (Phase A, ADR-0037: factory-exec Extension — 执行闭环)
     p_exec = sub.add_parser(
@@ -4853,36 +4774,14 @@ def cmd_console_domain(ctx: FactoryContext, args: Any) -> dict:
 
 
 def _dispatch_org(ctx: FactoryContext, args: Any) -> dict:
-    """org company/employee/authority/knowledge 分发 (Phase 16A, ADR-0036:
-    factory-org Extension — 缺包 rc 7, 其余命令零影响)。"""
-    if args.org_command == "company":
-        if args.company_command == "create":
-            return cmd_org_company_create(ctx, args)
-        if args.company_command == "show":
-            return cmd_org_company_show(ctx, args)
-        raise CliError(f"unknown org company command: {args.company_command}", exit_code=2)
-    if args.org_command == "employee":
-        if args.employee_command == "hire":
-            return cmd_org_employee_hire(ctx, args)
-        if args.employee_command == "list":
-            return cmd_org_employee_list(ctx, args)
-        raise CliError(f"unknown org employee command: {args.employee_command}", exit_code=2)
+    """org **member** 分发（舰队成员归属 —— 设计内: 派活按归属筛人 ✓）。
+    ★ 2026-09-23: 老区命令面 (company/employee/authority/knowledge) 已按 Founder 指示删除 ✗"""
     if args.org_command == "member":
         if args.member_command == "list":
             return cmd_org_member_list(ctx, args)
         if args.member_command == "set":
             return cmd_org_member_set(ctx, args)
         raise CliError(f"unknown org member command: {args.member_command}", exit_code=2)
-    if args.org_command == "authority":
-        if args.authority_command == "check":
-            return cmd_org_authority_check(ctx, args)
-        raise CliError(f"unknown org authority command: {args.authority_command}", exit_code=2)
-    if args.org_command == "knowledge":
-        if args.knowledge_command == "add":
-            return cmd_org_knowledge_add(ctx, args)
-        if args.knowledge_command == "list":
-            return cmd_org_knowledge_list(ctx, args)
-        raise CliError(f"unknown org knowledge command: {args.knowledge_command}", exit_code=2)
     raise CliError(f"unknown org command: {args.org_command}", exit_code=2)
 
 

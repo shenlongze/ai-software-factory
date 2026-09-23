@@ -4,7 +4,7 @@
 > 每次改动都同时进 `docs/WORKLOG.md`（追加式, 不改历史 ⇒ 留痕 ✓）。
 > 网页版：`factory serve` 起来后看 `/status`（由 `scripts/build_status.py` 从这三个来源生成 ✓）。
 
-最后更新：2026-09-22 · 当前版本 `v1.3.27`
+最后更新：2026-09-22 · 当前版本 `v1.3.28`
 
 ---
 
@@ -71,5 +71,5 @@
 | E5 | 登记表里有不存在的命令（`factory doctor`）⇒ R23 可加「登记必须存在」| 低 | 待修 |
 
 | E6 | 冷启动**缺引导**：正道三步（`agent add` → `provider add` → `run`）产品都有命令但不引导 ✗ | 严重 | 待修 |
-| E7 | **老区命令面** `org {company,employee,authority,knowledge}` 与**设计内**的 `org member …` 混在一起 ⇒ 用户会像我今天一样误入 ✗ | 中 | **待你定处置** |
-| E8 | **145 个源码文件**的 docstring 仍写 `src/legacy/…` 出处 ✗（纯注释, 误导读者）| 低 | 待修（零风险）|
+| E7 | 老区命令面 `org {company,employee,authority,knowledge}` | 中 | **CLI 层已删 ✓**（v1.3.28）；**服务层函数体待单独一刀** ✓ |
+| E8 | **145 个源码文件**的 docstring 仍写 `src/legacy/…` 出处 ✗（纯注释）| 低 | 待修（零风险, 下一刀）|

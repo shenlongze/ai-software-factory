@@ -1,5 +1,32 @@
 # Changelog
 
+## [v1.3.28] — 2026-09-23
+
+**删老区命令面**（Founder：「老区都删除」）。
+
+### 删了什么（CLI 层, 用户可见的那一层）
+- `factory org` 下四个**老区命令面**整块移除（Phase 16A 老设计）：
+  `company` · `employee` · `authority` · `knowledge`（连同解析器、分发分支、help 文案）
+  ⇒ `factory org -h` 现在**只剩 `member`** ✓
+  · 实测：`factory org employee hire` ⇒ argparse 明确回「invalid choice: 'employee' (choose from member)」✓
+- `apps/cli/main.py` 293,018 → 288,656 字节
+
+### 保留（**设计内**, 审计确认过 ✓ 不误伤）
+- `factory org member set|list` ✓ —— 舰队成员归属（产品自己的错误提示在引导用它：
+  「项目归属公司 X 但没有可用成员 ⇒ 先 org member set」）⇒ 派活按归属筛人, 是**编排**的一部分 ✓
+- `factory create company|department|project` ✓ —— 公司/部门是产品四维（多公司·多部门）✓
+- `services/organization/` 的服务层（artifact / artifact_lifecycle / approval / capabilities）✓ 真被别处使用
+
+### 过程如实记（我的删法切过头了一次 ✗）
+- 第二轮我连带删了服务层函数 ⇒ 破坏了该模块**自己的 dispatch** 与共用辅助（`_json_object` 等）✗
+  ⇒ ruff 11 错 + 2 测试挂 ⇒ **回退该步**（只保留 CLI 层这一刀 ✓）⇒ 回到全绿 ✓
+- 教训：删函数前要连"它所在模块内部还有谁引用"一起算 ✓（我只算了模块外 ✗）
+
+### 还剩（下一刀, 已盘点清楚）
+- 服务层那 6 个老区函数（`cmd_company_show` / `cmd_employee_*` / `cmd_authority_check` / `cmd_knowledge_*`）
+  ⇒ 它们仍被**该模块自己的** dispatch 引用 ⇒ 要连 dispatch 一起摘 ✓ 单独一刀（先列清内部引用 ✓）
+- **145 个源码文件**的 docstring 仍写 `src/legacy/…` 出处 ✗ ⇒ 批量改准（纯注释 ✓）
+
 ## [v1.3.27] — 2026-09-23
 
 **冷启动补测 + 老区盘点**（Founder：「我们没有设计招人这个功能呢啊」+「老区还有什么？」）

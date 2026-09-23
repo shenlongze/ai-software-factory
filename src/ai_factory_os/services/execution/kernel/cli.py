@@ -296,6 +296,30 @@ def cmd_exec_run(root: Path, args: Any) -> dict:
                 )
         except Exception:  # noqa: BLE001 — 失败安全: 学习故障不阻断执行
             pass
+        # ★ 2026-09-22（Founder 点单第 6 件: 学习自治扩展到其它域）:
+        #   上面只落 agent 域 ⇒ 这一跑用到的**技能**一条经验都不落 ✗
+        #   这里按 agent.skills 逐个落 skill 域经验（同该次执行结果; 失败安全 ✓）
+        try:
+            from ai_factory_os.services.learning.types import Evidence, EvidenceSource
+
+            analyzer_sk = _open_experience_analyzer(root, logger)
+            if analyzer_sk is not None:
+                _ok_sk = bool(result.is_success)
+                for _sk in list(getattr(agent, "skills", None) or []):
+                    _sid = getattr(_sk, "id", None) or getattr(_sk, "name", None) or str(_sk)
+                    analyzer_sk.record_experience(
+                        subject_id=str(_sid),
+                        subject_type="skill",
+                        task_type="development",
+                        capability=[],
+                        result="success" if _ok_sk else "failure",
+                        score=1.0 if _ok_sk else 0.5,
+                        evidence=[Evidence(source_type=EvidenceSource.EVENT,
+                                           source_id=str(getattr(request, "execution_id", "") or ""),
+                                           description="该次执行（本技能被用于其中）")],
+                    )
+        except Exception:  # noqa: BLE001 — 失败安全 ✓
+            pass
         terminal = (
             EventType.ORG_EXECUTION_COMPLETED
             if result.is_success

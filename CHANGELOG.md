@@ -1,5 +1,20 @@
 # Changelog
 
+## [v1.3.19] — 2026-09-22
+
+**学习自治再扩两域：skill / decision**（Founder 点单第 6 件下半）。
+
+### Added
+- **skill 域**：执行内核写完 agent 经验后，按 `agent.skills` **逐个**落 skill 域经验
+  （subject_id=技能 id · result 同该次执行 · evidence=该次执行的事件引用 · **失败安全** ✓）
+- **decision 域**：决策链落库后落一条 decision 域经验（subject_id=决策 id · evidence=决策事件）
+  · 如实标注：这里记的是"**做过的决策**"，真实结果要等回头看 ⇒ score 用**中性 0.5**，**不编**"决策有多好" ✗
+- 证据一律用 `Evidence` **对象**（`event:<id>` lineage）；塞字符串会被 pydantic 拒 ⇒ 钩子**静默失效** ✗（踩过 ✓）
+
+### Known gap（要 Founder 定语义）
+- **project 域**还没有落点：什么叫"项目经验"要你定（里程碑 = 树被 confirm 那一刻？还是 chain 整条跑完？）
+  —— 语义没定我不硬塞 ✗
+
 ## [v1.3.18] — 2026-09-22
 
 **学习自治扩展到 workflow 域**（Founder 点单第 6 件）。

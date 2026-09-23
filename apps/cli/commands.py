@@ -2976,6 +2976,28 @@ def cmd_product_approval_decide(ctx: FactoryContext, args: Any) -> dict:
         # 9c 终态事件 (approval.approved/rejected/changes_requested/delegated) 为
         # CLI 审计锚点; 9a 兼容事件 (granted/denied) 由服务层同时发出, 不在此取序
         event_seq = _product_last_seq(logger, _DECISION_EVENT[decision.decision])
+    # ★ 2026-09-22（Founder 点单第 6 件）: decision 域经验落点
+    #   如实说明: 这里记的是"**做过的决策**"（id/类型/事件号）; 真实结果要等回头看 —— 那是下文 ✓
+    #   所以 score 用**中性 0.5**, 不编"决策有多好" ✗; 失败安全 ✓
+    try:
+        from ai_factory_os.services.learning.types import Evidence, EvidenceSource
+
+        with ctx.logger_scope() as _lg_d:
+            _an_d = _open_experience_analyzer(ctx, _lg_d)
+            if _an_d is not None:
+                _an_d.record_experience(
+                    subject_id=str(getattr(decision, "id", "") or "decision"),
+                    subject_type="decision",
+                    task_type=str(getattr(decision, "decision", "") or "decision")[:60],
+                    capability=[],
+                    result="success",
+                    score=0.5,
+                    evidence=[Evidence(source_type=EvidenceSource.EVENT,
+                                       source_id=str(event_seq) if event_seq else "",
+                                       description="决策事件（本决策的审计锚点）")],
+                )
+    except Exception:  # noqa: BLE001 — 失败安全 ✓
+        pass
     return {
         "ok": True,
         "approval": request.to_dict(),

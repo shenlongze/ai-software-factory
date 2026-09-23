@@ -3918,6 +3918,17 @@ def _check_learning_domains() -> list[str]:
     _src = _PP("apps/cli/commands.py").read_text(encoding="utf-8")
     if 'subject_type="workflow"' not in _src:
         bad.append("没有 workflow 域的收尾钩子（学习自治对工作流域等于没有 ✗）")
+    if 'subject_type="decision"' not in _src:
+        bad.append("没有 decision 域的钩子 ✗")
+    _k = _PP("src/ai_factory_os/services/execution/kernel/cli.py").read_text(encoding="utf-8")
+    if 'subject_type="skill"' not in _k:
+        bad.append("执行内核没落 skill 域经验（跑了技能也不记 ✗）")
+    _kc = _k.find('subject_type="skill"')
+    if _kc > 0 and "except Exception" not in _k[max(0, _kc - 1200): _kc + 1200]:
+        bad.append("skill 钩子没做失败安全（学习故障会炸掉执行 ✗）")
+    # 证据要用 Evidence 对象（塞字符串会被 pydantic 拒 ⇒ 钩子静默失效 ✗）
+    if "evidence=[f\"exec:" in _k or "evidence=[f\"event:" in _src:
+        bad.append("证据用了字符串（应为 Evidence 对象 ⇒ 否则静默失效 ✗）")
     _i = _src.find("def _record_workflow_experience")
     if _i < 0:
         bad.append("缺 _record_workflow_experience ✗")

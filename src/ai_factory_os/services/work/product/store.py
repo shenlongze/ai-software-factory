@@ -30,7 +30,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from .models import (
+from .types import (
     ApprovalDecision,
     ApprovalGate,
     ApprovalRequest,

@@ -19,7 +19,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from metrics.models import AgentUtilizationSummary, FactoryMetrics, RuntimeUsageSummary
+from metrics.types import AgentUtilizationSummary, FactoryMetrics, RuntimeUsageSummary
 
 from ai_factory_os.infrastructure.git.types import GitChange, GitCommit, GitContext
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import FactoryMetrics
+from .types import FactoryMetrics
 
 
 def _table(headers: list[str], rows: list[list[Any]]) -> list[str]:
@@ -79,7 +79,7 @@ def format_workspace_comparison(comparison) -> str:
     与 format_metrics 同为「模型 → str」纯函数, CLI 与测试共用; 无 ANSI,
     管道/CI/测试断言安全。表格列: Project/Tasks/Executions/Workflows/Validation。
     """
-    from .models import WorkspaceComparison
+    from .types import WorkspaceComparison
 
     assert isinstance(comparison, WorkspaceComparison)
     lines = ["Workspace Metrics", f"  projects  {comparison.total}"]

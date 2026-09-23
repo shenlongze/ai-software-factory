@@ -1,5 +1,26 @@
 # Changelog
 
+## [v1.3.21] — 2026-09-22
+
+**结构债 R10 清了：10 个 `models.py` → `types.py`**（Founder 点单 T1）。
+
+### Fixed
+- 10 个禁用文件名（`models.py`）全部改名成 `types.py`（与五件套的 `types` 对齐）+ 引用同步：
+  recovery · benchmark · retrieval · validation · product · metrics · assignment ·
+  changeflow · workflows · providers（`check_architecture.py` ⇒ **R10 绿, 0 项** ✓）
+- 引用形式三种全覆盖（小样阶段摸清）：
+  1) 相对 `from .models import …`（同包目录内）
+  2) **短名** `from workflows.models import …`（本仓多个子包根在 `sys.path` 上 ⇒ 常见）
+  3) 全名 `ai_factory_os.<...>.models`
+  · 残留的 `.models` 只在 `compat_aliases.py` 的**兼容映射表**里（有意保留 ✓ 不是违规）
+
+### 过程（如实记：这次没砸锅, 但工具错了两回 ✗）
+- 第一版脚本把"短名"算成末**两**段 ⇒ 算成 `models.models`；第二版 `parts[-1]` 又是 `models` 本身
+  ⇒ 两处漏改都被**每个目标后的全量 pytest** 抓住（46 个失败即停 ✓ 不留半成品）
+- 第三版正则把 `assignment.models` 改成了 `assignment..types`（多点 ✗）⇒ 已修
+- 最终改用**精确字符串替换**（不再用正则 ✓）⇒ 一次全绿
+- **教训**: 批量改名必须"每步全量验 + 失败即停", 且判据要先摸清（短名形态是本仓特有 ✓）
+
 ## [v1.3.20] — 2026-09-22
 
 **留痕：活清单 + 追加式日志 + 网页版状态页**（Founder: "添加到 html 和 todolist 中, 要留痕"）。

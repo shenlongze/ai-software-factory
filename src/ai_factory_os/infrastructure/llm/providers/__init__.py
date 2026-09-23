@@ -29,7 +29,7 @@ from .integration import (
     provider_context_from_selection,
     wrap_adapters_with_provider,
 )
-from .models import (
+from .types import (
     ProviderDefinition,
     ProviderRequest,
     ProviderResponse,
@@ -67,7 +67,7 @@ from .usage import (
     filter_by_period,
     stats_from_usage,
 )
-from .models import TaskRequirement
+from .types import TaskRequirement
 
 __all__ = [
     "ProviderAdapter",

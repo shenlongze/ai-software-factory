@@ -31,7 +31,7 @@ from .events import (
     record_provider_removed,
     record_provider_selected,
 )
-from .models import ProviderDefinition, ProviderStatus
+from .types import ProviderDefinition, ProviderStatus
 from .store import ProviderStore
 
 

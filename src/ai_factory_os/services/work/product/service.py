@@ -59,7 +59,7 @@ from .events import (
     record_idea_created,
     record_workflow_started,
 )
-from .models import (
+from .types import (
     ApprovalDecision,
     ApprovalGate,
     ApprovalRequest,

@@ -32,7 +32,7 @@ from assignment.allocator import (
     AgentAllocatorError,
     AssignmentNotFoundError,
 )
-from assignment.models import AssignmentStatus
+from assignment.types import AssignmentStatus
 from assignment.store import AssignmentStore
 from ai_factory_os.infrastructure.events.types import EventType
 from ai_factory_os.services.execution.dispatcher import (
@@ -52,7 +52,7 @@ from ai_factory_os.services.execution.store import CatalogStore
 from ai_factory_os.services.work.types import Task, TaskStatus
 from ai_factory_os.services.work.store import TaskExistsError, TaskStore
 from validation.engine import ValidationEngine
-from validation.models import ValidationStatus
+from validation.types import ValidationStatus
 from validation.reports import render_checks
 from workflows.definitions import get_builtin
 from workflows.engine import (
@@ -66,7 +66,7 @@ from workflows.engine import (
     WorkflowRunNotFoundError,
     WorkflowStateError,
 )
-from workflows.models import Workflow, WorkflowStep
+from workflows.types import Workflow, WorkflowStep
 from workflows.store import WorkflowStore
 
 from recovery.checkpoint import CheckpointStore
@@ -84,7 +84,7 @@ from ai_factory_os.services.work.change.service import ChangeService, ChangeStor
 
 from changeflow.engine import ChangeWorkflowEngine  # Phase 6E (ADR-0020)
 from changeflow.events import record_change_trigger_viewed  # Phase 6E (ADR-0020)
-from changeflow.models import ChangeTrigger  # Phase 6E (ADR-0020)
+from changeflow.types import ChangeTrigger  # Phase 6E (ADR-0020)
 from changeflow.triggers import (  # Phase 6E (ADR-0020)
     ChangeTriggerExistsError,
     ChangeTriggerRegistry,
@@ -1010,7 +1010,7 @@ def _open_provider_usage_store(ctx: FactoryContext):
 def _parse_provider_status(value: str | None):
     if value is None:
         return None
-    from providers.models import ProviderStatus
+    from providers.types import ProviderStatus
 
     try:
         return ProviderStatus.parse(value)
@@ -1083,7 +1083,7 @@ def cmd_provider_test(ctx: FactoryContext, args: Any) -> dict:
     (ADR-0002: 所有 CLI 行为必须产生 Event)。
     """
     from providers.adapters import BUILTIN_PROVIDER_ADAPTERS
-    from providers.models import ProviderRequest, ProviderResponse
+    from providers.types import ProviderRequest, ProviderResponse
     from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
 
     with ctx.logger_scope() as logger:
@@ -1284,7 +1284,7 @@ def cmd_provider_recommend(ctx: FactoryContext, args: Any) -> dict:
     无通过候选 → 推荐为空 (rc 0)。
     """
     from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
-    from providers.models import TaskRequirement
+    from providers.types import TaskRequirement
     from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
     from providers.selector import CostAwareSelector
     from providers.usage import stats_by_provider

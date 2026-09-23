@@ -25,7 +25,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .models import Workflow, WorkflowRun
+from .types import Workflow, WorkflowRun
 
 
 class WorkflowStoreError(Exception):

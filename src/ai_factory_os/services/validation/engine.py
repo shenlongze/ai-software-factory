@@ -22,7 +22,7 @@ from ai_factory_os.services.work.types import TaskStatus
 from ai_factory_os.services.work.store import TaskStore
 
 from . import rules
-from .models import ValidationResult, ValidationStatus
+from .types import ValidationResult, ValidationStatus
 from .reports import ValidationReport, render_checks
 
 # 验证事件流: started → rule.started → rule.completed → completed; 失败追加 failed

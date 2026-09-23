@@ -1,4 +1,4 @@
-"""recovery/models.py — Checkpoint / RecoveryResult 领域模型 (Pydantic v2)。
+"""recovery/types.py — Checkpoint / RecoveryResult 领域模型 (Pydantic v2)。
 
 设计依据:
 - phase4c3-status.md: Checkpoint (id/task_id/workflow_id/event_seq/workflow_state/

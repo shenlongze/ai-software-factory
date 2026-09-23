@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from .capability import ProviderCapabilityProfile
 from .costs import ProviderCostModel
-from .models import ProviderDefinition, ProviderStatus
+from .types import ProviderDefinition, ProviderStatus
 
 DEFAULT_PROVIDER_DEFINITIONS: list[ProviderDefinition] = [
     ProviderDefinition(

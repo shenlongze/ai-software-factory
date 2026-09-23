@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from ai_factory_os.infrastructure.events.types import parse_timestamp
 
-from providers.models import ProviderRequest, ProviderResponse, TaskRequirement  # noqa: F401  (复用 Phase 8 I/O 契约)
+from providers.types import ProviderRequest, ProviderResponse, TaskRequirement  # noqa: F401  (复用 Phase 8 I/O 契约)
 from providers.usage import ProviderUsage  # noqa: F401  (经验积累计量, 失败安全)
 
 from .events import (
@@ -47,7 +47,7 @@ from .events import (
     record_generation_started,
 )
 from .experience import ApprovalExperience, ExperienceStore, GenerationExperience
-from .models import ApprovalRequest, Artifact, ProductIdea, _now
+from .types import ApprovalRequest, Artifact, ProductIdea, _now
 from .service import ProductError, ProductService
 
 if TYPE_CHECKING:  # 类型标注专用 (运行时惰性 — 删除 providers 不影响模块加载)

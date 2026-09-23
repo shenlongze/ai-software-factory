@@ -23,7 +23,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Iterator
 
-from .models import ProviderRequest, ProviderResponse
+from .types import ProviderRequest, ProviderResponse
 
 
 class ProviderAdapter(ABC):

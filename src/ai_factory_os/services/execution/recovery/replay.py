@@ -26,10 +26,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ai_factory_os.plugins.agents.types import AgentStatus
-from assignment.models import AssignmentStatus
+from assignment.types import AssignmentStatus
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from ai_factory_os.services.execution.runtime.types import ExecutionStatus
-from workflows.models import StepStatus, WorkflowStatus
+from workflows.types import StepStatus, WorkflowStatus
 
 
 @dataclass

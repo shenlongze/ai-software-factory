@@ -1042,7 +1042,7 @@ def _check_workflow_drives_chain() -> list[str]:
     from ai_factory_os.services.execution.runtime.store import open_runtime_store
     from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionStatus
     from ai_factory_os.services.work import decomposition as D
-    from ai_factory_os.services.work.workflows.models import Workflow, WorkflowStep
+    from ai_factory_os.services.work.workflows.types import Workflow, WorkflowStep
 
     bad: list[str] = []
     with tempfile.TemporaryDirectory() as td:

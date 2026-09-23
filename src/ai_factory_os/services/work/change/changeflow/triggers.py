@@ -24,7 +24,7 @@ from typing import Any
 from ai_factory_os.infrastructure.events.types import Event
 
 from .events import record_change_trigger_created
-from .models import ChangeTrigger
+from .types import ChangeTrigger
 
 
 class ChangeTriggerRegistryError(Exception):

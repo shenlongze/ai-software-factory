@@ -25,7 +25,7 @@ from ai_factory_os.plugins.agents.registry import AgentRegistry
 from ai_factory_os.infrastructure.events.types import EventType
 from ai_factory_os.infrastructure.events.store import EventStore
 from metrics.collectors import MetricsCollector
-from metrics.models import AgentUtilizationSummary, FactoryMetrics, RuntimeUsageSummary
+from metrics.types import AgentUtilizationSummary, FactoryMetrics, RuntimeUsageSummary
 from metrics.workspace import WorkspaceCollector
 from recovery.checkpoint import CheckpointStore
 from ai_factory_os.services.execution.runtime.store import RuntimeStore
@@ -689,7 +689,7 @@ class DashboardCollector:
         """
         try:
             from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
-            from providers.models import TaskRequirement
+            from providers.types import TaskRequirement
             from providers.selector import CostAwareSelector
             from providers.usage import stats_by_provider
 

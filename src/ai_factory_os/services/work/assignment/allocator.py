@@ -29,10 +29,10 @@ from ai_factory_os.plugins.agents.registry import AgentNotFoundError, AgentRegis
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from ai_factory_os.services.execution.runtime.store import RuntimeStore
-from workflows.models import WorkflowStep
+from workflows.types import WorkflowStep
 
 from .matcher import AgentMatcher
-from .models import AgentAssignment, AssignmentStatus
+from .types import AgentAssignment, AssignmentStatus
 from .store import AssignmentStore
 
 # Assignment 状态转换表 (终态无出口)

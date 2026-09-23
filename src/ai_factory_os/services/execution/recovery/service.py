@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ai_factory_os.plugins.agents.registry import AgentNotFoundError, AgentRegistry
-from assignment.models import AssignmentStatus
+from assignment.types import AssignmentStatus
 from assignment.store import AssignmentStore
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
@@ -38,11 +38,11 @@ from ai_factory_os.infrastructure.events.store import EventStore
 from ai_factory_os.services.execution.runtime.types import ExecutionStatus
 from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from ai_factory_os.services.work.store import TaskStore
-from workflows.models import WorkflowStatus
+from workflows.types import WorkflowStatus
 from workflows.store import WorkflowStore
 
 from .checkpoint import CheckpointStore
-from .models import Checkpoint, RecoveryResult
+from .types import Checkpoint, RecoveryResult
 from .replay import EventReplay
 
 

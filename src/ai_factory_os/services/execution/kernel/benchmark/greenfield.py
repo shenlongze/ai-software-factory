@@ -8,7 +8,7 @@ GREENFIELD-001: 命令行待办管理工具 (todo.py) — 从零构建。
 
 from __future__ import annotations
 
-from .models import BenchmarkSample, SampleKind
+from .types import BenchmarkSample, SampleKind
 
 #: 1 个 Greenfield 样本 (小项目, 行为契约由 verifier 真实运行验证)
 GREENFIELD_SAMPLES: list[BenchmarkSample] = [

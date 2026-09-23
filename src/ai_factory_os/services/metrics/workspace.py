@@ -35,7 +35,7 @@ from ai_factory_os.services.work.store import TaskStore
 from workflows.store import WorkflowStore
 
 from .collectors import MetricsCollector
-from .models import (
+from .types import (
     AgentUtilizationRow,
     AgentUtilizationSummary,
     FactoryMetrics,

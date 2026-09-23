@@ -17,7 +17,7 @@ Bug 语义 (均已对照 /Users/Shared/work/markpad 源码核实缺陷存在):
 
 from __future__ import annotations
 
-from .models import BenchmarkSample, SampleKind
+from .types import BenchmarkSample, SampleKind
 
 #: 5 个真实 Bug 样本 (自然语言任务 + verifier 验收, 无人工答案)
 BUG_SAMPLES: list[BenchmarkSample] = [

@@ -5397,7 +5397,7 @@ def _print_dashboard(r: dict) -> None:
 
 
 def _print_metrics(r: dict) -> None:
-    from metrics.models import FactoryMetrics, WorkspaceComparison
+    from metrics.types import FactoryMetrics, WorkspaceComparison
     from metrics.reports import format_metrics, format_workspace_comparison
 
     if r.get("workspace"):  # metrics --workspace → 项目对比报告 (Phase 6B, ADR-0017)

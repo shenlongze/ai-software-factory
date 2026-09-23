@@ -5,7 +5,7 @@ WorkflowStore / WorkflowEngine / 内置定义 BUILTIN_WORKFLOWS。
 """
 
 import importlib
-from .models import StepState, StepStatus, Workflow, WorkflowRun, WorkflowStatus, WorkflowStep
+from .types import StepState, StepStatus, Workflow, WorkflowRun, WorkflowStatus, WorkflowStep
 # ★ engine 改为惰性重导出（PEP 562）:
 #   workflows/__init__ → engine → ...services.work.store → 回到 workflows
 #   的导入环: 急切导入时 workflows 尚未绑定 engine 名 → ImportError ✗

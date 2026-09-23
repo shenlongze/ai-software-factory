@@ -19,7 +19,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .models import AgentAssignment, AssignmentStatus
+from .types import AgentAssignment, AssignmentStatus
 
 
 class AssignmentStoreError(Exception):

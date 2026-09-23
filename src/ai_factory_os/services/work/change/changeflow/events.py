@@ -26,7 +26,7 @@ from typing import Any
 
 from ai_factory_os.infrastructure.events.types import Event, EventType
 
-from .models import ChangeEvaluation, ChangeTrigger, RuleResult
+from .types import ChangeEvaluation, ChangeTrigger, RuleResult
 
 
 def record_change_trigger_created(

@@ -25,7 +25,7 @@ from typing import Any
 from cli.context import FactoryContext
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.store import EventStore
-from providers.models import ProviderRequest, ProviderResponse
+from providers.types import ProviderRequest, ProviderResponse
 from providers.selector import Recommendation
 from product.experience import ExperienceStore
 from product.generation import ProductGenerator

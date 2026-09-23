@@ -16,7 +16,7 @@
   参数优先于环境变量。config_schema (definitions.py) 描述 API 模式预留
   (api_key/endpoint), 本阶段只实现 cli -z。
 - Adapter 不写 Event (同 ADR-0006 解耦铁律): 本模块零依赖 events 包 /
-  registry / store — 仅 providers.models 契约。
+  registry / store — 仅 providers.types 契约。
 - stream: CLI 子进程无真流式 — 按非空行切块 yield (每块 content 为增量片段),
   末块附 usage; 失败 yield 单块 (error 非空, 不抛异常)。
 """
@@ -28,7 +28,7 @@ import subprocess
 from typing import Iterator
 
 from providers.provider import ProviderAdapter
-from providers.models import ProviderRequest, ProviderResponse
+from providers.types import ProviderRequest, ProviderResponse
 
 DEFAULT_COMMAND = "hermes"          # 默认 CLI 命令名 (走 PATH 解析)
 DEFAULT_TIMEOUT = 300               # 默认超时 (秒): Hermes 一次 one-shot 调用可达分钟级

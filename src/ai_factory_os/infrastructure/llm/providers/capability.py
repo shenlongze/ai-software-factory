@@ -26,7 +26,7 @@ from typing import Any, Iterable
 
 from pydantic import BaseModel, Field, field_validator
 
-from .models import TaskRequirement, _id_sane, _normalize_list
+from .types import TaskRequirement, _id_sane, _normalize_list
 
 
 class ProviderCapabilityProfile(BaseModel):

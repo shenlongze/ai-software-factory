@@ -53,7 +53,7 @@ from ai_factory_os.plugins.agents.developer import DeveloperAgent, DeveloperErro
 from ai_factory_os.infrastructure.llm.provider import ProviderConfigChecker, ProviderInterface
 from ..sandbox import Sandbox
 from . import verifiers as benchmark_verifiers
-from .models import (
+from .types import (
     BenchmarkReport,
     BenchmarkResult,
     BenchmarkSample,

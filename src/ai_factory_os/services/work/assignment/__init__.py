@@ -16,7 +16,7 @@ from .allocator import (
     NoAvailableAgentError,
 )
 from .matcher import AgentMatcher
-from .models import AgentAssignment, AssignmentStatus
+from .types import AgentAssignment, AssignmentStatus
 from .store import AssignmentStore, AssignmentStoreError, CorruptAssignmentStoreError
 
 __all__ = [

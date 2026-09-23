@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from .models import Workflow, WorkflowStep
+from .types import Workflow, WorkflowStep
 
 
 def _feature_steps() -> list[WorkflowStep]:

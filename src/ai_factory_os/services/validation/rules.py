@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from ai_factory_os.services.work.types import Task, TaskStatus
 
-from .models import ValidationResult, ValidationStatus
+from .types import ValidationResult, ValidationStatus
 
 # 规则 → 人类可读名 (checks 载荷 / 报告展示)
 RULE_NAMES: dict[str, str] = {

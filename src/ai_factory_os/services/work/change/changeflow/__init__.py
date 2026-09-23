@@ -17,7 +17,7 @@ from .events import (
     record_change_workflow_completed,
     record_change_workflow_started,
 )
-from .models import ChangeEvaluation, ChangeTrigger, RuleResult
+from .types import ChangeEvaluation, ChangeTrigger, RuleResult
 from .rules import RuleContext, evaluate_rules, overall_status
 from .triggers import (
     ChangeTriggerExistsError,

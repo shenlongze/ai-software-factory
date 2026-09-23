@@ -18,7 +18,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .models import FactoryMetrics
+from .types import FactoryMetrics
 
 
 class MetricsStoreError(Exception):

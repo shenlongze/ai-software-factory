@@ -8,7 +8,7 @@ tests/benchmark/test_benchmark_samples.py 校验 (不调 LLM)。
 from __future__ import annotations
 
 from . import bugs, features, greenfield
-from .models import BenchmarkSample
+from .types import BenchmarkSample
 
 #: 全样本集 (5 Bug + 3 Feature + 1 Greenfield = 9)
 ALL_SAMPLES: list[BenchmarkSample] = [

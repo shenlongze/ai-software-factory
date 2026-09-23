@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from .models import BenchmarkSample, SampleKind
+from .types import BenchmarkSample, SampleKind
 
 #: 3 个真实 Feature 样本 (中小功能, 自然语言需求 + verifier 验收)
 FEATURE_SAMPLES: list[BenchmarkSample] = [

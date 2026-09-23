@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional, Protocol, runtime_checkable
 
-from .models import RetrievalCandidate, RetrievalRequest, RetrievalSource
+from .types import RetrievalCandidate, RetrievalRequest, RetrievalSource
 
 
 @runtime_checkable

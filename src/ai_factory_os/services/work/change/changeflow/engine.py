@@ -38,7 +38,7 @@ from ai_factory_os.services.execution.runtime.registry import RuntimeRegistry
 from ai_factory_os.services.work.types import Task
 from ai_factory_os.services.work.store import TaskStore
 from workflows.engine import WorkflowEngine
-from workflows.models import StepStatus, WorkflowRun, WorkflowStatus
+from workflows.types import StepStatus, WorkflowRun, WorkflowStatus
 from workflows.store import WorkflowStore
 
 from .events import (
@@ -46,7 +46,7 @@ from .events import (
     record_change_workflow_completed,
     record_change_workflow_started,
 )
-from .models import ChangeEvaluation, ChangeTrigger
+from .types import ChangeEvaluation, ChangeTrigger
 from .rules import RuleContext, evaluate_rules, overall_status
 from .triggers import ChangeTriggerRegistry
 

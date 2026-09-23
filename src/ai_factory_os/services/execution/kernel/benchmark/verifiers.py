@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from .models import BenchmarkSample
+from .types import BenchmarkSample
 
 #: verifier 注册表: verifier_id → fn(sandbox_dir, sample) -> (passed, detail)
 VERIFIERS: dict[str, Callable[[Path, BenchmarkSample], tuple[bool, str]]] = {}

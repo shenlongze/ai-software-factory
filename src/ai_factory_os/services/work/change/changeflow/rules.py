@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from .models import RuleResult
+from .types import RuleResult
 
 # 规则注册表: 顺序即评估顺序 (稳定, Dashboard/CLI 展示依赖)
 RULES = ("validation.l4", "commit.linked", "required.files", "runtime.pref")

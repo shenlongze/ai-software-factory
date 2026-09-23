@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
-from .models import ValidationResult, ValidationStatus
+from .types import ValidationResult, ValidationStatus
 
 # 层级别 → 展示名 (报告格式)。L4 (Phase 6D, ADR-0019) 为 Change Validation 层 —
 # 仅在引擎装配 change_service 且 results 实际含 L4 规则时渲染 (缺省报告 L1-L3 逐字不变)。

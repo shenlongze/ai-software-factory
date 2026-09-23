@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ai_factory_os.infrastructure.events.types import format_timestamp, parse_timestamp
 
-from .models import _id_sane
+from .types import _id_sane
 
 #: 合法聚合周期
 PERIODS: tuple[str, ...] = ("day", "week", "all")

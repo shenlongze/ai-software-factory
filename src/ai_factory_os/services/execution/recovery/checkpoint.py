@@ -21,7 +21,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .models import Checkpoint
+from .types import Checkpoint
 
 
 class CheckpointStoreError(Exception):

@@ -26,7 +26,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from .models import _id_sane
+from .types import _id_sane
 
 #: 成本模式枚举值 (评审调整 2): token / request / time / free
 COST_MODES: tuple[str, ...] = ("token", "request", "time", "free")

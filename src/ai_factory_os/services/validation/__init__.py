@@ -4,7 +4,7 @@
 """
 
 from .engine import ValidationEngine
-from .models import ValidationResult, ValidationStatus
+from .types import ValidationResult, ValidationStatus
 from .reports import ValidationReport
 
 __all__ = ["verify_pytest", "verify_python_syntax", 

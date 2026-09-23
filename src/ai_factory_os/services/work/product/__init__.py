@@ -23,7 +23,7 @@ Core 零修改: 本包纯新增, 删除本包不影响 Factory 其余功能 (Rem
 from __future__ import annotations
 
 from .experience import ExperienceStore, ExperienceStoreError, GenerationExperience
-from .models import (
+from .types import (
     ApprovalDecision,
     ApprovalGate,
     ApprovalRequest,

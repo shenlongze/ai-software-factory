@@ -32,6 +32,8 @@
 | v1.3.18 | 学习自治扩 **workflow 域**（收尾钩子 + 失败安全） | `edf80101` |
 | v1.3.19 | 学习自治扩 **skill / decision 域**（证据必须用 `Evidence` 对象 —— 塞字符串会静默失效 ✗） | `67538852` |
 | v1.3.20 | **留痕**：活清单 `docs/TODO.md` + 追加式日志 `docs/WORKLOG.md` + 网页版 `/status`
+| v1.3.21 | 结构债 **R10** 清掉：10 个 `models.py` → `types.py`（引用三形式全覆盖：相对/短名/全名）。
+过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |
 （生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |
 
 ### 立下的规矩（已落文档 + 挂入口 + 守卫）

@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from ai_factory_os.infrastructure.events.types import format_timestamp
 
-from .models import _id_sane
+from .types import _id_sane
 
 
 class ProviderFeedback(BaseModel):

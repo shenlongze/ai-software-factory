@@ -17,7 +17,7 @@ from .calculators import (
     calculate_workflow_metrics,
 )
 from .collectors import MetricsCollector
-from .models import (
+from .types import (
     AgentMetric,
     ExecutionMetrics,
     FactoryMetrics,

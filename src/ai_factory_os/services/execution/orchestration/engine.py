@@ -40,7 +40,7 @@ from ai_factory_os.services.execution.service import ExecutionService
 from ai_factory_os.services.execution.runtime.types import ExecutionStatus
 from ai_factory_os.services.execution.runtime.registry import RuntimeNotFoundError
 from workflows.engine import WorkflowEngine, WorkflowEngineError
-from workflows.models import StepState, StepStatus, WorkflowRun, WorkflowStatus, WorkflowStep
+from workflows.types import StepState, StepStatus, WorkflowRun, WorkflowStatus, WorkflowStep
 
 from . import events as orch_events
 

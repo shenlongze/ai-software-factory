@@ -31,7 +31,7 @@ from .calculators import (
     calculate_validation_metrics,
     calculate_workflow_metrics,
 )
-from .models import FactoryMetrics
+from .types import FactoryMetrics
 
 
 class MetricsCollector:

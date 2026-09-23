@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from .models import RetrievalCandidate, RetrievalRequest, RetrievalSource
+from .types import RetrievalCandidate, RetrievalRequest, RetrievalSource
 from .retriever import Retriever
 
 

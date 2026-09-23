@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from .models import RetrievalRequest, RetrievalSource
+from .types import RetrievalRequest, RetrievalSource
 from .orchestrator import RetrievalOrchestrator
 from .retriever import ExperienceRetriever as OrchestratedExperienceRetriever
 

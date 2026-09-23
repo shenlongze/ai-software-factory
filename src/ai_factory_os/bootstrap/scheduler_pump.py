@@ -680,7 +680,7 @@ def _write_checkpoint(ports: Ports, rep: PumpReport) -> None:
     """
     try:
         from ai_factory_os.services.execution.recovery.checkpoint import CheckpointStore
-        from ai_factory_os.services.execution.recovery.models import Checkpoint
+        from ai_factory_os.services.execution.recovery.types import Checkpoint
         from ai_factory_os.services.work import decomposition as D
 
         root = Path(getattr(ports.work, "_root", "."))

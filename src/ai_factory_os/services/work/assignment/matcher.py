@@ -21,7 +21,7 @@ from typing import Iterable
 
 from ai_factory_os.plugins.agents.types import Agent, AgentStatus
 from ai_factory_os.plugins.agents.registry import AgentRegistry
-from workflows.models import WorkflowStep
+from workflows.types import WorkflowStep
 
 
 class AgentMatcher:

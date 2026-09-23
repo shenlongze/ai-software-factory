@@ -31,7 +31,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from .models import ProviderDefinition
+from .types import ProviderDefinition
 
 
 class ProviderStoreError(Exception):

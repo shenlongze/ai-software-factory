@@ -38,7 +38,7 @@ from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from ai_factory_os.services.work.types import Task
 from ai_factory_os.services.work.store import TaskStore
 
-from .models import StepState, StepStatus, Workflow, WorkflowRun, WorkflowStatus
+from .types import StepState, StepStatus, Workflow, WorkflowRun, WorkflowStatus
 from .store import WorkflowStore
 
 # 运行实例状态转换表

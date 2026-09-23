@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/experience_ctx.py — Context Experience (Sprint 4 T4.4)。
+"""src/ai_factory_os/services/execution/kernel/experience_ctx.py — Context Experience (Sprint 4 T4.4)。
 
 统一 ContextExperienceRecord (10+ 字段, 序列化可审计) + 本地 JSON Store
 (禁数据库) + Experience Extractor (成功/失败自动提取) + Similar Matching +

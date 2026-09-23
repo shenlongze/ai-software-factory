@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/integrity_lock.py — S20.5 跨进程文件锁。
+"""src/ai_factory_os/infrastructure/locking/integrity_lock.py — S20.5 跨进程文件锁。
 
 release/rollback/governance 的 read-modify-write 竞态保护。
 

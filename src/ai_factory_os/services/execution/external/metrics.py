@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/external_executor/metrics.py — M4 外部执行器监控指标聚合。
+"""src/ai_factory_os/services/execution/external/metrics.py — M4 外部执行器监控指标聚合。
 
 设计依据: 设计文档 §8 (监控指标模型)。
 从 exec/execution_records.json 的 EXS 记录聚合 (executor_id 字段) —

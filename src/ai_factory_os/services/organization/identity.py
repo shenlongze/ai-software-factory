@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/os_core_identity.py — OS Core Boundary: Identity (MU-CORE-02).
+"""src/ai_factory_os/services/organization/identity.py — OS Core Boundary: Identity (MU-CORE-02).
 
 Identity = Human | Agent 的统一 OS Core 主体原语。
 

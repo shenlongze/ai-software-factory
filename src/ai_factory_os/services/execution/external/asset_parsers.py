@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/external_executor/asset_parsers.py — 宿主资产格式解析器 (M2)。
+"""src/ai_factory_os/services/execution/external/asset_parsers.py — 宿主资产格式解析器 (M2)。
 
 设计依据: 设计文档 §4.3 (支持格式与解析器)。新增格式 = 注册一个 parser, 不写产品逻辑。
 - toml: 标准库 tomllib

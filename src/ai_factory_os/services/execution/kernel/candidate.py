@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/candidate.py — Candidate Execution Engine (Sprint 5 T5.2)。
+"""src/ai_factory_os/services/execution/kernel/candidate.py — Candidate Execution Engine (Sprint 5 T5.2)。
 
 多 Run 执行策略的核心数据结构 + 执行编排 (设计依据:
 docs/validation/sprint5-t51-execution-strategy-design.md, T5.1 已冻结):

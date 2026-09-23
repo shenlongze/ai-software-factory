@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/release_service.py — S18 Production Release Pipeline.
+"""src/ai_factory_os/services/delivery/release_service.py — S18 Production Release Pipeline.
 
 正式 Release Contract + State Machine + Governance 接线 + 真实 Release Evidence。
 

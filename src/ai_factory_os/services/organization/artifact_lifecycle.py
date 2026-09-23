@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/artifact_lifecycle.py — S1 Artifact Lifecycle (Production Core).
+"""src/ai_factory_os/services/organization/artifact_lifecycle.py — S1 Artifact Lifecycle (Production Core).
 
 AI Factory 2.0 第一个真正的 Production Primitive: 8 态生命周期状态机 + 持久化
 Store + 12 条 Invariants + 真实 Apply Integration (复用 delivery.apply_patch)。

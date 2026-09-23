@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/conversation_app.py — Conversation Application Layer (S49/Phase 5)。
+"""src/ai_factory_os/services/conversation/app.py — Conversation Application Layer (S49/Phase 5)。
 
 CLI / API / WebUI 的**唯一**业务入口 (S49 §十三/§十四):
 ```

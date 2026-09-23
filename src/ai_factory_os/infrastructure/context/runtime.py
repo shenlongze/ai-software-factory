@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/context_runtime.py — S35 Context & Memory Runtime Foundation.
+"""src/ai_factory_os/infrastructure/context/runtime.py — S35 Context & Memory Runtime Foundation.
 
 Context Control Plane:
 - ContextRequest (node/scope/purpose/budget)

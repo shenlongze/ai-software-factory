@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/external_executor/registry.py — 外部执行器适配器注册表 (M1)。
+"""src/ai_factory_os/services/execution/external/registry.py — 外部执行器适配器注册表 (M1)。
 
 设计依据: 设计文档 §3/§5. 加载 <data_dir>/external-ais/*.yaml + 内置模板
 (codex/claude/hermes — 预装, 与用户新增同构)。引擎不依赖产品名, 只依赖

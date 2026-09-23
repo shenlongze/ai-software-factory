@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/tool.py — S10-018 Task 001 Tool Runtime Foundation。
+"""src/ai_factory_os/plugins/tools/tool.py — S10-018 Task 001 Tool Runtime Foundation。
 
 设计依据 (S10-018-task001 用户约束 + S10-017 Execution Loop 侦察):
 ```

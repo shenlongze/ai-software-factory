@@ -1,4 +1,4 @@
-"""src/legacy/factory-org/org/registry.py — EmployeeRegistry (候选人检索, 不自动分配)。
+"""src/ai_factory_os/services/organization/registry.py — EmployeeRegistry (候选人检索, 不自动分配)。
 
 设计依据 (agent-employee-model.md §4 AI Employee Lifecycle):
 ```

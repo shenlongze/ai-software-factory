@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/audit/audit_chain.py — AuditDecisionChain 决策链重建 (S10-069 G5)。
+"""src/ai_factory_os/services/governance/audit/audit_chain.py — AuditDecisionChain 决策链重建 (S10-069 G5)。
 
 get_chain(trace_id) -> dict — 从 trace_id + correlation_id + parent_event_id
 重建完整决策链: {root_event, children, related_events, final_outcome, chain}。

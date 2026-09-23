@@ -1,6 +1,6 @@
 """services.execution.production_run — ProductionRun 的**只读**访问（收缩后）。
 
-★ 2026-09-19 收缩（P0 第二项）—— 原文件 586 行是 `src/legacy/factory-console/production_run.py`
+★ 2026-09-19 收缩（P0 第二项）—— 原文件 586 行是 `src/ai_factory_os/services/execution/production_run.py`
   整块搬过来的：Workflow 定义 + ProductionRun 状态机 + 串行 DAG + Artifact binding +
   executor factory + 执行器。逐符号核实（模块名 import / 导出符号 / 字符串引用 + 排除同名异物）后：
 

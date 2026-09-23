@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/mcp.py — S10-020 Task 001 MCP Adapter Foundation。
+"""src/ai_factory_os/plugins/mcp/client.py — S10-020 Task 001 MCP Adapter Foundation。
 
 设计依据 (S10-020-task001 用户约束 + S10-018 Tool Runtime + S10-019 Skill 侦察):
 ```

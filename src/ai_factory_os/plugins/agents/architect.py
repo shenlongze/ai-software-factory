@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/architect.py — Architect Agent 执行 (Sprint 8 S8-003)。
+"""src/ai_factory_os/plugins/agents/architect.py — Architect Agent 执行 (Sprint 8 S8-003)。
 
 设计依据 (sprint8-architecture.md §2 ③ Architect / §3 Artifact 流转 +
 S8-002 report §S8-003 接入说明):

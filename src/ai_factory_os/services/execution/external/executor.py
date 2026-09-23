@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/external_executor/executor.py — 通用执行器 (M1)。
+"""src/ai_factory_os/services/execution/external/executor.py — 通用执行器 (M1)。
 
 设计依据: 设计文档 §5 (GenericExecutor: discover→probe→invoke→record)。
 只依赖适配器 Schema, 不依赖产品名。

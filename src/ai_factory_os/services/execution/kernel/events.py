@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/events.py — org.execution.* 事件辅助 (经 factory-core EventLogger)。
+"""src/ai_factory_os/services/execution/kernel/events.py — org.execution.* 事件辅助 (经 factory-core EventLogger)。
 
 设计依据:
 - docs/architecture/phase-a-execution-mvp-design.md §11: org.execution.* 事件

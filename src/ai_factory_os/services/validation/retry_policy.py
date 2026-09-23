@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/retry_policy.py — S20.5 Verification Retry Contract。
+"""src/ai_factory_os/services/validation/retry_policy.py — S20.5 Verification Retry Contract。
 
 单一 policy 来源:
 - MAX_VERIFICATION_ATTEMPTS: 默认 3 (bounded, 不硬编码在多个地方)

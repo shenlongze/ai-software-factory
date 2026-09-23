@@ -1,4 +1,4 @@
-"""src/legacy/factory-core/product/generation.py — 生成编排框架 (GeneratedArtifactContext + ProductGenerator)。
+"""src/ai_factory_os/services/work/product/generation.py — 生成编排框架 (GeneratedArtifactContext + ProductGenerator)。
 
 设计依据:
 - phase9b-status.md 任务范围 §1 + phase9-plan.md §8 (Provider/Agent 调度):

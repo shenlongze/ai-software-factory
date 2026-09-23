@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/benchmark/features.py — Benchmark Feature 样本集 (3 个真实需求)。
+"""src/ai_factory_os/services/execution/kernel/benchmark/features.py — Benchmark Feature 样本集 (3 个真实需求)。
 
 来源: markpad lib/ 只读分析 — 3 个中小功能需求, 均与现状对照核实为未实现:
 - FEAT-MKP-001: 最近文件列表只显示文件名, 无修改时间。

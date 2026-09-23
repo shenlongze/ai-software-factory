@@ -1,4 +1,4 @@
-"""src/legacy/factory-core/intelligence/decision.py — DecisionIntelligence 引擎 (Phase 10A-2, ADR-0031)。
+"""src/ai_factory_os/services/learning/decision.py — DecisionIntelligence 引擎 (Phase 10A-2, ADR-0031)。
 
 决策链 (phase10a2-status.md §范围 + phase10a-plan.md §Q1/Q2/Q4):
 

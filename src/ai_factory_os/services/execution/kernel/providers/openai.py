@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/providers/openai.py — OpenAI 真实 Provider Adapter (httpx)。
+"""src/ai_factory_os/services/execution/kernel/providers/openai.py — OpenAI 真实 Provider Adapter (httpx)。
 
 设计依据 (docs/architecture/phase-a-execution-mvp-design.md §3 + Provider 可替换铁律):
 - 与 AnthropicProvider 同 ProviderInterface (provider_id + generate(request)),

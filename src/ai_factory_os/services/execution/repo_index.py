@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/repo_index.py — Repository Index MVP (文件树/语言/symbol)。
+"""src/ai_factory_os/services/execution/repo_index.py — Repository Index MVP (文件树/语言/symbol)。
 
 设计依据 (docs/architecture/developer-agent-reliability-model.md §3):
 ```

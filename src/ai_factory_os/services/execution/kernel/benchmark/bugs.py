@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/benchmark/bugs.py — Benchmark Bug 样本集 (5 个真实 Bug)。
+"""src/ai_factory_os/services/execution/kernel/benchmark/bugs.py — Benchmark Bug 样本集 (5 个真实 Bug)。
 
 来源: markpad lib/ 只读分析 (不修改生产目录; 修复在沙箱副本内完成)。
 每个样本:

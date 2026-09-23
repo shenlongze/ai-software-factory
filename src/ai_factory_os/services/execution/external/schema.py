@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/external_executor/schema.py — 外部执行器适配器 Schema (M1)。
+"""src/ai_factory_os/services/execution/external/schema.py — 外部执行器适配器 Schema (M1)。
 
 设计依据: docs/sprint10/外部执行器通用适配层-设计.md §4 (适配器 Schema)。
 一个外部 AI CLI = 一个声明式适配器 (yaml), 通用引擎只依赖本 Schema, 不依赖产品名。

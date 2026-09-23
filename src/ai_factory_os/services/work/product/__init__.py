@@ -1,4 +1,4 @@
-"""src/legacy/factory-core/product — Product Intelligence Layer (Phase 9A/9B, ADR-0026/0027)。
+"""src/ai_factory_os/services/work/product/__init__.py（原老区）factory-core/product — Product Intelligence Layer (Phase 9A/9B, ADR-0026/0027)。
 
 独立 Extension: 独立数据空间 <root>/product/ (ideas.json/artifacts.json/
 approvals.json/workflows.json/experience.json), 只读复用 events/EventLogger

@@ -1,4 +1,4 @@
-"""src/legacy/factory-core/product/store.py — ProductStore: 独立数据空间 JSON 持久化 (原子写)。
+"""src/ai_factory_os/services/work/product/store.py — ProductStore: 独立数据空间 JSON 持久化 (原子写)。
 
 设计依据:
 - phase9a-status.md 冻结约束 (Extension 独立): `.factory/product/` 独立数据空间,

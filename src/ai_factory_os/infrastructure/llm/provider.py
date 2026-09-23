@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/provider.py — Provider 接口 + 注册表 (Agent 不知道 Provider 细节)。
+"""src/ai_factory_os/infrastructure/llm/provider.py — Provider 接口 + 注册表 (Agent 不知道 Provider 细节)。
 
 设计依据 (docs/architecture/phase-a-execution-mvp-design.md §3):
 ```python

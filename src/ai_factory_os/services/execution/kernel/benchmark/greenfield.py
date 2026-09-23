@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/benchmark/greenfield.py — Benchmark Greenfield 样本 (1 个小项目)。
+"""src/ai_factory_os/services/execution/kernel/benchmark/greenfield.py — Benchmark Greenfield 样本 (1 个小项目)。
 
 GREENFIELD-001: 命令行待办管理工具 (todo.py) — 从零构建。
 - 空沙箱 (无项目文件): Agent 产出整个项目 (todo.py + 行为契约)。

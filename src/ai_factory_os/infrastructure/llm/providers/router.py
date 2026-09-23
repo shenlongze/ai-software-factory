@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/llm_router.py — LLM Router v1.1 (S10-024): 五层决策链。
+"""src/ai_factory_os/infrastructure/llm/providers/router.py — LLM Router v1.1 (S10-024): 五层决策链。
 
 统一 LLM 决策入口。输入: task / task_type / agent / skill / project / user
 constraints; 输出: ModelChoice {model_id, provider_id, score, reasons, source}

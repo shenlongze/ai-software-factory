@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/audit/audit_explain.py — AuditExplain 结构化"为什么" (S10-069 G3/G7)。
+"""src/ai_factory_os/services/governance/audit/audit_explain.py — AuditExplain 结构化"为什么" (S10-069 G3/G7)。
 
 why_created/why_agent/why_stopped/why_debug/why_cost/who_approved →
 {summary, evidence, decision, related_events, cost, policy, approval, outcome}。

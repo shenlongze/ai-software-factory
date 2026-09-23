@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/agent_policy.py — Agent/Skill LLM 路由策略数据访问层 (S10-024 v1.1)。
+"""src/ai_factory_os/infrastructure/llm/providers/agent_policy.py — Agent/Skill LLM 路由策略数据访问层 (S10-024 v1.1)。
 
 职责: 读取/解析 agent.yaml 与 skill.yaml 的 llm.routing 段 → pydantic 模型。
 只做"配置读取", 不做决策 (决策在 llm_router.py — 职责分离)。

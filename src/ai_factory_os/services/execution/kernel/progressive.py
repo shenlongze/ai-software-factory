@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/progressive.py — Progressive Loading Engine (Sprint 4 T4.2)。
+"""src/ai_factory_os/services/execution/kernel/progressive.py — Progressive Loading Engine (Sprint 4 T4.2)。
 
 设计依据 (docs/validation/sprint4-t42-progressive-loading-design.md, 已批准):
 ```text

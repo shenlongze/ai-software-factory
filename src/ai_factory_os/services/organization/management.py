@@ -1,4 +1,4 @@
-"""src/legacy/factory-org/org/management.py — Management Domain Model (S10-010 Task 001)。
+"""src/ai_factory_os/services/organization/management.py — Management Domain Model (S10-010 Task 001)。
 
 设计依据 (唯一):
 - docs/design/project-management-system.md (Agile Scrum 管理模型 + §十 数据存储)

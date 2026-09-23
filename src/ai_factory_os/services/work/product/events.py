@@ -1,4 +1,4 @@
-"""src/legacy/factory-core/product/events.py — product.*/idea.*/approval.* 事件辅助 (经 EventLogger)。
+"""src/ai_factory_os/services/work/product/events.py — product.*/idea.*/approval.* 事件辅助 (经 EventLogger)。
 
 设计依据:
 - phase9-plan.md §3 (Event Namespace): idea.created/updated / approval.required/

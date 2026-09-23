@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/release.py — Release Agent 执行 (Sprint 8 S8-004)。
+"""src/ai_factory_os/services/execution/kernel/release.py — Release Agent 执行 (Sprint 8 S8-004)。
 
 设计依据 (sprint8-architecture.md §2 ⑥ Release / §3 Artifact 流转 +
 S8-003 report §S8-004 接入说明):

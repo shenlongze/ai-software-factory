@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/experience.py — Experience 记录 (复用 10A-4 ExperienceStore, 零新模型)。
+"""src/ai_factory_os/services/execution/kernel/experience.py — Experience 记录 (复用 10A-4 ExperienceStore, 零新模型)。
 
 设计依据 (docs/architecture/phase-a-execution-mvp-design.md §8):
 ```

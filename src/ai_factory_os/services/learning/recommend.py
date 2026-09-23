@@ -1,4 +1,4 @@
-"""src/legacy/factory-core/intelligence/recommend.py — RecommendationEngine 引擎 (Phase 10A-3, ADR-0032)。
+"""src/ai_factory_os/services/learning/recommend.py — RecommendationEngine 引擎 (Phase 10A-3, ADR-0032)。
 
 推荐链 (phase10a3-status.md §范围 + phase10a-plan.md §Q3):
 

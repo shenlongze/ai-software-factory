@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/external_skills.py — U-4 (v1.1.189): 外部 skill 真实加载执行。
+"""src/ai_factory_os/plugins/skills/loader.py — U-4 (v1.1.189): 外部 skill 真实加载执行。
 
 Founder 2026-08-27: 外部 skill 在 agent 执行时真实注入指令 (不是 mock)。
 

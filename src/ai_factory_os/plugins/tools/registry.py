@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/tools/registry.py — 统一工具注册表 (U-1, v1.1.168)。
+"""src/ai_factory_os/plugins/tools/registry.py — 统一工具注册表 (U-1, v1.1.168)。
 
 Founder 2026-08-26: 工具要和 CLI/WebUI 连接、正确调用; 现在 39 工具分散 5 套系统。
 本模块 = 唯一工具清单 (事实源): 设计/开发/测试/部署/运维 五阶段 × 39 内置工具。

@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/roles.py — 多角色模型 (统一 Employee 抽象, 不复制 Agent)。
+"""src/ai_factory_os/plugins/agents/roles.py — 多角色模型 (统一 Employee 抽象, 不复制 Agent)。
 
 Sprint 6: Employee 可绑定多角色 (org Employee.role_ids 已有), 每个角色 =
 capabilities + prompt 模板 (角色职责/输出格式) + workflow 阶段映射。执行时

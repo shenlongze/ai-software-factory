@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/agent_runtime.py — AgentRuntime (执行权归属: 调 Provider/沙箱/产补丁)。
+"""src/ai_factory_os/services/execution/kernel/agent_runtime.py — AgentRuntime (执行权归属: 调 Provider/沙箱/产补丁)。
 
 设计依据 (docs/architecture/phase-a-execution-mvp-design.md §2):
 ```

@@ -1,4 +1,4 @@
-"""src/legacy/factory-org/org/events.py — org.* 事件辅助 (经 factory-core EventLogger)。
+"""src/ai_factory_os/services/organization/events.py — org.* 事件辅助 (经 factory-core EventLogger)。
 
 设计依据:
 - phase16-organization-model-review.md §6: org.company.created /

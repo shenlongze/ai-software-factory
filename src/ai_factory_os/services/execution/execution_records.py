@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/session/audit.py — 执行审计记录 (S10-049 P5) + Production Trace (S10-055 Task 007)。
+"""src/ai_factory_os/services/execution/execution_records.py — 执行审计记录 (S10-049 P5) + Production Trace (S10-055 Task 007)。
 
 Agent 执行审计 (最小): 每次 agent.execute_task 执行结果 append 到
 ~/.factory/exec/execution_records.json (workspace 缺省即 data_dir)。

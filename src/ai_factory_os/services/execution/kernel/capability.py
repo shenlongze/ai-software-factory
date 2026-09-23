@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/capability.py — Model Capability Registry (Sprint 5 T5.4)。
+"""src/ai_factory_os/services/execution/kernel/capability.py — Model Capability Registry (Sprint 5 T5.4)。
 
 模型能力声明式注册表 + 能力快照 + 模型经验统计 (设计依据:
 docs/validation/sprint5-t51-execution-strategy-design.md §5, T5.1 已冻结):

@@ -1,4 +1,4 @@
-"""src/legacy/factory-core/product/models.py — Product Intelligence 领域模型 (Pydantic v2)。
+"""src/ai_factory_os/services/work/product/types.py — Product Intelligence 领域模型 (Pydantic v2)。
 
 设计依据:
 - phase9-plan.md §2 (数据模型) + phase9a-status.md 5 点架构约束:

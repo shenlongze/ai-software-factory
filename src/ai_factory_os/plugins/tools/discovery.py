@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/session/tools.py — 工具发现与注册 (M1 内核切片 · 增强层)。
+"""src/ai_factory_os/plugins/tools/discovery.py — 工具发现与注册 (M1 内核切片 · 增强层)。
 
 发现本机 AI CLI (codex/hermes/openclaw/claude) + MCP server 配置
 (~/.codex/config.toml / ~/.claude.json / 项目 .mcp.json), 供 `factory tools list/doctor`。

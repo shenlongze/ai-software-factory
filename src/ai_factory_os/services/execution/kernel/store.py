@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/store.py — 执行独立数据空间 (原子写, 损坏响亮失败)。
+"""src/ai_factory_os/services/execution/kernel/store.py — 执行独立数据空间 (原子写, 损坏响亮失败)。
 
 设计依据 (同 factory-org store / intelligence store 模式):
 ```

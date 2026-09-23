@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/llm_control.py — LLM Control Plane v1 (S10-021 Phase 1)。
+"""src/ai_factory_os/infrastructure/llm/providers/control_plane.py — LLM Control Plane v1 (S10-021 Phase 1)。
 
 Provider 配置管理面: providers.json 持久化 (~/.factory/providers.json) +
 Credential api_key_ref 引用管理 + 装配决策 (workflow_runner 接线契约)。

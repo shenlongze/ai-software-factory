@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/skill.py — S10-019 Task 001 Skill System Foundation。
+"""src/ai_factory_os/plugins/skills/skill.py — S10-019 Task 001 Skill System Foundation。
 
 设计依据 (S10-019-task001 用户约束 + S10-018 Tool Runtime 侦察):
 ```

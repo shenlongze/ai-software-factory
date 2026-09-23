@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/models.py — 执行领域模型 (Pydantic v2)。
+"""src/ai_factory_os/services/execution/types.py — 执行领域模型 (Pydantic v2)。
 
 设计依据 (docs/architecture/phase-a-execution-mvp-design.md §2/§7):
 ```

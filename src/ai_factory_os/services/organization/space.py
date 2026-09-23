@@ -1,4 +1,4 @@
-"""src/legacy/factory-org/org/space.py — Project Space 目录 + Workspace Index (S10-009 Task 003)。
+"""src/ai_factory_os/services/organization/space.py — Project Space 目录 + Workspace Index (S10-009 Task 003)。
 
 设计依据 (project-lifecycle.md §四 Project Space 三类目录 + §八 Migration 方案 A +
 S10-009-plan.md Task 3):

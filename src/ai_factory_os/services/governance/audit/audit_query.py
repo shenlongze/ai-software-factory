@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/audit/audit_query.py — AuditQuery 筛选引擎 (S10-069 G6)。
+"""src/ai_factory_os/services/governance/audit/audit_query.py — AuditQuery 筛选引擎 (S10-069 G6)。
 
 10 类筛选 (设计 §4): by_project/by_task/by_agent/by_trace/by_event_type/
 by_actor/by_decision/by_status/by_risk/by_time → 筛选 + 排序 + 分页 + Top-K。

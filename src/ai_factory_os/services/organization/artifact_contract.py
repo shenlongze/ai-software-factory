@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/artifact_contract.py — 产出物契约（平台级, C-1）。
+"""src/ai_factory_os/services/organization/artifact_contract.py — 产出物契约（平台级, C-1）。
 
 AI Factory OS 对**全部项目**的统一产出物标准: Manifest 权威清单 + 版本历史 + 追溯。
 - MANIFEST_FILE: projects/<id>/artifacts.manifest.json — 权威清单

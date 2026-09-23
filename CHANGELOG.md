@@ -1,5 +1,34 @@
 # Changelog
 
+## [v1.3.29] — 2026-09-23
+
+**老区彻底清完**（Founder：「老区都删除」· 第二轮）。
+
+### 删了什么
+- **服务层 6 个老区函数**（`services/organization/cli.py`）：
+  `cmd_company_show` · `cmd_employee_hire` · `cmd_employee_list` · `cmd_authority_check` ·
+  `cmd_knowledge_add` · `cmd_knowledge_list`（连同 `_CMD_DISPATCH` 里的条目）
+- **老区独立入口**（同一文件里的死脚手架）：`build_parser`（211 行）· `_CMD_DISPATCH` + `_dispatch` ·
+  `main` + `if __name__`（`factory-org` 那个 console script 的入口；pyproject 里已无该 script ✓ 外部零调用 ✓）
+  ⇒ 该文件 1177 → **899 行**
+  · **保留** `_print_result`（`apps/cli` 的 `create` 打印用它 ✓）与所有 `cmd_*` 实现 ✓
+- **145 处 `src/legacy/…` 出处注释改准** ⇒ 换成**本文件的真实路径**（141 处自动 + 4 处手工）
+  剩下 5 处是**合理的**：`infrastructure/legacy_paths.py`（自述为何存在）· 我在 `main.py` 的删老区注释 ·
+  `scripts/check_imports.py`（历史说明）✓
+
+### 过程如实记
+- 这一轮我**先列清了"模块内部还有谁引用"**再动 ✗（上一轮就是漏了这步才破坏 dispatch 的 ✓）
+  ⇒ 一次成功, 每步都过 pytest ✓
+- 判"死码"的判据（SSoT）：**看是否在执行** ✓ —— `main`/`build_parser` 外部零调用、pyproject 无 script
+  ⇒ 断定为死 ✓；`_print_result` 有真实调用 ⇒ 保留 ✓
+
+### 老区现状（结论）
+- 老区**目录**：早已不存在 ✓
+- 老区**命令面**：CLI 层已删 ✓（v1.3.28）+ 服务层实现已删 ✓（本条）
+- 老区**出处残留**：已改准 ✓
+- ⇒ **老区清零** ✓；仍带 "legacy" 字样的 `legacy_paths.py` **是活代码**（`REPO_ROOT` 唯一点, 被
+  `compat_aliases` 与 `apps/cli` 使用 ✓）⇒ 不动 ✓
+
 ## [v1.3.28] — 2026-09-23
 
 **删老区命令面**（Founder：「老区都删除」）。

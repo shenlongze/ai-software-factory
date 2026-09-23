@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/production_evaluation.py — S13 Production Evaluation.
+"""src/ai_factory_os/services/execution/production_evaluation.py — S13 Production Evaluation.
 
 基于真实 Production Evidence 的确定性质量评价 (非 LLM 打分)。
 

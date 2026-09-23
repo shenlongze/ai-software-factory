@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/budget.py — Context Budget Model (Sprint 4 T4.3)。
+"""src/ai_factory_os/services/execution/kernel/budget.py — Context Budget Model (Sprint 4 T4.3)。
 
 设计依据 (docs/validation/sprint4-t43-context-budget-design.md, 已批准 — 直接实现):
 ```text

@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/verification.py — S5 真实 Verification 执行器。
+"""src/ai_factory_os/services/validation/verification.py — S5 真实 Verification 执行器。
 
 真实验证器 (pytest/语法), 非 LLM 自评:
 - verify_python_syntax: ast.parse 语法检查

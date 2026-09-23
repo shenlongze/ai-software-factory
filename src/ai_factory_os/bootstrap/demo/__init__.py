@@ -1,4 +1,4 @@
-"""src/legacy/factory-core/demo — Phase 13A Demo Productization (产品化演示)。
+"""src/ai_factory_os/bootstrap/demo/__init__.py（原老区）factory-core/demo — Phase 13A Demo Productization (产品化演示)。
 
 `factory demo markpad` 演示编排: 从 examples/markpad-demo/ 读 idea/requirements
 → 临时工厂根 (tempfile) → 注入 Mock Provider (Phase 12B 模式, 只生成内容)

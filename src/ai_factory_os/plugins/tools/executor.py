@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/tools/executor.py — 统一工具执行链 (U-2, v1.1.169)。
+"""src/ai_factory_os/plugins/tools/executor.py — 统一工具执行链 (U-2, v1.1.169)。
 
 Founder 2026-08-26: 工具要和 CLI/WebUI 连接正确调用 — 统一执行链全覆盖。
 

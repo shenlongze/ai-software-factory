@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/uxui.py — UX/UI Designer Agent 执行 (Sprint 8 S8-002)。
+"""src/ai_factory_os/plugins/agents/uxui.py — UX/UI Designer Agent 执行 (Sprint 8 S8-002)。
 
 设计依据 (sprint8-architecture.md §2 ② UX/UI Designer / §3 Artifact 流转 +
 S8-001 report §S8-002 接入说明):

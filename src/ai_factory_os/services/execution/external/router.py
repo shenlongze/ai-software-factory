@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/external_executor/router.py — M5 路由层 (设计文档 §9)。
+"""src/ai_factory_os/services/execution/external/router.py — M5 路由层 (设计文档 §9)。
 
 Founder 2026-08-27: "专业的人做专业的事, 成本最优, 效果最佳" → 路由决策:
 ① 任务分类: 任务文本 → 工作类型 (write-code/review/test/product/security/ux/docs/arch…)

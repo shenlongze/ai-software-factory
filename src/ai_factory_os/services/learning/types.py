@@ -1,4 +1,4 @@
-"""src/legacy/factory-core/intelligence/models.py — Intelligence Layer 领域模型 (Pydantic v2)。
+"""src/ai_factory_os/services/learning/types.py — Intelligence Layer 领域模型 (Pydantic v2)。
 
 设计依据:
 - phase10a1-status.md §范围 + phase10a-plan.md §2 (数据模型):

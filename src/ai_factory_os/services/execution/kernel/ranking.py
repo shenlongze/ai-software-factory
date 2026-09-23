@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/ranking.py — Context Ranking Engine (Sprint 4 T4.1)。
+"""src/ai_factory_os/services/execution/kernel/ranking.py — Context Ranking Engine (Sprint 4 T4.1)。
 
 设计依据 (docs/validation/sprint4-t41-ranking-design.md, 已批准):
 ```text

@@ -1,4 +1,4 @@
-"""src/legacy/factory-exec/exec/tester.py — Tester Agent 执行 (Sprint 7 S7-004)。
+"""src/ai_factory_os/plugins/agents/tester.py — Tester Agent 执行 (Sprint 7 S7-004)。
 
 设计依据 (sprint7-architecture.md §2 Tester Agent / §4 Tester 优先级):
 ```

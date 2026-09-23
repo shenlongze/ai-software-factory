@@ -1,4 +1,4 @@
-"""src/legacy/factory-core/intelligence/evaluate.py — TaskEvaluator 任务评估器 (Phase 10A-4, ADR-0033)。
+"""src/ai_factory_os/services/learning/evaluate.py — TaskEvaluator 任务评估器 (Phase 10A-4, ADR-0033)。
 
 评估链 (phase10a4-status.md §范围):
 

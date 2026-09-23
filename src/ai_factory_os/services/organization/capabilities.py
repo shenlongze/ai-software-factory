@@ -1,4 +1,4 @@
-"""src/legacy/factory-org/org/capabilities.py — Capability Domain Model (S10-012 Task 001)。
+"""src/ai_factory_os/services/organization/capabilities.py — Capability Domain Model (S10-012 Task 001)。
 
 设计依据 (唯一):
 - docs/sprint10/S10-012-architecture-design.md §二 (六实体字段) + §四 (v1.1:

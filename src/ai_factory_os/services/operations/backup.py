@@ -1,4 +1,4 @@
-"""src/legacy/factory-console/backup.py — 数据保护 (X-1, D-1)。
+"""src/ai_factory_os/services/operations/backup.py — 数据保护 (X-1, D-1)。
 
 Founder 2026-08-26: 数据资产零保护 (git 未推送 + ~/.factory 无备份) — 最致命。
 功能:

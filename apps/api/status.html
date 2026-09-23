@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Factory OS · 状态（v1.3.20）</title>
+<style>
+  :root{--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--ink2:#6e6e73;--line:#d2d2d7;
+        --brand:#0071e3;--ok:#34c759;--warn:#ff9f0a;--bad:#ff3b30;--r:18px}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC",Arial,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:28px 20px 60px}
+  h1{font-size:28px;margin:0 0 4px} h2{font-size:20px;margin:32px 0 10px}
+  h3{font-size:17px;margin:22px 0 8px} h4{font-size:15px;margin:16px 0 6px;color:var(--ink2)}
+  .sub{color:var(--ink2);margin:0 0 18px}
+  .cards{display:flex;flex-wrap:wrap;gap:12px;margin:14px 0 4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+        padding:14px 18px;min-width:190px;box-shadow:0 2px 14px rgba(0,0,0,.04)}
+  .card b{display:block;font-size:13px;color:var(--ink2);font-weight:500;margin-bottom:4px}
+  .card span{font-size:15px}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);
+        border-radius:var(--r);overflow:hidden;margin:10px 0 4px;font-size:14px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#fafafa;font-weight:600} tr:last-child td{border-bottom:0}
+  blockquote{margin:8px 0;padding:8px 14px;border-left:3px solid var(--brand);
+             background:#fff;border-radius:8px;color:var(--ink2)}
+  code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+  pre{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;overflow:auto}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  footer{margin-top:34px;color:var(--ink2);font-size:13px}
+</style>
+</head>
+<body><div class="wrap">
+  <h1>AI Factory OS · 状态</h1>
+  <p class="sub">v1.3.20 · 生成于 2026-09-23 11:50 ·
+     数据来自 <code>docs/TODO.md</code> + <code>docs/WORKLOG.md</code> + 实时读数 ⇒ 不可能与文档漂移 ✓</p>
+
+  <div class="cards">
+    <div class="card"><b>守卫</b><span>63/63 通过</span></div><div class="card"><b>pytest</b><span>74 passed, 7 warnings in 13.66s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 9/15 条规则通过（有红）· 跨层/跨域 import 边 214 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
+  </div>
+
+  <h2>最近提交</h2>
+  <pre>67538852 feat(learning): 学习自治再扩两域（skill / decision）→ v1.3.19
+edf80101 feat(learning): 学习自治扩展到 workflow 域（Founder 点单第 6 件）→ v1.3.18
+c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）→ v1.3.17
+2a821e65 docs(install): 解耦安装 —— 独立 venv + wheel, 仓库删了也能跑（Founder: pipx 解耦）→ v1.3.16
+2c625f1e fix(cli): create 的手感（静默成功 + 英文缺参）+ dashboard 模型告警 → v1.3.15
+e2563a7c docs(arch): 架构/分类铁律存量红 —— 修 R20/R23 + 盘点报告（Founder: 继续）→ v1.3.14
+64b0e89f fix(delivery): 回写防护 —— 目标脏就拒绝自动套用（A 刀小步）→ v1.3.13
+3beb26e5 feat(work): 仓库级跨进程运行锁 + 输入区上下横线（回答 Founder 两问）→ v1.3.12
+0a3f416c feat(cli): 真流式（Founder 选 A′）→ v1.3.11
+774bd2e5 feat(release): 干净环境真装真跑（抓到并修掉 index.html 没打进包）→ v1.3.10
+58368904 feat(cli): 发布交付链 —— 一条命令起 API + 最小界面（Founder 点单）→ v1.3.9
+4d548acb fix(cli): dashboard 与 status 口径归一（Founder 点单）→ v1.3.8
+fd706682 feat(cli): 会话归属项目（Founder 点单）→ v1.3.7
+8f6b3fbc feat(cli): 七域可下钻（Founder: &quot;kanban 的活动域&quot; + &quot;都要&quot;）→ v1.3.6
+16e466a1 fix(cli): 看板表头挂上项目中文说明（v1.3.4 那条 Note 已修）→ v1.3.5</pre>
+
+  <h2>活清单（TODO.md）</h2>
+  <h1>AI Factory OS · TODO（活清单）</h1>
+<blockquote>这份清单是**活的**：做完一条就更新状态、写上版本号和提交号（可核对 ✓）。</blockquote>
+<blockquote>每次改动都同时进 `docs/WORKLOG.md`（追加式, 不改历史 ⇒ 留痕 ✓）。</blockquote>
+<blockquote>网页版：`factory serve` 起来后看 `/status`（由 `scripts/build_status.py` 从这三个来源生成 ✓）。</blockquote>
+<p>最后更新：2026-09-22 · 当前版本 `v1.3.20`</p>
+<p>---</p>
+<h2>1. 已完成（带痕迹）</h2>
+<table>
+<tr><th>#</th><th>事项</th><th>版本</th><th>提交</th><th>证据</th></tr>
+<tr><td>D1</td><td>看板改成真看板（横排四列 · 中文对齐 · 主题色）</td><td>v1.3.3</td><td>`18316e6a`</td><td>`factory kanban` 实测</td></tr>
+<tr><td>D2</td><td>看板按项目分屏 + 每列条数可调（`--limit`/`--all`/`--merged`）</td><td>v1.3.4</td><td>`10e21f14`</td><td>`--limit 2` vs `--all` 短长对比</td></tr>
+<tr><td>D3</td><td>看板表头挂项目中文说明（源 = 会话需求原话）</td><td>v1.3.5</td><td>`16e466a1`</td><td>`kanban` 表头实拍</td></tr>
+<tr><td>D4</td><td>七域可下钻（`console activity/projects/agents/decisions/cost/experience`）</td><td>v1.3.6</td><td>`8f6b3fbc`</td><td>六域都能跑·活动域有真列</td></tr>
+<tr><td>D5</td><td>会话归属项目（`/project &lt;名字｜id｜片段&gt;` · 进提示词 · 可清空）</td><td>v1.3.7</td><td>`fd706682`</td><td>假 provider 抓提示词 ✓</td></tr>
+<tr><td>D6</td><td>dashboard 与 status 口径归一（projects/tasks）</td><td>v1.3.8</td><td>`4d548acb`</td><td>项目 3 · 任务 1000 · 完成 9 == status</td></tr>
+<tr><td>D7</td><td>发布交付链：`factory serve` 一条命令起 API + 最小界面</td><td>v1.3.9</td><td>`58368904`</td><td>`/` 200 · `/api/trees` 200</td></tr>
+<tr><td>D8</td><td>干净环境真装真跑（抓到并修掉 `index.html` 没进 wheel）</td><td>v1.3.10</td><td>`774bd2e5`</td><td>修前 `/` 500 → 修后 200</td></tr>
+<tr><td>D9</td><td>真流式（直连 HTTP + `stream:true`，非终端保持非流式，失败回退）</td><td>v1.3.11</td><td>`0a3f416c`</td><td>真接口首块 **0.65s**</td></tr>
+<tr><td>D10</td><td>仓库级跨进程运行锁（抢不到拒绝开跑；陈旧锁自动接管）</td><td>v1.3.12</td><td>`3beb26e5`</td><td>真子进程抢锁被拒</td></tr>
+<tr><td>D11</td><td>回写防护（patch 目标脏 ⇒ 拒绝自动套用）</td><td>v1.3.13</td><td>`64b0e89f`</td><td>脏目标被拒并点名文件</td></tr>
+<tr><td>D12</td><td>架构/分类铁律：修 R20/R23（其一是我漏登记 ✗）+ 存量盘点报告</td><td>v1.3.14</td><td>`e2563a7c`</td><td>分类 3/6 → 5/6</td></tr>
+<tr><td>D13</td><td>`create` 手感（company 有回执 · 缺参/乱写中文 + rc=2）+ 修 pydantic 告警</td><td>v1.3.15</td><td>`2c625f1e`</td><td>`--root=` 临时根实测</td></tr>
+<tr><td>D14</td><td>解耦安装（独立 venv + wheel，仓库删了也能跑）</td><td>v1.3.16</td><td>`2a821e65`</td><td>模块 `__file__` 指向自己的 site-packages</td></tr>
+<tr><td>D15</td><td>全视图口径交叉核对（守住 6 个视图，防漂）</td><td>v1.3.17</td><td>`c1a7ddc3`</td><td>六视图 == 权威命令</td></tr>
+<tr><td>D16</td><td>学习自治扩 workflow 域</td><td>v1.3.18</td><td>`edf80101`</td><td>收尾钩子 + 失败安全</td></tr>
+<tr><td>D17</td><td>学习自治扩 skill / decision 域</td><td>v1.3.19</td><td>`67538852`</td><td>证据用 Evidence 对象（防静默失效 ✓）</td></tr>
+<tr><td>D18</td><td>**留痕**：TODO 活清单 + 追加式日志 + `/status` 网页版（真源生成）</td><td>v1.3.20</td><td>见下一条提交</td><td>`/status` 200（干净安装也 200 ✓）</td></tr>
+</table>
+<h2>2. 待办（我能直接做）</h2>
+<table>
+<tr><th>#</th><th>事项</th><th>说明</th></tr>
+<tr><td>T1</td><td>结构债 **R10**：10 个 `models.py` 改名</td><td>上次做砸已全量回滚 ✗ —— 这次要先摸清本仓**短名 import**规则再动</td></tr>
+<tr><td>T2</td><td>结构债 **R5**（4）：`infrastructure` 越层依赖</td><td>方向性错误（infra → services/plugins）⇒ 搬类型 / 注入</td></tr>
+<tr><td>T3</td><td>结构债 **R4**（17）：`plugins` 只许 import contracts</td><td>多为类型引用 ⇒ 搬到 `contracts/`</td></tr>
+<tr><td>T4</td><td>结构债 **R9**（12）：`contracts` 不许含控制流</td><td>校验逻辑外移 `services/rules`</td></tr>
+<tr><td>T5</td><td>结构债 **R3**（60）：跨域 import 断环</td><td>先画依赖图再断（按域拆分后环仍在 ⇒ 断环用注入）</td></tr>
+<tr><td>T6</td><td>结构债 **R11**（86）：`services/&lt;域&gt;/` 五件套布局</td><td>最重：按域一次一域，每域一提交 + `--help` 对比</td></tr>
+<tr><td>T7</td><td>学习自治 **project 域**落点</td><td>语义要 Founder 定（树 confirm？chain 跑完？）</td></tr>
+</table>
+<h2>3. 待 Founder 拍板</h2>
+<table>
+<tr><th>#</th><th>事项</th><th>需要你定什么</th></tr>
+<tr><td>P1</td><td>**6 项待裁决**</td><td>R3/R4 处理口径 · 两套 release 并存 · 三个&quot;迁了没删&quot; · heal 是否做插件 · 改名</td></tr>
+<tr><td>P2</td><td>打不打 **tag + Release**</td><td>v1.3.4 ~ v1.3.19 这段还没打 tag（你说过先不打 ✓）</td></tr>
+<tr><td>P3</td><td>**真隔离 worktree**（动底座）</td><td>每任务一个 `git worktree` + 完事合并 ⇒ 要动执行器三处</td></tr>
+<tr><td>P4</td><td>**project 域**&quot;项目经验&quot;的时刻</td><td>里程碑算哪一刻</td></tr>
+</table>
+<h2>4. 明确不做（有理由）</h2>
+<table>
+<tr><th>#</th><th>事项</th><th>为什么不做</th></tr>
+<tr><td>N1</td><td>状态栏&quot;上下文占用条&quot;（Hermes 有 `[████░░] 45%`）</td><td>没有&quot;模型上下文上限&quot;这个**真数据** ⇒ 不编 ✗</td></tr>
+<tr><td>N2</td><td>全屏 `↑/↓` 选择菜单</td><td>纯 shell 做不到（要 TUI）⇒ 用单键数字/Esc 替代 ✓</td></tr>
+</table>
+
+  <h2>工作日志（WORKLOG.md，追加式）</h2>
+  <h1>AI Factory OS · 工作日志（追加式 ⇒ 留痕）</h1>
+<blockquote>**只往后加，不改历史** ✓ —— 每条记：时间 · 做了什么 · 真证据 · 版本/提交。</blockquote>
+<blockquote>目的：任何一天都能回答&quot;当时到底干了什么、凭什么说干完了&quot;。</blockquote>
+<blockquote>配套：活清单 `docs/TODO.md` · 网页版 `/status`（`factory serve` 起来后看）。</blockquote>
+<p>---</p>
+<h2>2026-09-22</h2>
+<h3>主题：CLI 的长相与手感（照 Hermes）+ 并发安全 + 学习自治铺开</h3>
+<p>**版本链：v1.3.3 → v1.3.19（17 个提交，每条都门禁全绿）**</p>
+<table>
+<tr><th>版本</th><th>做了什么</th><th>真证据</th></tr>
+<tr><td>v1.3.3</td><td>CLI 照 Hermes 补齐：分区/配色/可发现性/审批面板；看板改真看板；修&quot;需求→PRD 门&quot;重大误杀（真需求被当凭空发明移出 21 条 ⇒ 复验 19/19 对得上）</td><td>`18316e6a` · `3cb185b5`</td></tr>
+<tr><td>v1.3.4</td><td>看板按项目分屏（`[n/N] 项目名`）+ `--limit N` / `--all` / `--merged`</td><td>`10e21f14`</td></tr>
+<tr><td>v1.3.5</td><td>看板表头挂**项目中文说明**（根因：`_project_notes` 要对象，我传了 dict ✗）</td><td>`16e466a1`</td></tr>
+<tr><td>v1.3.6</td><td>七域**可下钻**（`console activity` 等六个域，复用同一份快照）</td><td>`8f6b3fbc`</td></tr>
+<tr><td>v1.3.7</td><td>会话**归属项目**（`/project` 进提示词；假 provider 抓提示词验证 ✓）</td><td>`fd706682`</td></tr>
+<tr><td>v1.3.8</td><td>dashboard 与 status **口径归一**（修前它说 0 项目 0 任务 ✗）</td><td>`4d548acb`</td></tr>
+<tr><td>v1.3.9</td><td>`factory serve [--port]` 一条命令起 API + 最小界面（默认只绑本机 ✓）</td><td>`58368904`</td></tr>
+<tr><td>v1.3.10</td><td>★ **干净环境真装真跑** ⇒ 抓到 `apps/api/index.html` 没进 wheel（装完 `/` 报 500 ✗）⇒ 修后 200 ✓；立 `scripts/check_wheel.sh` 为发版必跑</td><td>`774bd2e5`</td></tr>
+<tr><td>v1.3.11</td><td>★ **真流式**：先前 `adapters/hermes.py` 的 `stream()` 是**假流式**（先拿全量再切行 ✗）⇒ 改直连 HTTP + `stream:true`；真接口首块 **0.65s**</td><td>`0a3f416c`</td></tr>
+<tr><td>v1.3.12</td><td>★ Founder 问「同一个仓库同一时间两个人改？？？」⇒ 读真代码给出三段图（执行期有沙箱隔离 ✓ / 认领期 CAS ✓ / **回写期是真风险** ✗）⇒ 落**跨进程运行锁** + 输入区上下横线</td><td>`3beb26e5`</td></tr>
+<tr><td>v1.3.13</td><td>**回写防护**：patch 目标脏 ⇒ 拒绝自动套用（以前会静默把两拨改动混在一起 ✗）</td><td>`64b0e89f`</td></tr>
+<tr><td>v1.3.14</td><td>架构/分类铁律：修 **R20/R23**（R23 里 `serve` 是我漏登记 ✗）+ 写存量盘点报告（剩 6 条结构债）</td><td>`e2563a7c`</td></tr>
+<tr><td>v1.3.15</td><td>`create` 手感（company 静默成功 ✗ ⇒ 有回执；缺参/乱写 → 中文 + rc=2）+ 修我自己留下的 pydantic 告警</td><td>`2c625f1e`</td></tr>
+<tr><td>v1.3.16</td><td>**解耦安装**：独立 venv + wheel ⇒ 模块读自己的 site-packages（仓库删了也能跑 ✓）</td><td>`2a821e65`</td></tr>
+<tr><td>v1.3.17</td><td>**全视图口径交叉核对**（守着 6 个视图，漂了就红）</td><td>`c1a7ddc3`</td></tr>
+<tr><td>v1.3.18</td><td>学习自治扩 **workflow 域**（收尾钩子 + 失败安全）</td><td>`edf80101`</td></tr>
+<tr><td>v1.3.19</td><td>学习自治扩 **skill / decision 域**（证据必须用 `Evidence` 对象 —— 塞字符串会静默失效 ✗）</td><td>`67538852`</td></tr>
+</table>
+<p>| v1.3.20 | **留痕**：活清单 `docs/TODO.md` + 追加式日志 `docs/WORKLOG.md` + 网页版 `/status`</p>
+<p>（生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |</p>
+<h3>立下的规矩（已落文档 + 挂入口 + 守卫）</h3>
+<p>- **版本号**：每改一次递增末尾号，三处同步（pyproject / README / CHANGELOG）⇒ `docs/release.md` + `AGENTS.md` 挂入口</p>
+<p>- **界面规格**：五区（banner / 输入区 / 执行区 / 回答区 / 状态栏）⇒ `docs/cli-design.md`，改界面前先改文档</p>
+<p>- **发版必跑**：干净环境真装真跑（`scripts/check_wheel.sh`）⇒ editable 看不出打包病 ✗</p>
+<h3>事故与更正（留痕，不藏 ✗）</h3>
+<table>
+<tr><th>时间</th><th>事情</th><th>处置</th></tr>
+<tr><td>2026-09-22</td><td>我用 `FACTORY_ROOT` 环境变量做隔离测试 ⇒ **CLI 不认它** ✗ ⇒ 3 个&quot;测试公司&quot;写进了 Founder 真实 `~/.factory/org/`</td><td>按 **store API** 逐条删除（5 家 → 1 家，只剩原有 `AI Factory` ✓）；正确姿势 = `--root=&lt;目录&gt;` ✓；教训：动数据前先确认隔离开关真生效</td></tr>
+<tr><td>2026-09-22</td><td>我试图把 10 个 `models.py` 改名（R10），用粗替换 ⇒ **45 个测试挂掉** ✗</td><td>立刻全量回滚（`git restore` + `reset` + `clean`）⇒ 回到全绿 ✓；教训：本仓有**短名 import**（`from workflows.models import …`），改名要先摸清规则</td></tr>
+<tr><td>2026-09-22</td><td>版本号 v1.3.19 之前，多处守卫断言因界面/流程改动而过期报红</td><td>逐条按**新实物**更新断言（不是放宽 ✓）</td></tr>
+</table>
+
+  <footer>这一页由 <code>scripts/build_status.py</code> 生成；
+    改完清单/日志后重跑一次即可同步 ✓</footer>
+</div></body></html>

@@ -144,6 +144,21 @@ def get_both(plan_id: str) -> JSONResponse:
     })
 
 
+@app.get("/status", response_class=HTMLResponse)
+def status_page() -> HTMLResponse:
+    """状态页 —— 活清单 + 工作日志 + 实时读数（由 scripts/build_status.py 生成 ✓; 没生成就提示怎么生成 ✓）。
+
+    ★ 2026-09-22（Founder: "添加到 html 和 todolist 中, 要留痕"）
+    """
+    page = Path(__file__).parent / "status.html"
+    if not page.is_file():
+        return HTMLResponse(
+            "<h1>状态页还没生成</h1><p>跑一下: <code>python scripts/build_status.py</code></p>",
+            status_code=200,
+        )
+    return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
     page = Path(__file__).parent / "index.html"

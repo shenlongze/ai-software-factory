@@ -58,7 +58,7 @@ say "4) start service and probe two endpoints (/ must be 200 -- catches unpackag
     "$WORK/venv/bin/factory" serve --port "$PORT" >"$WORK/serve.log" 2>&1) &
 echo $! > "$PIDFILE"
 sleep 7
-for P in "/" "/api/trees"; do
+for P in "/" "/status" "/api/trees"; do
     CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "http://127.0.0.1:$PORT$P" || echo 000)"
     if [ "$CODE" = "200" ]; then ok "$P -> HTTP 200"; else bad "$P -> HTTP $CODE (expected 200)"; fi
 done

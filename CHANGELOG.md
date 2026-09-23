@@ -1,5 +1,24 @@
 # Changelog
 
+## [v1.3.20] — 2026-09-22
+
+**留痕：活清单 + 追加式日志 + 网页版状态页**（Founder: "添加到 html 和 todolist 中, 要留痕"）。
+
+### Added
+- `docs/TODO.md` —— 活清单（已完成 17 条带版本+提交号 · 待办 7 条 · 待 Founder 拍板 4 条 · 明确不做 2 条）
+- `docs/WORKLOG.md` —— **追加式**工作日志（只往后加、不改历史 ⇒ 留痕 ✓），含今天 v1.3.3→v1.3.19
+  全过程与**事故记录**（FACTORY_ROOT 污染数据 · R10 改名砸锅回滚 —— 不藏 ✗）
+- `scripts/build_status.py` —— 生成 `apps/api/status.html`：内容**全部来自真源**
+  （TODO.md + WORKLOG.md + git log + 实时读数：守卫/pytest/架构/分类）
+  ⇒ 不可能出现"网页写 A、文档写 B"的漂移 ✗
+- `apps/api/main.py` 新增 **`/status`** 路由 ⇒ `factory serve` 起来后在浏览器看状态页 ✓
+  · 打包声明 `"apps.api" = ["*.html"]` 覆盖 status.html（`index.html` 那次的教训 ✓）
+  · `scripts/check_wheel.sh` 也探 `/status`
+
+### 证据
+- `build_status.py` 实跑：生成 11,259 字节页面，读数为真（守卫 62/62 · pytest 73 · 架构 9/15 · 分类 5/6）
+- 干净环境（wheel 装）实测：`/` 200 ✓ · **`/status` 200 ✓** · `/api/trees` 200 ✓
+
 ## [v1.3.19] — 2026-09-22
 
 **学习自治再扩两域：skill / decision**（Founder 点单第 6 件下半）。

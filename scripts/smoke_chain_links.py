@@ -3939,6 +3939,42 @@ def _check_learning_domains() -> list[str]:
     return bad
 
 
+def _check_traceability() -> list[str]:
+    """★ 留痕（Founder: "添加到 html 和 todolist 中, 要留痕"）。
+
+    判据:
+      1) `docs/TODO.md`（活清单）与 `docs/WORKLOG.md`（追加式日志）都在
+      2) `apps/api/status.html`（网页版）在, 且**由脚本从真源生成** ——
+         生成器必须读 TODO + WORKLOG + git log（不许手写快照 ✗, 否则网页会与文档漂移）
+      3) `/status` 路由在（`factory serve` 起来能看 ✓）
+      4) 打包声明覆盖 `*.html`（漏了就是 HTTP 500 ✗ 踩过）
+    """
+    from pathlib import Path as _PP
+
+    bad: list[str] = []
+    for rel in ("docs/TODO.md", "docs/WORKLOG.md", "apps/api/status.html", "scripts/build_status.py"):
+        if not _PP(rel).is_file():
+            bad.append(f"缺 {rel} ✗")
+    _g = _PP("scripts/build_status.py")
+    if _g.is_file():
+        _body = _g.read_text(encoding="utf-8")
+        for _need in ("TODO.md", "WORKLOG.md", "git", "log"):
+            if _need not in _body:
+                bad.append(f"生成器没读真源（缺 {_need}）⇒ 网页会与文档漂移 ✗")
+    _api = _PP("apps/api/main.py").read_text(encoding="utf-8")
+    if '"/status"' not in _api:
+        bad.append("没有 /status 路由（网页版看不到 ✗）")
+    _pp = _PP("pyproject.toml").read_text(encoding="utf-8")
+    if '"apps.api" = ["*.html"]' not in _pp:
+        bad.append("打包没声明 apps.api 的 *.html（status.html 会漏出包 ⇒ 500 ✗）")
+    return bad
+
+
+def test_traceability() -> None:
+    """留痕: 清单 + 日志 + 网页版（由脚本从真源生成）+ 路由 + 进包。"""
+    assert _check_traceability() == []
+
+
 def test_learning_domains() -> None:
     """学习域: 六域齐 · workflow 有钩子 · 钩子失败安全。"""
     assert _check_learning_domains() == []
@@ -4089,6 +4125,7 @@ def main() -> int:
     results.append(("全视图口径归一（projects/agents/executions/recovery/workflows/catalog）", not [x for x in _check_all_views_authority() if not x.startswith("（跳过")], "；".join(_check_all_views_authority())))
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     results.append(("学习自治多域（六域声明 · workflow 钩子 · 失败安全）", not _check_learning_domains(), "；".join(_check_learning_domains())))
+    results.append(("留痕（TODO + WORKLOG + /status 网页版 · 由真源生成）", not _check_traceability(), "；".join(_check_traceability())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

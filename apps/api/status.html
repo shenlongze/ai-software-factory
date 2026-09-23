@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Factory OS · 状态（v1.3.26）</title>
+<title>AI Factory OS · 状态（v1.3.27）</title>
 <style>
   :root{--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--ink2:#6e6e73;--line:#d2d2d7;
         --brand:#0071e3;--ok:#34c759;--warn:#ff9f0a;--bad:#ff3b30;--r:18px}
@@ -33,15 +33,16 @@
 </head>
 <body><div class="wrap">
   <h1>AI Factory OS · 状态</h1>
-  <p class="sub">v1.3.26 · 生成于 2026-09-24 02:00 ·
+  <p class="sub">v1.3.27 · 生成于 2026-09-24 02:05 ·
      数据来自 <code>docs/TODO.md</code> + <code>docs/WORKLOG.md</code> + 实时读数 ⇒ 不可能与文档漂移 ✓</p>
 
   <div class="cards">
-    <div class="card"><b>守卫</b><span>63/63 通过</span></div><div class="card"><b>pytest</b><span>74 passed, 7 warnings in 14.00s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 10/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
+    <div class="card"><b>守卫</b><span>63/63 通过</span></div><div class="card"><b>pytest</b><span>74 passed, 7 warnings in 13.97s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 10/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
   </div>
 
   <h2>最近提交</h2>
-  <pre>afc27471 chore(trace): 补齐 v1.3.25 的版本与留痕（上一个脚本语法错, 文件没写成 ✗ 如实补上）
+  <pre>767d94f1 fix(cli): 撤掉我自己编的「下一步去招人」提示 + 更正测试结论 → v1.3.26
+afc27471 chore(trace): 补齐 v1.3.25 的版本与留痕（上一个脚本语法错, 文件没写成 ✗ 如实补上）
 daefe56a test(e2e): 冷启动端到端测试 —— 上半段通, 下半段断（抓到 6 条真问题）→ v1.3.25
 3d21e92a docs(arch): R3 跨域依赖图 + 断环方案（纯分析, 不动代码 ✓）→ v1.3.24
 592cae04 refactor(arch): 结构债 R9 —— contracts 里的控制流外移（不新增功能 ✓）→ v1.3.23
@@ -54,15 +55,14 @@ c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）�
 2a821e65 docs(install): 解耦安装 —— 独立 venv + wheel, 仓库删了也能跑（Founder: pipx 解耦）→ v1.3.16
 2c625f1e fix(cli): create 的手感（静默成功 + 英文缺参）+ dashboard 模型告警 → v1.3.15
 e2563a7c docs(arch): 架构/分类铁律存量红 —— 修 R20/R23 + 盘点报告（Founder: 继续）→ v1.3.14
-64b0e89f fix(delivery): 回写防护 —— 目标脏就拒绝自动套用（A 刀小步）→ v1.3.13
-3beb26e5 feat(work): 仓库级跨进程运行锁 + 输入区上下横线（回答 Founder 两问）→ v1.3.12</pre>
+64b0e89f fix(delivery): 回写防护 —— 目标脏就拒绝自动套用（A 刀小步）→ v1.3.13</pre>
 
   <h2>活清单（TODO.md）</h2>
   <h1>AI Factory OS · TODO（活清单）</h1>
 <blockquote>这份清单是**活的**：做完一条就更新状态、写上版本号和提交号（可核对 ✓）。</blockquote>
 <blockquote>每次改动都同时进 `docs/WORKLOG.md`（追加式, 不改历史 ⇒ 留痕 ✓）。</blockquote>
 <blockquote>网页版：`factory serve` 起来后看 `/status`（由 `scripts/build_status.py` 从这三个来源生成 ✓）。</blockquote>
-<p>最后更新：2026-09-22 · 当前版本 `v1.3.26`</p>
+<p>最后更新：2026-09-22 · 当前版本 `v1.3.27`</p>
 <p>---</p>
 <h2>1. 已完成（带痕迹）</h2>
 <table>
@@ -121,6 +121,11 @@ e2563a7c docs(arch): 架构/分类铁律存量红 —— 修 R20/R23 + 盘点报
 <tr><td>E4</td><td>「定位」文案含糊（同环出现「跳过」和「补做」）</td><td>低</td><td>待修</td></tr>
 <tr><td>E5</td><td>登记表里有不存在的命令（`factory doctor`）⇒ R23 可加「登记必须存在」</td><td>低</td><td>待修</td></tr>
 </table>
+<table>
+<tr><th>E6</th><th>冷启动**缺引导**：正道三步（`agent add` → `provider add` → `run`）产品都有命令但不引导 ✗</th><th>严重</th><th>待修</th></tr>
+<tr><td>E7</td><td>**老区命令面** `org {company,employee,authority,knowledge}` 与**设计内**的 `org member …` 混在一起 ⇒ 用户会像我今天一样误入 ✗</td><td>中</td><td>**待你定处置**</td></tr>
+<tr><td>E8</td><td>**145 个源码文件**的 docstring 仍写 `src/legacy/…` 出处 ✗（纯注释, 误导读者）</td><td>低</td><td>待修（零风险）</td></tr>
+</table>
 
   <h2>工作日志（WORKLOG.md，追加式）</h2>
   <h1>AI Factory OS · 工作日志（追加式 ⇒ 留痕）</h1>
@@ -159,6 +164,7 @@ e2563a7c docs(arch): 架构/分类铁律存量红 —— 修 R20/R23 + 盘点报
 <tr><td>v1.3.24</td><td>**R3 跨域依赖图 + 断环方案**（纯分析, 不动代码 ✗）: 新增 `scripts/analyze_cross_domain.py`（复用守卫同一份 modules/edges ⇒ 不漂移）⇒ 报告含 mermaid 图 · 边数排行 · 环清单 · 三种断法</td><td>62 边 · **真环 1 个（6 域大环 ✗）** · 直接双向 8 对 · **像契约仅 12%** ⇒ R3 不能靠搬类型 ✗ · 第一版判定/环算法都有错, 已修正 ✓</td></tr>
 <tr><td>v1.3.25</td><td>**冷启动端到端测试**（Founder 建议「从头测试」; 干净根 --root=&lt;tmp&gt;, 全程不碰真实数据 ✓）: 链上半段通（会话→需求→PRD→分析→架构→拆解→确认 ✓ 门 12/12 · 70 叶带验收）; **下半段在冷启动下断了** ✗（run 恒为「无可推进/ unresolved」且不说原因）; 抓到 6 条真问题（招人不进调度池 · 招 devops/architect/writer 崩 · chain 结尾假地址 · 定位文案 · doctor 不存在却登记着）</td><td>报告 `docs/reports/2026-09-22-冷启动端到端测试.md`（逐条带命令与输出 ✓）</td></tr>
 <tr><td>v1.3.26</td><td>**更正 + 撤掉我自己编的提示** ✗（Founder 点出「我们没有设计招人这个功能」）: 读原文核对 —— 产品链（ssot/product.md:24）是 Idea→目标表达→理解→**编排**→执行→…, **没有招人这一步**; 「招人」出身老区（services/organization/cli.py 自述 src/legacy/factory-org）; **是我 v1.3.15 在 create company 回执里自己写了「下一步去招人」** ✗ ⇒ 已撤, 只留如实回执 ✓; 测试结论同步更正: 真问题 = **编排这一环在冷启动没落地**</td><td>门禁 pytest 74 · 守卫 63/63 · ruff 0</td></tr>
+<tr><td>v1.3.27</td><td>**冷启动补测（更正）+ 老区盘点**（Founder: 「我们没有设计招人这个功能」+「老区还有什么？」）: 走**设计内正道**（`agent add` 建舰队 ×5）后 `run` **真会派活** ✓（创建执行 2 个）; 失败原因是 `NoAvailableRuntime` ✗ = 新根没配 provider; ⇒ 冷启动缺的是**引导**不是能力; 正道三步 `agent add`→`provider add`→`run` 都不引导 ✗; **有意停手**: 第 2 步要贴 key ⇒ 不搬凭据进临时根 ✗（最后一跳未实测 ✓ 如实标注）; 老区盘点: 目录已无 ✓ · 145 文件出处残留 ✗ · org 老区命令面 ✗ · `org member` 是设计内 ✓ 别误伤 · factory.db 老区库仍在用 ✓</td><td>报告第五章 + TODO E6–E8</td></tr>
 </table>
 <p>过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |</p>
 <p>（生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |</p>

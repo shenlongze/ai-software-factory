@@ -20,7 +20,12 @@
 from __future__ import annotations
 
 import json
+import fcntl
 import os
+import tempfile
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +51,10 @@ class RuntimeStore:
 
     def __init__(self, runtimes_dir: str | Path):
         self._dir = Path(runtimes_dir)
+        # ★ 2026-09-23: 并发写保护 —— 线程锁（同进程多线程 ✓）+ flock 锁文件（多进程 ✓）
+        #   缺任一个都会丢更新/写坏库 ✗（飞机大战测试里炸出来的真 bug ✓）
+        self._thread_lock = threading.Lock()
+        self._lock_path = self._dir / f".{self.filename}.lock"
 
     @property
     def dir(self) -> Path:
@@ -123,11 +132,28 @@ class RuntimeStore:
 
     # ------------------------------------------------------------------ 写
 
+    @contextmanager
+    def _locked(self) -> Iterator[None]:
+        """读-改-写整段加排他锁: **多进程 + 同进程多线程**都不丢更新 ✓。
+
+        锁文件独立（`.{filename}.lock`）⇒ 不参与内容校验 ✓; flock 是建议锁, 只保护"按本类写"的路径。
+        同进程多线程: flock 对同 fd 不互斥 ⇒ 再叠一把线程锁 ✓（两个都必要, 缺一个都会丢更新 ✗）。
+        """
+        self._dir.mkdir(parents=True, exist_ok=True)
+        with self._thread_lock:
+            with self._lock_path.open("a+") as lf:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+
     def save_runtime(self, runtime: RuntimeInfo) -> None:
-        """upsert Runtime 身份记录。"""
-        raw = self._read_all()
-        raw["runtimes"][runtime.id] = runtime.to_dict()
-        self._write_all(raw)
+        """upsert Runtime 身份记录（加锁 ✓ 并发安全）。"""
+        with self._locked():
+            raw = self._read_all()
+            raw["runtimes"][runtime.id] = runtime.to_dict()
+            self._write_all(raw)
 
     def remove_runtime(self, runtime_id: str) -> bool:
         """删除 Runtime; 不存在返回 False。"""
@@ -140,26 +166,40 @@ class RuntimeStore:
 
     def save_execution(self, request: ExecutionRequest) -> None:
         """upsert 执行请求 (状态推进也走此路径: 保存新 status 即覆盖)。"""
-        raw = self._read_all()
-        raw["executions"][request.id] = request.to_dict()
-        self._write_all(raw)
+        with self._locked():
+            raw = self._read_all()
+            raw["executions"][request.id] = request.to_dict()
+            self._write_all(raw)
 
     def save_result(self, result: ExecutionResult) -> None:
         """upsert 执行结果 (以 request_id 为键: 一次执行至多一个结果, 幂等覆盖)。"""
-        raw = self._read_all()
-        raw["results"][result.request_id] = result.to_dict()
-        self._write_all(raw)
+        with self._locked():
+            raw = self._read_all()
+            raw["results"][result.request_id] = result.to_dict()
+            self._write_all(raw)
 
     def _write_all(self, data: dict) -> None:
-        """原子写整库: 临时文件 + os.replace, 避免半写文件; 各节按 id 排序 (审计友好)。"""
+        """原子写整库: **唯一**临时文件 + os.replace; 各节按 id 排序 (审计友好)。
+
+        ★ 2026-09-23 修（Founder 的飞机大战测试炸出来的 ✗）:
+          原临时名 `.{filename}.{os.getpid()}.tmp` —— **同进程并发线程 PID 相同** ⇒ 多线程写
+          **同一个临时文件** ⇒ 内容交错 ⇒ 整库变成"两段 JSON 拼接"（现场: Extra data: char 99803 ✗）。
+          ⇒ 改 `tempfile.mkstemp`（内核保证唯一 ✓）; 并在写完后**回读校验**（坏了当场报 ✗ 不做无声破坏）。
+        """
         self._dir.mkdir(parents=True, exist_ok=True)
-        tmp = self._dir / f".{self.filename}.{os.getpid()}.tmp"
         payload = {s: {k: data[s][k] for k in sorted(data[s])} for s in _SECTIONS}
-        tmp.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        os.replace(tmp, self.path)
+        text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        fd, tmp_name = tempfile.mkstemp(dir=str(self._dir), prefix=f".{self.filename}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            os.replace(tmp_name, self.path)
+        finally:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)          # 异常时清掉临时件 ✓ 不留垃圾
+        back = json.loads(self.path.read_text(encoding="utf-8"))   # 回读校验 ✓
+        if set(back) != set(_SECTIONS):
+            raise RuntimeStoreError(f"写入后回读校验失败: {self.path}")
 
     # ------------------------------------------------------------------ 便捷
 

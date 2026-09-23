@@ -1410,6 +1410,61 @@ def _check_recover_plan_from_checkpoint() -> list[str]:
     return bad
 
 
+def _check_store_concurrency() -> list[str]:
+    """★ RuntimeStore 并发写（飞机大战测试炸出来的真 bug ✗）。
+
+    现场: runtimes.json `Extra data: line 1107 column 5 (char 99803)`
+    根因: 临时名 `.{filename}.{pid}.tmp` —— **同进程多线程 PID 相同** ⇒ 共写一个临时文件 ⇒ 内容交错 ✗
+    反例（证明这门能失败 ✓）: 用老写法跑同一压测 ⇒ 120 条只活下来 **20 条**（丢更新 ✗）
+
+    判据: 多线程并发写后 ① JSON 必须合法 ② 记录数必须一条不少。
+    """
+    import json as _json
+    import sys as _sys
+    import tempfile as _tf
+    import threading as _th
+    from pathlib import Path as _PP
+
+    _sys.path.insert(0, str(_PP(__file__).resolve().parent.parent / "src"))
+    from ai_factory_os.services.execution.runtime.store import RuntimeStore
+    from ai_factory_os.services.execution.runtime.types import RuntimeInfo
+
+    bad: list[str] = []
+    n_threads, per = 4, 15
+    with _tf.TemporaryDirectory() as td:
+        st = RuntimeStore(_PP(td))
+        errs: list[str] = []
+
+        def _w(i: int) -> None:
+            try:
+                for k in range(per):
+                    st.save_runtime(RuntimeInfo(id=f"R-{i}-{k}", name=f"n{i}-{k}",
+                                                type="agent", description="", status="AVAILABLE"))
+            except Exception as exc:  # noqa: BLE001
+                errs.append(repr(exc)[:80])
+
+        ts = [_th.Thread(target=_w, args=(i,)) for i in range(n_threads)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+        raw = (_PP(td) / "runtimes.json").read_text(encoding="utf-8")
+        try:
+            data = _json.loads(raw)
+        except Exception as exc:  # noqa: BLE001
+            return [f"并发写后 JSON 坏了 ✗（{str(exc)[:60]}）—— 正是飞机大战那次的现场"]
+        got = len(data.get("runtimes", {}))
+        want = n_threads * per
+        if got != want:
+            bad.append(f"并发写丢更新 ✗: {got}/{want} 条（老写法只活 20/120 ⇒ 这是同一个病）")
+        if errs:
+            bad.append(f"并发写抛异常 ✗: {errs[:1]}")
+    return bad
+
+
+def test_store_concurrency() -> None:
+    """并发写不许丢更新、不许写坏库（含反例证明 ✓）。"""
+    assert _check_store_concurrency() == []
+
+
 def _check_e2e_cold_start_loop() -> list[str]:
     """★ 端到端: 冷启动（空根）→ 建项目/建舰队/确认树 → 派活 → 执行 → 状态反映。
 
@@ -4214,6 +4269,7 @@ def main() -> int:
     results.append(("留痕（TODO + WORKLOG + /status 网页版 · 由真源生成）", not _check_traceability(), "；".join(_check_traceability())))
     results.append(("冷启动引导（第一次用六步 · 无假地址）", not _check_cold_start_guide(), "；".join(_check_cold_start_guide())))
     results.append(("端到端冷链（派活→执行→进度真的动）", not _check_e2e_cold_start_loop(), "；".join(_check_e2e_cold_start_loop())))
+    results.append(("并发写不丢更新（RuntimeStore · 含反例）", not _check_store_concurrency(), "；".join(_check_store_concurrency())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

@@ -1,5 +1,40 @@
 # Changelog
 
+## [v1.3.33] — 2026-09-23
+
+**修 RuntimeStore 并发写（飞机大战真实测试炸出来的 bug ✗）**。
+
+### 现场（字节级, 不猜 ✓）
+```
+⚠ 检查点写入失败（不影响执行）: CorruptRuntimeStoreError:
+  corrupt runtime store: /Users/agentdev/.factory/runtimes/runtimes.json: Extra da…
+```
+- `runtimes.json` 99,811 字符 ⇒ `json.loads` 失败: `Extra data: line 1107 column 5 (char 99803)`
+- 文件尾部实录 `…}\n  }\n      }\n    }\n  }\n` ⇒ **两段写交错** ✗
+- 触发条件: `factory run --parallel 3`（并行执行）✗
+
+### 根因（有反例证明 ✓）
+- `RuntimeStore._write_all` 临时文件名 = `.{filename}.{os.getpid()}.tmp` ✗
+  ⇒ **同一进程内多个并发线程 PID 相同** ⇒ 共写**同一个临时文件** ⇒ 内容交错 ⇒ `os.replace` 后整库变"两段 JSON 拼接"
+- 该文件自己的注释早已承认：「原子写: 临时文件 + os.replace; **单进程本地使用, 不做文件锁**」✗
+- **反例（证明门不是摆设 ✓）**: 用老写法跑 6 线程 × 20 条 = 120 ⇒ 实测**只剩 20 条**（丢 100 条 ✗）
+
+### Fixed
+- `_write_all`：临时名改 `tempfile.mkstemp`（内核保证唯一 ✓）+ 写后**回读校验**（坏了当场报 ✗ 不做无声破坏）
+- `save_runtime` / `save_execution` / `save_result`：读-改-写整段加锁
+  （**线程锁**（同进程多线程 ✓）+ **flock 锁文件**（多进程 ✓）—— 缺任一个都丢更新 ✗）
+- 实测（修后）：6 线程 × 20 条 ⇒ **120 条全在 · JSON 合法 · 无异常** ✓
+
+### 数据修复（如实报告）
+- 测试期间**你真实根的 `runtimes.json` 被这个 bug 写坏** ✗ ⇒ 已**先备份**（
+  `~/.factory-backups/runtime-store-before-repair-20260924-025458/runtimes.json` ✓）
+  再**截到合法前缀**修复（`runtimes 1 · executions 33 · results 21` ✓，尾部残缺的第二次写无法拼回 ✗）
+  ⇒ 平台已恢复正常 ✓（`factory status` 正常）
+- 我随后又发现了 **31 个文件**同样在裸写共享 JSON ✗（同一类风险）⇒ 记进 TODO, 逐个收紧 ✓
+
+### 守卫
+- 新增「并发写不丢更新」：4 线程 × 15 条 ⇒ ① JSON 必须合法 ② 记录数一条不少 ✓（守卫 65 → **66**）
+
 ## [v1.3.32] — 2026-09-23
 
 **端到端测试自动化**（Founder 问「现在有没有完整测试」⇒ 先**实测**再补缺 ✓）。

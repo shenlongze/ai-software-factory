@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Factory OS · 状态（v1.3.31）</title>
+<title>AI Factory OS · 状态（v1.3.32）</title>
 <style>
   :root{--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--ink2:#6e6e73;--line:#d2d2d7;
         --brand:#0071e3;--ok:#34c759;--warn:#ff9f0a;--bad:#ff3b30;--r:18px}
@@ -33,15 +33,16 @@
 </head>
 <body><div class="wrap">
   <h1>AI Factory OS · 状态</h1>
-  <p class="sub">v1.3.31 · 生成于 2026-09-24 02:27 ·
+  <p class="sub">v1.3.32 · 生成于 2026-09-24 02:36 ·
      数据来自 <code>docs/TODO.md</code> + <code>docs/WORKLOG.md</code> + 实时读数 ⇒ 不可能与文档漂移 ✓</p>
 
   <div class="cards">
-    <div class="card"><b>守卫</b><span>64/64 通过</span></div><div class="card"><b>pytest</b><span>75 passed, 7 warnings in 14.12s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
+    <div class="card"><b>守卫</b><span>65/65 通过</span></div><div class="card"><b>pytest</b><span>76 passed, 7 warnings in 14.38s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
   </div>
 
   <h2>最近提交</h2>
-  <pre>2ac248d8 feat(help): 冷启动引导（第一次用六步）+ 撤掉假地址 → v1.3.30
+  <pre>41e9b355 refactor(arch): R9 清零 + 发现 R3/R9 规则冲突（待裁决）→ v1.3.31
+2ac248d8 feat(help): 冷启动引导（第一次用六步）+ 撤掉假地址 → v1.3.30
 c69e0897 refactor(org): 老区彻底清完（服务层 + 脚手架 + 出处注释）→ v1.3.29
 7bd89c89 refactor(cli): 删老区命令面（Founder: &quot;老区都删除&quot;）→ v1.3.28
 d88c71a0 docs(e2e): 冷启动补测（更正）+ 老区盘点 → v1.3.27
@@ -54,8 +55,7 @@ daefe56a test(e2e): 冷启动端到端测试 —— 上半段通, 下半段断�
 95864dad refactor(arch): 结构债 R10 —— 10 个 models.py → types.py（引用三形式全覆盖）→ v1.3.21
 43ae62b6 feat(trace): 留痕 —— 活清单 + 追加式日志 + /status 网页版（Founder: &quot;添加到 html 和 todolist 中, 要留痕&quot;）→ v1.3.20
 67538852 feat(learning): 学习自治再扩两域（skill / decision）→ v1.3.19
-edf80101 feat(learning): 学习自治扩展到 workflow 域（Founder 点单第 6 件）→ v1.3.18
-c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）→ v1.3.17</pre>
+edf80101 feat(learning): 学习自治扩展到 workflow 域（Founder 点单第 6 件）→ v1.3.18</pre>
 
   <h2>活清单（TODO.md）</h2>
   <h1>AI Factory OS · TODO（活清单）</h1>
@@ -129,6 +129,18 @@ c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）�
 <table>
 <tr><th>P5</th><th>**R3 与 R9 的规则冲突**（跨域 types 里带校验逻辑 ⇒ 搬 contracts 犯 R9, 不搬犯 R3）</th><th>放宽 R9（快）/ 严格拆分（慢）</th><th>**待你裁决**</th></tr>
 </table>
+<h2>6. 测试完整性（Founder 问「现在有没有完整测试」⇒ 实测后记）</h2>
+<table>
+<tr><th>层</th><th>现状</th><th>备注</th></tr>
+<tr><td>守卫 `scripts/smoke_chain_links.py`</td><td>**65 条** ✓</td><td>CLI 行为/口径/流水线为主</td></tr>
+<tr><td>`pytest`</td><td>**76 项** ✓</td><td>多数即上表守卫的 `test_` 包装</td></tr>
+<tr><td>`verify.sh`</td><td>16 项 ✓</td><td>工具健康 + 债务清单</td></tr>
+<tr><td>架构 / 分类守卫</td><td>11/15 · 5/6</td><td>结构债见第 1 节</td></tr>
+<tr><td>干净环境真装真跑</td><td>✓</td><td>`scripts/check_wheel.sh`</td></tr>
+<tr><td>**端到端自动化**</td><td>**✓ 首条已加**（v1.3.32 冷启动→派活→执行）</td><td>后续: confirm 门 · 写回防护</td></tr>
+<tr><td>**覆盖率**</td><td>**27.7%** ✗</td><td>基线已测: bootstrap 63% · contracts 74% · services 25% · plugins 20%</td></tr>
+</table>
+<p>⇒ **没有&quot;完整测试&quot;** ✗；补的顺序: 端到端(2 条) → 热路径单测(`services/work/*`) → 覆盖率防回退 ✓</p>
 
   <h2>工作日志（WORKLOG.md，追加式）</h2>
   <h1>AI Factory OS · 工作日志（追加式 ⇒ 留痕）</h1>
@@ -172,6 +184,7 @@ c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）�
 <tr><td>v1.3.29</td><td>**老区彻底清完**（Founder:「老区都删除」第二轮）: 删服务层 6 个老区函数 + `_CMD_DISPATCH` 条目; 删老区独立入口死脚手架（`build_parser` 211 行 / `_CMD_DISPATCH` / `_dispatch` / `main` —— pyproject 无 script、外部零调用 ✓）⇒ 该文件 1177 → 899 行; **保留** `_print_result`（apps/cli 的 create 打印用它 ✓）与所有 cmd_* ✓; 145 处 `src/legacy/…` 出处注释**改准为其真实路径**（141 自动 + 4 手工, 余 5 处合理 ✓）。**这次先列清「模块内部引用」再动**（上一轮漏了这步 =&gt; 一次成功 ✓, 每步过 pytest ✓）</td><td>门禁 pytest 74 · verify 16/16 · 守卫 63/63 · ruff 0 · 老区清零 ✓</td></tr>
 <tr><td>v1.3.30</td><td>**冷启动引导（第一次用六步）+ 撤掉假地址**（Founder 点单 1 · 只动帮助/提示 ✗ 不加命令）: `factory help` 新增【第一次用】六步（create project → chain → tasktree confirm → **agent add** → **provider add** → run --limit），第 4/5 步写明「不给会怎样」（没舰队 ⇒ 树跑不动只会说 unresolved；没配 provider ⇒ NoAvailableRuntime）; chain 结尾的假地址改成「看界面: 先跑 factory serve…—— 没起来就没有界面」✓; 新增守卫「冷启动引导」</td><td>守卫 64/64 · pytest 75</td></tr>
 <tr><td>v1.3.31</td><td>**R9 清零 + 发现 R3/R9 规则冲突**（Founder 点单 2）: contracts/llm/provider.py 两处控制流（estimate_cost_usd · key_env_var）改**条件表达式**（R9 只判 If/For/While/Try/With 语句 ✓）⇒ 行为不变（4 用例实测 ✓）⇒ **R9: 2 → 0（绿）** · 架构 **10/15 → 11/15**; 试点搬类型清 R3 时发现 **R3 与 R9 互相顶住** ✗（那 7 条边指向的 types 都带校验/派生逻辑 ⇒ 搬 contracts 犯 R9, 不搬犯 R3）⇒ 报告第八章 + TODO P5, **等 Founder 裁决** ✓（我倾向放宽 R9）</td><td>pytest 75 · 守卫 64/64 · ruff 0</td></tr>
+<tr><td>v1.3.32</td><td>**端到端测试自动化 + 覆盖率基线**（Founder 问「现在有没有完整测试」）: 先**实测** —— 覆盖率 **27.7%**（48,003 语句 / 34,676 未覆盖 ✗），按层 bootstrap 63% · contracts 74% · apps/cli 32% · services 25% · plugins 20% ⇒ **结论: 没有完整测试** ✗; 本次补第一块: **端到端自动化**（空根 → 项目/确认树/舰队 → wire_scheduler + drive(假执行器) ⇒ 断言进度真动: 实测 2 叶 → done 2 / 100% ✓，不联网、确定性 ✓）；守卫 64→**65** · pytest 75→**76**。坑: 断言读错键名（completed vs done）⇒ 明明 100% 却报 0 ✗ ⇒ 靠打印真实读数发现 ✓</td><td>TODO 第 6 节</td></tr>
 </table>
 <p>过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |</p>
 <p>（生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |</p>

@@ -1410,6 +1410,64 @@ def _check_recover_plan_from_checkpoint() -> list[str]:
     return bad
 
 
+def _check_e2e_cold_start_loop() -> list[str]:
+    """★ 端到端: 冷启动（空根）→ 建项目/建舰队/确认树 → 派活 → 执行 → 状态反映。
+
+    为什么要有它: 此前这些环**只有我手工跑过** ✗（Founder 问"有没有完整测试" ⇒ 实测覆盖 28% ✗）。
+    这一条把它变成**确定性自动化**（假执行器, 不联网 ✓）。
+    """
+    import json as _json
+    import tempfile as _tf
+
+    from ai_factory_os.bootstrap import scheduler_pump as SP
+    from ai_factory_os.bootstrap.scheduler_wiring import wire_scheduler
+    from ai_factory_os.services.work import progress as _prog
+
+    bad: list[str] = []
+    plan, proj = "PLAN-e2e1", "P-e2e1"
+    with _tf.TemporaryDirectory() as td:
+        root = Path(td)
+        # ① 冷启动: 空根里先把"项目 + 确认过的树 + 一个够用的舰队"摆好
+        #   （树 = 2 个叶, 能力 developer; 舰队 = 1 个 developer ✓）
+        (root / "projects" / proj / "tasks").mkdir(parents=True, exist_ok=True)
+        (root / "projects" / proj / "tasks" / f"{plan}.json").write_text(_json.dumps({
+            "plan_id": plan, "project_id": proj, "status": "confirmed",
+            "nodes": [
+                {"id": "t-a", "kind": "task", "title": "第一件事", "status": "pending",
+                 "acceptance": "一句话验收 A", "required_capabilities": ["developer"], "depends_on": []},
+                {"id": "t-b", "kind": "task", "title": "第二件事", "status": "pending",
+                 "acceptance": "一句话验收 B", "required_capabilities": ["developer"],
+                 "depends_on": ["t-a"]},
+            ],
+        }, ensure_ascii=False), encoding="utf-8")
+        (root / "agents").mkdir(parents=True, exist_ok=True)
+        (root / "agents" / "agents.json").write_text(_json.dumps({
+            "A-1": {"id": "A-1", "name": "小开", "role": "developer", "status": "AVAILABLE"},
+        }, ensure_ascii=False), encoding="utf-8")
+
+        before = _prog.summary(root) if hasattr(_prog, "summary") else None
+        ports = wire_scheduler(root, plan_id=plan)
+        SP.drive(ports, run_execution=lambda eid: _fake_ok(ports, eid),
+                 max_parallel=1, max_ticks=6, limit=4)
+        after = _prog.summary(root) if hasattr(_prog, "summary") else None
+
+        # ② 断言: 真的推进了（不是"启动了但啥也没动" ✗）
+        if not after:
+            bad.append("拿不到任务树进度读数 ✗")
+        else:
+            done = int(after.get("done") or 0)
+            if done < 1:
+                bad.append(f"端到端跑完却 0 个叶完成 ✗（进度: {after}）")
+        if before and after and int(after.get("done") or 0) <= int(before.get("done") or 0):
+            bad.append("跑完进度没变（假成功 ✗）")
+    return bad
+
+
+def test_e2e_cold_start_loop() -> None:
+    """端到端: 冷启动 → 派活 → 执行 → 进度真的动（假执行器, 不联网 ✓）。"""
+    assert _check_e2e_cold_start_loop() == []
+
+
 def _fake_ok(ports: Any, eid: str) -> Any:
     """假执行: 把该执行在**库里**标成 SUCCESS（守卫用 —— 不碰 LLM）。
 
@@ -4155,6 +4213,7 @@ def main() -> int:
     results.append(("学习自治多域（六域声明 · workflow 钩子 · 失败安全）", not _check_learning_domains(), "；".join(_check_learning_domains())))
     results.append(("留痕（TODO + WORKLOG + /status 网页版 · 由真源生成）", not _check_traceability(), "；".join(_check_traceability())))
     results.append(("冷启动引导（第一次用六步 · 无假地址）", not _check_cold_start_guide(), "；".join(_check_cold_start_guide())))
+    results.append(("端到端冷链（派活→执行→进度真的动）", not _check_e2e_cold_start_loop(), "；".join(_check_e2e_cold_start_loop())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

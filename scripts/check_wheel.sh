@@ -22,7 +22,19 @@ cleanup() {
         P="$(cat "$PIDFILE" 2>/dev/null || true)"
         if [ -n "${P:-}" ]; then
             kill "$P" 2>/dev/null || true        # exact PID only -- never kill by pattern
-            say "stopped service (exact PID $P)"
+            for _ in 1 2 3 4 5; do               # ★ 等它真退出（最多 5s）✓
+                kill -0 "$P" 2>/dev/null || break
+                sleep 1
+            done
+            if kill -0 "$P" 2>/dev/null; then
+                kill -9 "$P" 2>/dev/null || true  # 还不退 ⇒ 强杀（仍是精确 PID ✓）
+                sleep 1
+            fi
+            if kill -0 "$P" 2>/dev/null; then
+                bad "service DID NOT stop (PID $P) -- 会留孤儿 ✗"
+            else
+                say "stopped service (exact PID $P, verified ✓)"
+            fi
         fi
     fi
     rm -rf "$WORK"
@@ -55,7 +67,9 @@ done
 
 say "4) start service and probe two endpoints (/ must be 200 -- catches unpackaged data files)"
 (cd /tmp && FACTORY_ROOT="${FACTORY_ROOT:-$HOME/.factory}" \
-    "$WORK/venv/bin/factory" serve --port "$PORT" >"$WORK/serve.log" 2>&1) &
+    # ★ 2026-09-24 修: 原先没有 exec ⇒ $! 是**子 shell** 的 PID, kill 只杀壳、
+    #   **把 python 留成孤儿** ✗（实测攒了 12 个 factory serve ✗）。exec 让子 shell 变身成 python ✓
+    exec "$WORK/venv/bin/factory" serve --port "$PORT" >"$WORK/serve.log" 2>&1) &
 echo $! > "$PIDFILE"
 sleep 7
 for P in "/" "/status" "/api/trees"; do

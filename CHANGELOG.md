@@ -1,5 +1,23 @@
 # Changelog
 
+## [v1.3.30] — 2026-09-23
+
+**冷启动引导（E6）+ 撤掉假地址（E3）**（Founder 点单 1）。
+
+### Added
+- `factory help` 新增 **【第一次用】六步**（默认就显示, 不用加 --role ✓）:
+  1 `create project` → 2 `chain` → 3 `tasktree confirm` → 4 **`agent add`（建舰队）** →
+  5 **`provider add`（配运行时）** → 6 `run --limit`
+  · 第 4/5 步专门写了**不给会怎样**（没舰队 ⇒ 树跑不动只会说 unresolved; 没配 provider ⇒
+    `NoAvailableRuntime`）⇒ 消除"卡住却不知道为什么" ✗
+
+### Fixed
+- **假地址（E3）**：`chain` 结尾原写「浏览器: http://127.0.0.1:8787/」✗ —— 8787 是 `serve` 的默认端口,
+  但**没起来就没有界面** ⇒ 改成「看界面: 先跑 factory serve（默认 …）—— 没起来就没有界面 ✓」
+
+### 守卫
+- 新增「冷启动引导」：六步必须齐（含 agent add / provider add）· 出现 127.0.0.1 必须同时说起怎么起服务 ✗
+
 ## [v1.3.29] — 2026-09-23
 
 **老区彻底清完**（Founder：「老区都删除」· 第二轮）。

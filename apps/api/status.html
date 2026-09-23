@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Factory OS · 状态（v1.3.29）</title>
+<title>AI Factory OS · 状态（v1.3.30）</title>
 <style>
   :root{--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--ink2:#6e6e73;--line:#d2d2d7;
         --brand:#0071e3;--ok:#34c759;--warn:#ff9f0a;--bad:#ff3b30;--r:18px}
@@ -33,15 +33,16 @@
 </head>
 <body><div class="wrap">
   <h1>AI Factory OS · 状态</h1>
-  <p class="sub">v1.3.29 · 生成于 2026-09-24 02:17 ·
+  <p class="sub">v1.3.30 · 生成于 2026-09-24 02:23 ·
      数据来自 <code>docs/TODO.md</code> + <code>docs/WORKLOG.md</code> + 实时读数 ⇒ 不可能与文档漂移 ✓</p>
 
   <div class="cards">
-    <div class="card"><b>守卫</b><span>63/63 通过</span></div><div class="card"><b>pytest</b><span>74 passed, 7 warnings in 14.14s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 10/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
+    <div class="card"><b>守卫</b><span>64/64 通过</span></div><div class="card"><b>pytest</b><span>75 passed, 7 warnings in 14.04s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 10/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
   </div>
 
   <h2>最近提交</h2>
-  <pre>7bd89c89 refactor(cli): 删老区命令面（Founder: &quot;老区都删除&quot;）→ v1.3.28
+  <pre>c69e0897 refactor(org): 老区彻底清完（服务层 + 脚手架 + 出处注释）→ v1.3.29
+7bd89c89 refactor(cli): 删老区命令面（Founder: &quot;老区都删除&quot;）→ v1.3.28
 d88c71a0 docs(e2e): 冷启动补测（更正）+ 老区盘点 → v1.3.27
 767d94f1 fix(cli): 撤掉我自己编的「下一步去招人」提示 + 更正测试结论 → v1.3.26
 afc27471 chore(trace): 补齐 v1.3.25 的版本与留痕（上一个脚本语法错, 文件没写成 ✗ 如实补上）
@@ -54,8 +55,7 @@ daefe56a test(e2e): 冷启动端到端测试 —— 上半段通, 下半段断�
 67538852 feat(learning): 学习自治再扩两域（skill / decision）→ v1.3.19
 edf80101 feat(learning): 学习自治扩展到 workflow 域（Founder 点单第 6 件）→ v1.3.18
 c1a7ddc3 test(views): dashboard 全视图口径交叉核对（守住, 防漂）→ v1.3.17
-2a821e65 docs(install): 解耦安装 —— 独立 venv + wheel, 仓库删了也能跑（Founder: pipx 解耦）→ v1.3.16
-2c625f1e fix(cli): create 的手感（静默成功 + 英文缺参）+ dashboard 模型告警 → v1.3.15</pre>
+2a821e65 docs(install): 解耦安装 —— 独立 venv + wheel, 仓库删了也能跑（Founder: pipx 解耦）→ v1.3.16</pre>
 
   <h2>活清单（TODO.md）</h2>
   <h1>AI Factory OS · TODO（活清单）</h1>

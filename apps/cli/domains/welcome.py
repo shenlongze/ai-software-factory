@@ -28,6 +28,17 @@ _MENU: dict[str, tuple[str, list[str]]] = {
 }
 
 _ROLE_GUIDE: dict[str, list[tuple[str, str]]] = {
+    # ★ 2026-09-23（Founder 建议"从头测试"后补）: 冷启动的正道三步 —— 以前**一步都不引导** ✗,
+    #   用户（含我自己）会被旁边的老区命令面（org employee hire 之类）带偏 ✓
+    "第一次用": [
+        ("factory create project --name <名字> --repo-path <你的仓库>", "第 1 步: 建项目（挂在你的 git 仓库上）"),
+        ("factory chain \"我要做…\" --project P-…", "第 2 步: 一条命令跑出需求→PRD→架构→任务树"),
+        ("factory tasktree confirm <PLAN>", "第 3 步: 人工门 —— 你看懂了才让它开始做"),
+        ("factory agent add --id A-1 --role developer --skills developer",
+         "第 4 步: 建**舰队**（调度器按能力派活; 没有舰队 ⇒ 树跑不动, 只会说 unresolved）"),
+        ("factory provider add", "第 5 步: 配运行时/provider（交互式贴 key; 没配 ⇒ 执行会 NoAvailableRuntime）"),
+        ("factory run --plan <PLAN> --project P-… --limit 3", "第 6 步: 派活 + 真执行（分批跑）"),
+    ],
     "老板": [
         ("factory status", "一眼看家底: 有几个项目/几棵树/多少叶完成"),
         ("factory console dashboard", "七域看板: 项目·待审批·Agent·决策·成本·经验·活动"),

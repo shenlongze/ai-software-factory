@@ -3970,6 +3970,34 @@ def _check_traceability() -> list[str]:
     return bad
 
 
+def _check_cold_start_guide() -> list[str]:
+    """★ 冷启动引导（Founder 建议"从头测试"后补的 E6）。
+
+    判据:
+      1) 帮助中心里有【第一次用】段, 且覆盖正道关键步: create project · chain · tasktree confirm ·
+         **agent add**（建舰队）· **provider add**（配运行时）· run
+      2) 不给"没起服务就说浏览器地址"的假提示 ✗：出现 http://127.0.0.1 的地方必须同时提到怎么**起**它
+    """
+    from pathlib import Path as _PP
+
+    bad: list[str] = []
+    _w = _PP("apps/cli/domains/welcome.py").read_text(encoding="utf-8")
+    if '"第一次用"' not in _w:
+        bad.append("帮助中心没有【第一次用】段 ✗")
+    for need in ("create project", "chain", "tasktree confirm", "agent add", "provider add", "--limit"):
+        if need not in _w:
+            bad.append(f"从零引导缺关键步: {need} ✗")
+    _c = _PP("apps/cli/domains/chain.py").read_text(encoding="utf-8")
+    if "8787" in _c and "factory serve" not in _c:
+        bad.append("chain 结尾给了地址却没说起服务（假提示 ✗）")
+    return bad
+
+
+def test_cold_start_guide() -> None:
+    """冷启动引导: 六步齐 · 不出现假地址。"""
+    assert _check_cold_start_guide() == []
+
+
 def test_traceability() -> None:
     """留痕: 清单 + 日志 + 网页版（由脚本从真源生成）+ 路由 + 进包。"""
     assert _check_traceability() == []
@@ -4126,6 +4154,7 @@ def main() -> int:
     results.append(("项目级记忆（add 自动落盘·写侧接线）", not _check_project_memory(), "；".join(_check_project_memory())))
     results.append(("学习自治多域（六域声明 · workflow 钩子 · 失败安全）", not _check_learning_domains(), "；".join(_check_learning_domains())))
     results.append(("留痕（TODO + WORKLOG + /status 网页版 · 由真源生成）", not _check_traceability(), "；".join(_check_traceability())))
+    results.append(("冷启动引导（第一次用六步 · 无假地址）", not _check_cold_start_guide(), "；".join(_check_cold_start_guide())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

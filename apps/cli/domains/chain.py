@@ -258,7 +258,7 @@ def run_chain(
             f"factory tasktree todo {plan_id}" if plan_id else "（无任务树）",
             f"factory tasktree flow {plan_id}" if plan_id else "",
             "factory tasktree confirm <plan>" if plan_id else "",
-            "浏览器: http://127.0.0.1:8787/",
+            "看界面: 先跑 factory serve（默认 http://127.0.0.1:8787/）—— 没起来就没有界面 ✓",
         ],
     }
 

@@ -3577,6 +3577,8 @@ def _check_version_discipline() -> list[str]:
     判据: ① `pyproject` / `README` / `CHANGELOG` **三处版本号一致** ✓
          ② 版本号**不低于最近 tag**（防倒退/防忘记递增 ✗）
          ③ `docs/release.md` 存在且被 `AGENTS.md` 挂着入口（进入即读 ✓）
+         ④ ★ **已安装的元数据必须与 pyproject 一致**（改了版本没重装 editable ⇒ `factory -v` 显旧号 ✗）
+            —— Founder 规矩: 「发版必重装 editable」; 我自己反复忘 ✗ ⇒ 让守卫抓 ✓
     """
     import re as _re
     import subprocess as _sp
@@ -3606,6 +3608,25 @@ def _check_version_discipline() -> list[str]:
         bad.append("缺 docs/release.md（发版规矩要落文档 ✗）")
     if "docs/release.md" not in _P("AGENTS.md").read_text(encoding="utf-8"):
         bad.append("AGENTS.md 没挂 docs/release.md 的入口（进入即读 ✗）")
+    # ④ 已安装元数据 vs pyproject（改版本没重装 ⇒ 命令显示旧号 ✗）
+    try:
+        import subprocess as _sp
+        from pathlib import Path as _PP
+
+        _py = _PP("pyproject.toml").read_text(encoding="utf-8")
+        _v = ""
+        for _ln in _py.splitlines():
+            if _ln.startswith("version ="):
+                _v = _ln.split('"')[1]
+                break
+        _exe = _PP(".venv/bin/factory")
+        if _v and _exe.is_file():
+            _got = _sp.run([str(_exe), "-v"], capture_output=True, text=True).stdout
+            if f"v{_v}" not in _got:
+                bad.append(f"已安装元数据与 pyproject 不一致（装了旧号 ✗）: pyproject v{_v} · 命令显示 {_got.strip()[:40]}"
+                           f" ⇒ 重装: .venv/bin/pip install -e . && ~/factory-venv/bin/pip install -e .")
+    except Exception:  # noqa: BLE001
+        pass
     return bad
 
 

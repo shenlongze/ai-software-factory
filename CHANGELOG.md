@@ -1,5 +1,25 @@
 # Changelog
 
+## [v1.3.42] — 2026-09-24
+
+**丙（一半）：`status --project`** —— 按项目看总览 ✓（Founder「全做」清单里的第 3 件）。
+
+### Added
+- `factory status --project <P-xxx|项目名|片段>`：总览按项目**真收窄** ✓
+  · 实测：全局 `项目 4 · 任务树 10` → `--project plane-shooter` ⇒ `项目 1 · 任务树 1` ✓
+  · 复用 `progress.summary(project_id=…)`（本就有项目隔离 ⇒ 不另造口径 ✓）
+- 修一处**根因**：`main.py` 里 `cmd_status(ctx)` **没传 args** ✗ ⇒ 任何基于参数的行为都拿不到
+  （我的过滤本来写对了也永远不生效 ✗）⇒ 改为 `cmd_status(ctx, args)` ✓
+
+### 未做（如实记，不做半成品 ✗）
+- `dashboard --project`：`DashboardCollector.__init__` **已支持** `project_id` ✓，但
+  ① 顶层 `dashboard` 的 parser 我**没定位到** ✗、② 收集器还没接参 ✗
+  ⇒ 我**撤掉了那个空转的 flag** ✗（不许上线"看着有开关其实没用"的东西 ✓）⇒ 记 TODO E24 待做 ✓
+
+### 守卫
+- 新增「status --project 真收窄」：**真跑 CLI 对比**全局与按项目的读数，
+  一样就报红 ✓（防止上线空转开关 ✗）
+
 ## [v1.3.41] — 2026-09-24
 
 **修产物 ref 悬空（E23）** —— 用户因此**打不开任何项目文档** ✗。

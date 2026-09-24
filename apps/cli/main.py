@@ -273,7 +273,11 @@ def build_parser() -> Any:
     _dom_audit.register(sub, json_opt)
 
     # factory status
-    json_opt(sub.add_parser("status", help="工厂总览: Projects/Tasks/Agents/Events 计数 (发 system.status_viewed)"))
+    _p_status_top = sub.add_parser("status", help="工厂总览: Projects/Tasks/Agents/Events 计数 "
+                                    "(发 system.status_viewed; --project 只看某个项目 ✓)")
+    _p_status_top.add_argument("--project", default="",
+                               help="★ 只看该项目（P-xxx / 项目名 / 片段 ✓）")
+    json_opt(_p_status_top)
 
     # factory validate
     p_val = sub.add_parser("validate", help="验证任务 — 三层验证引擎 L1/L2/L3 (发 validation.* 事件)")
@@ -1395,7 +1399,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "event":
             result = _dispatch_event(ctx, args)
         elif args.command == "status":
-            result = cmd_status(ctx)
+            result = cmd_status(ctx, args)          # ★ 传 args（丙: --project 过滤要用 ✓）
         elif args.command == "validate":
             result = cmd_validate(ctx, args)
         elif args.command == "agent":

@@ -318,7 +318,13 @@ def cmd_status(ctx: FactoryContext, args: Any | None = None) -> dict:
     store = ctx.open_task_store()
     tasks = store.list()
     by_status = Counter(t.status.value for t in tasks)
-    tree = _prog.summary(ctx.root)                      # ★ 开发任务（任务树）
+    # ★ 2026-09-24（丙, Founder「全做」✓）: --project ⇒ 只看该项目
+    #   （_prog.summary 本就支持 project_id ⇒ 直接过滤, 不另造口径 ✓）
+    _proj_want = str(getattr(args, "project", "") or "") if args is not None else ""
+    _pid_scope = resolve_project_id(ctx, _proj_want) if _proj_want else ""
+    if _proj_want and not _pid_scope:
+        raise CliError(f"project not found: {_proj_want}", exit_code=7)
+    tree = _prog.summary(ctx.root, project_id=_pid_scope)  # ★ 开发任务（任务树; 可限定项目 ✓）
     fleet: list[str] = []
     _af = ctx.root / "agents" / "agents.json"
     if _af.is_file():
@@ -329,6 +335,8 @@ def cmd_status(ctx: FactoryContext, args: Any | None = None) -> dict:
         except Exception:  # noqa: BLE001 — 读不到舰队不编（下面 agents_count=0 会显出来）
             fleet = []
     projects = sorted({t.project for t in tasks} | set(tree["projects"]))
+    if _pid_scope:                                   # ★ 只看该项目 ✓
+        projects = [p for p in projects if str(p) == _pid_scope] or [_pid_scope]
     with ctx.logger_scope() as logger:
         all_events = logger.store.query()
         event_count = len(all_events)

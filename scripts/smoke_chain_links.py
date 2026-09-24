@@ -1590,6 +1590,46 @@ def _check_artifact_refs_real() -> list[str]:
     return bad
 
 
+def _check_status_project_scope() -> list[str]:
+    """★ `status --project` 必须真的**收窄**（丙: Founder「全做」✓ 的一半）。
+
+    判据（真跑 CLI 对比 ✓）:
+      · 全局 `status` 与 `status --project <某项目>` 的项目数/任务树数**必须不同**
+        （不同 = 真的按项目过滤了 ✓; 相同 = flag 是空转 ✗ 不许上线空转的开关）
+    """
+    import os as _os
+    import subprocess as _sp
+    from pathlib import Path as _PP
+
+    exe = _PP(".venv/bin/factory")
+    if not exe.is_file():
+        return ["找不到 .venv/bin/factory（跳过）"]
+    env = dict(_os.environ)
+    bad: list[str] = []
+    g = _sp.run([str(exe), "status"], capture_output=True, text=True, env=env).stdout
+    # 找一个真实项目 id
+    _pj = _PP("~/factory-venv").expanduser()
+    _root = _PP(_os.path.expanduser("~/.factory/projects"))
+    pids = sorted(p.name for p in _root.glob("P-*")) if _root.is_dir() else []
+    if not pids:
+        return []                                   # 没数据 ⇒ 不判（不误杀 ✓）
+    sc = _sp.run([str(exe), "status", "--project", pids[0]], capture_output=True, text=True, env=env).stdout
+    def _line(out: str, key: str) -> str:
+        for ln in out.splitlines():
+            if key in ln:
+                return ln.strip()
+        return ""
+    if _line(g, "项目") == _line(sc, "项目"):
+        bad.append(f"`status --project {pids[0]}` 与全局读数一样 ⇒ flag 是空转 ✗（不许上空转开关）")
+    del _pj
+    return bad
+
+
+def test_status_project_scope() -> None:
+    """status --project: 真收窄（不是空转的开关）。"""
+    assert _check_status_project_scope() == []
+
+
 def test_artifact_refs_real() -> None:
     """产物 ref 全部指向真实文件 · 登记处会落盘 · 有回填脚本。"""
     assert _check_artifact_refs_real() == []
@@ -4445,6 +4485,7 @@ def main() -> int:
     results.append(("项目详情能看树与进度（传错 id 给指引）", not _check_project_detail(), "；".join(_check_project_detail())))
     results.append(("项目归属管线（会话 · 执行请求 · 事件 · docs）", not _check_project_scope_wiring(), "；".join(_check_project_scope_wiring())))
     results.append(("产物 ref 指向真文件（E23）", not _check_artifact_refs_real(), "；".join(_check_artifact_refs_real())))
+    results.append(("status --project 真收窄（非空转）", not _check_status_project_scope(), "；".join(_check_status_project_scope())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

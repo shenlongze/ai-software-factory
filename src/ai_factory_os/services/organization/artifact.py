@@ -44,7 +44,9 @@ ADR-0001 决策 1 扩展路径)。
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field as dc_field
+from pathlib import Path
 from typing import Any
 
 from . import events as org_events
@@ -427,11 +429,32 @@ class ArtifactRegistry:
         artifact_id = artifact_id or new_id("A")
         if self._store.get_artifact(artifact_id) is not None:
             raise DuplicateError(f"artifact already exists: {artifact_id}")
+        # ★ 2026-09-24（E23, Founder 实测: `factory project docs` 看到 ref 全是**悬空**的 ✗）:
+        #   三个 agent（pm/architect/uxui）把 ref **写死**成占位符 `file:///docs/product.json` ✗
+        #   ⇒ 这里统一**真落盘**（内容来自 metadata ✓）, 并把 ref 指向真实文件 ✓
+        #   （一处修 ⇒ 三个 agent 一起好 ✓; 落盘失败就保留原 ref, 不编 ✗）
+        _ref = ref
+        _store_root = getattr(self._store, "root", None) or getattr(self._store, "_root", None)
+        if _store_root and project_id and (not _ref or "://docs/" in _ref):
+            try:
+                _dir = Path(_store_root) / "projects" / project_id / "docs"
+                _dir.mkdir(parents=True, exist_ok=True)
+                _p = _dir / f"{str(type_).lower()}-{artifact_id}.json"
+                _p.write_text(
+                    json.dumps({"id": artifact_id, "type": str(type_), "project_id": project_id,
+                                "producer_role": producer_role, "producer_agent": producer_agent,
+                                "content": metadata or {}},
+                               ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                _ref = "file://" + str(_p)
+            except Exception:  # noqa: BLE001 — 落盘失败保留原样（如实 ✗ 不假装成功）
+                _ref = ref
         artifact = Artifact(
             id=artifact_id,
             stage_id=stage_id,
             type=ArtifactType.parse(type_),
-            ref=ref,
+            ref=_ref,
             project_id=project_id,
             task_id=task_id,
             producer_role=producer_role,

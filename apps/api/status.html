@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Factory OS · 状态（v1.3.40）</title>
+<title>AI Factory OS · 状态（v1.3.41）</title>
 <style>
   :root{--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--ink2:#6e6e73;--line:#d2d2d7;
         --brand:#0071e3;--ok:#34c759;--warn:#ff9f0a;--bad:#ff3b30;--r:18px}
@@ -33,15 +33,16 @@
 </head>
 <body><div class="wrap">
   <h1>AI Factory OS · 状态</h1>
-  <p class="sub">v1.3.40 · 生成于 2026-09-25 02:15 ·
+  <p class="sub">v1.3.41 · 生成于 2026-09-25 02:23 ·
      数据来自 <code>docs/TODO.md</code> + <code>docs/WORKLOG.md</code> + 实时读数 ⇒ 不可能与文档漂移 ✓</p>
 
   <div class="cards">
-    <div class="card"><b>守卫</b><span>68/69 通过</span></div><div class="card"><b>pytest</b><span>1 failed, 79 passed, 7 warnings in 16.82s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
+    <div class="card"><b>守卫</b><span>69/70 通过</span></div><div class="card"><b>pytest</b><span>1 failed, 80 passed, 7 warnings in 16.99s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
   </div>
 
   <h2>最近提交</h2>
-  <pre>ce44c28e fix(cli): 项目详情 = 真实四段（项目情况/任务情况/文档情况/团队）→ v1.3.39
+  <pre>4e5c4e6b feat(scope): 项目分类（归属）打通 乙+甲+丁（Founder: 全做）→ v1.3.40
+ce44c28e fix(cli): 项目详情 = 真实四段（项目情况/任务情况/文档情况/团队）→ v1.3.39
 f87ce183 fix(cli): 项目详情 —— 语言实时识别 + 三段式排版 + 提示词讲清&quot;平台会写代码&quot; → v1.3.38
 95ae9fc9 test(guard): 版本守卫加第④条 —— 已安装元数据必须与 pyproject 一致（改版本没重装 editable ⇒ factory -v 显旧号 ✗ 我自己反复忘）
 b958edff fix(cli): 项目详情能看树与进度 + 传错 id 给正确指引（Founder 实测「进不去项目」）→ v1.3.37
@@ -54,8 +55,7 @@ fccb8425 fix(store): RuntimeStore 并发写坏库（飞机大战真实测试炸�
 630f9699 test(e2e): 端到端自动化 + 覆盖率基线（Founder 问&quot;现在有没有完整测试&quot;）→ v1.3.32
 41e9b355 refactor(arch): R9 清零 + 发现 R3/R9 规则冲突（待裁决）→ v1.3.31
 2ac248d8 feat(help): 冷启动引导（第一次用六步）+ 撤掉假地址 → v1.3.30
-c69e0897 refactor(org): 老区彻底清完（服务层 + 脚手架 + 出处注释）→ v1.3.29
-7bd89c89 refactor(cli): 删老区命令面（Founder: &quot;老区都删除&quot;）→ v1.3.28</pre>
+c69e0897 refactor(org): 老区彻底清完（服务层 + 脚手架 + 出处注释）→ v1.3.29</pre>
 
   <h2>活清单（TODO.md）</h2>
   <h1>AI Factory OS · TODO（活清单）</h1>
@@ -165,7 +165,7 @@ c69e0897 refactor(org): 老区彻底清完（服务层 + 脚手架 + 出处注�
 <tr><th>E22</th><th>项目详情要**真实展示**（项目/任务/文档情况）；点名了对象别先 list ✗</th><th>**已修 ✓**（v1.3.39：四段真实视图 + 说明修好 + 提示词 1e）</th></tr>
 </table>
 <table>
-<tr><th>E23</th><th>产物记录 ref **悬空**（`file:///docs/product.json` 不存在 ✗）</th><th>待修（要么真的落盘, 要么指向真实位置 ✓）</th></tr>
+<tr><th>E23</th><th>产物记录 ref **悬空**</th><th>**已修 ✓**（v1.3.41：登记处落盘 + 回填 22 个存量 ⇒ 悬空 0 ✓）</th></tr>
 <tr><td>E24</td><td>`dashboard` / `status` **不支持 `--project`** ✗（Finder 全做清单里的「丙」）</td><td>**待做** ✓</td></tr>
 <tr><td>E25</td><td>572 个老会话无项目归属（新会话已修 ✓）</td><td>不追认历史 ✗（如实说明）</td></tr>
 </table>
@@ -221,6 +221,7 @@ c69e0897 refactor(org): 老区彻底清完（服务层 + 脚手架 + 出处注�
 <tr><td>v1.3.38</td><td>**项目详情三修**（Founder 实测: 「language 还是空」✗ + 「详情太乱没章法」✗ + 会话答「改不了代码」✗）: ① 复用 `detect_language/detect_framework` 对仓库**实时识别**（只读不写库 ✓）⇒ plane-shooter 显示 `javascript（自动识别）` ✓; ② 详情重排**三段**: 基本信息 / 任务树与进度 / 团队与能力 + 删掉重复尾巴; ③ 提示词加规则 1d —— 讲清「平台会真正写代码（run/chain 派 agent 在项目仓库改并提交）」, 不许说成系统不会写码 ✗</td><td>守卫「项目详情」加严（三段标题必须齐 + 有代码的项目不许 unknown）· 守卫 68 · pytest 79</td></tr>
 <tr><td>v1.3.39</td><td>**项目详情 = 真实四段**（Founder: 「详情太乱, 要真实展示项目情况/任务情况/文档情况」+「点名了只要你详情, 别多余命令」✗）: 逐一定位真源 —— 说明在**全局** `conversations/`（此前找项目目录 ⇒ 一直空 ✗ 已修）、任务在 `projects/&lt;P&gt;/tasks/`、PRD 在 `product_truth/prds.json`、事实在 `knowledge/facts.json`、产物在 `artifacts.json`、仓库文档/自检脚本在仓库; `project show` 改为**四段真实视图**（项目情况/任务情况/文档情况/团队与能力, 读不到如实留空 ✗不编）; 实测 plane-shooter: 说明=需求原话 · 叶87/完成32(36.8%) · 分布完成32/进行中1/待做54 · PRD1份 · 产物3份 · **自检脚本20个** ✓; 提示词加规则 1e（点名了对象就直接跑那条, 别先 list ✗）; 守卫加严（四段齐 + 说明不许空 + language 不许 unknown）</td><td>守卫 68 · pytest 79</td></tr>
 <tr><td>v1.3.40</td><td>**项目分类（归属）打通**（Founder 问「有项目分类么」⇒ 实测: 任务/文档按项目分目录 ✓ 但**会话 572 个里只有 3 个带归属** ✗ · **事件 13,086 条全空** ✗ · dashboard/status 不支持 --project ✗ ⇒ 他定「全做」✓）: **乙** ✓ 会话创建支持 project_id（chain / conversation new 传入；坑: 该字段本来就有, 我加重复被 ruff F601 抓 ✗）; **甲** ✓ ExecutionRequest 加 project_id + 调度器两处传值 + runner 交给事件 logger（带归属的执行事件从**下一批**开始 ✓）; **丁** ✓ 新增只读 `factory project docs &lt;项目&gt; [--show]`（列 PRD/产物/事实/仓库文档真实路径, 并**如实标注 ref 悬空** ✗）; **丙**（dashboard/status --project）**未做** ✗ 记 E24; 坑: 打印分支插错函数 ⇒ 零输出 ✗ ⇒ 已搬对 ✓</td><td>守卫 68→69</td></tr>
+<tr><td>v1.3.41</td><td>**修产物 ref 悬空（E23）**（Founder 打不开项目文档 ✗）: 根因 = 三个 agent（pm/architect/uxui）把 ref **写死**成占位符 `file:///docs/product.json` ✗; 修 = 登记处一处落盘（内容写入 `projects/&lt;P&gt;/docs/&lt;type&gt;-&lt;id&gt;.json` + ref 指真文件, 失败保留原样 ✗不假装）+ 回填脚本 `scripts/backfill_artifact_refs.py`（--dry-run · 幂等 · 先备份）; 实测 **22 个全部回填, 悬空 0** ✓ （备份 ~/.factory-backups/artifact-refs-backfill-20260924-182119 ✓）; 坑: 我用 `://docs/` 判占位符 ✗ 实际是 `file:///docs/`（///）⇒ 判断恒假 ⇒ 干跑 0 个 ✗ ⇒ 改 `/docs/` ✓</td><td>守卫 69→70</td></tr>
 </table>
 <p>过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |</p>
 <p>（生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |</p>

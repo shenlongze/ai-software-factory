@@ -1552,6 +1552,49 @@ def _check_project_scope_wiring() -> list[str]:
     return bad
 
 
+def _check_artifact_refs_real() -> list[str]:
+    """★ 产物 ref 必须指向**真实文件**（E23: 三个 agent 写死占位符 ⇒ 用户打不开文档 ✗）。
+
+    判据（真扫你的数据 ✓）:
+      1) 每个 `projects/*/artifacts.json` 里的 ref（file:// 形态）都必须 is_file ✓
+      2) 登记处必须有"占位符 ⇒ 真落盘"的逻辑 ✓（新产物不再悬空）
+      3) 回填脚本存在 ✓（存量可修）
+    """
+    import json as _json
+    import os as _os
+    from pathlib import Path as _PP
+
+    bad: list[str] = []
+    art_src = _PP("src/ai_factory_os/services/organization/artifact.py").read_text(encoding="utf-8")
+    if "://docs/" not in art_src or "projects" not in art_src or "docs" not in art_src:
+        bad.append("登记处没有「占位符 ⇒ 真落盘」逻辑 ✗（新产物仍会悬空）")
+    if not _PP("scripts/backfill_artifact_refs.py").is_file():
+        bad.append("没有回填脚本 ✗（存量悬空 ref 修不了）")
+    root = _PP(_os.path.expanduser("~/.factory"))
+    dangling = 0
+    total = 0
+    for f in sorted((root / "projects").glob("P-*/artifacts.json")):
+        try:
+            data = _json.loads(f.read_text(encoding="utf-8")).get("artifacts") or {}
+        except Exception:  # noqa: BLE001
+            continue
+        for a in data.values():
+            ref = str(a.get("ref") or "")
+            if not ref.startswith("file://"):
+                continue
+            total += 1
+            if not _PP(ref.replace("file://", "")).is_file():
+                dangling += 1
+    if total and dangling:
+        bad.append(f"还有 {dangling}/{total} 个产物 ref 悬空 ✗（用户打不开文档）")
+    return bad
+
+
+def test_artifact_refs_real() -> None:
+    """产物 ref 全部指向真实文件 · 登记处会落盘 · 有回填脚本。"""
+    assert _check_artifact_refs_real() == []
+
+
 def test_project_scope_wiring() -> None:
     """项目归属管线: 会话 · 执行请求 · 事件 · project docs。"""
     assert _check_project_scope_wiring() == []
@@ -4401,6 +4444,7 @@ def main() -> int:
     results.append(("流式不双框（顶线/底线各一条 · 不挤忙指示）", not _check_stream_no_double_box(), "；".join(_check_stream_no_double_box())))
     results.append(("项目详情能看树与进度（传错 id 给指引）", not _check_project_detail(), "；".join(_check_project_detail())))
     results.append(("项目归属管线（会话 · 执行请求 · 事件 · docs）", not _check_project_scope_wiring(), "；".join(_check_project_scope_wiring())))
+    results.append(("产物 ref 指向真文件（E23）", not _check_artifact_refs_real(), "；".join(_check_artifact_refs_real())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

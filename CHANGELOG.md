@@ -1,5 +1,36 @@
 # Changelog
 
+## [v1.3.41] — 2026-09-24
+
+**修产物 ref 悬空（E23）** —— 用户因此**打不开任何项目文档** ✗。
+
+### 根因（三个 agent 写死占位符 ✗）
+```
+plugins/agents/pm.py:520        "ref": "file:///docs/product.json"
+plugins/agents/architect.py:898  "ref": "file:///docs/design.json"
+plugins/agents/uxui.py:552       "ref": "file:///docs/ux_ui.json"
+```
+⇒ 这些 ref **永远指向不存在的路径** ✗ ⇒ `factory project docs` 只能标注「✗悬空」✓；
+用户拿到的"文档"= 一个打不开的地址 ✓。
+
+### Fixed
+- **登记处一处修**（`ArtifactRegistry.create` ✓ ⇒ 三个 agent 一起好 ✓）：
+  ref 是占位符（含 `/docs/`）时，把内容（`metadata` ✓）**真落盘**到
+  `<root>/projects/<P>/docs/<type>-<id>.json`，并把 ref 指向该真实文件（`file://<绝对路径>` ✓）；
+  落盘失败则保留原 ref（如实 ✗ 不假装成功）
+- **回填存量**：新增 `scripts/backfill_artifact_refs.py`（`--dry-run` ✓ 幂等 ✓ 先备份 ✓）
+  · 实测：**22 个产物全部回填**，`ref 指向真文件 22 · 仍悬空 0` ✓
+  · 备份：`~/.factory-backups/artifact-refs-backfill-20260924-182119/` ✓
+  · `factory project docs plane-shooter` 现在 ref 全为 `✓`（此前 3 个全 `✗悬空`）
+
+### 过程中的坑（如实记）
+- 我先用 `"://docs/" in ref` 判断占位符 ✗ —— 而实际字符串是 `file:///docs/…`（`///`）⇒
+  判断**恒为假** ⇒ 干跑显示「要回填 0 个」✗ ⇒ 改成 `/docs/` ✓
+
+### 守卫
+- 新增「产物 ref 指向真文件」：真扫 `projects/*/artifacts.json` ⇒ 有悬空就红 ✓ +
+  登记处必须有落盘逻辑 + 回填脚本必须存在 ✓（守卫 69 → **70**）
+
 ## [v1.3.40] — 2026-09-24
 
 **项目分类（归属）打通**（Founder 问「这些内容有项目分类么？」⇒ 实测后决定「全做」✓）。

@@ -5379,31 +5379,46 @@ def _print_project(sub: str, r: dict) -> None:
         print(_render_table(["ID", "Project", "说明", "Status", "Language", "Repository", "Tech Stack"], rows))
         print(f"{r['count']} projects (source: {r['source']})")
     elif sub == "show":
+        # ★ 2026-09-24 重排（Founder: 「后面详情太乱了, 一点章法都没有」✗）:
+        #   分三段: ① 基本信息 ② 任务树与进度（用户最关心 ⇒ 放前面）③ 团队与能力 ✓
         p = r["project"]
-        print(f"{p['name']}  {p['description'] or ''}")
-        print(f"  language    {p['language']}")
-        print(f"  repository  {p['repository'] or '-'}")
-        # ★ 2026-09-24（Founder 实测: 「不能进入到项目看详情」✗）: 把**它的任务树与进度**打出来 ✓
+        _dl_ = r.get("detected_language") or ""
+        _df_ = r.get("detected_framework") or ""
+        _lang = _dl_ or p.get("language") or "unknown"
+        _fw = _df_ or p.get("framework") or "-"
+        _auto = "（自动识别）" if _dl_ and _dl_ != (p.get("language") or "") else ""
+        print(f"{p['name']}   {p.get('description') or '（未记录说明）'}")
+        print()
+        print("  ── 基本信息 ──")
+        print(f"    language    {_lang}{_auto}")
+        print(f"    framework   {_fw}")
+        print(f"    repository  {p.get('repository') or '-'}")
+        print()
         _tr = r.get("trees") or []
+        print("  ── 任务树与进度 ──")
         if _tr:
-            print(f"  任务树      {len(_tr)} 棵")
+            _tot_l = sum(int(x.get("leaves") or 0) for x in _tr)
+            _tot_d = sum(int(x.get("done") or 0) for x in _tr)
+            _pct = (100.0 * _tot_d / _tot_l) if _tot_l else 0.0
+            print(f"    共 {len(_tr)} 棵 · 叶 {_tot_l} · 完成 {_tot_d}（{_pct:.1f}%）")
             for _x in _tr:
-                print(f"    {_x['plan_id']:<22} 叶 {_x['leaves']:>4} · 完成 {_x['done']:>4}"
+                print(f"      {_x['plan_id']:<22} 叶 {_x['leaves']:>4} · 完成 {_x['done']:>4}"
                       f"  {_x['percent']:>5.1f}%")
-            print(f"  下一步      factory tasktree todo {_tr[0]['plan_id']}"
-                  f"    （看逐叶清单; 或 factory tasktree flow {_tr[0]['plan_id']} 看链路图）")
+            print(f"    下一步      factory tasktree todo {_tr[0]['plan_id']}    （逐叶清单）")
+            print(f"                factory tasktree flow {_tr[0]['plan_id']}    （功能链路图）")
         else:
-            print("  任务树      （还没有树）⇒ 用 factory chain \"需求\" --project "
+            print("    （还没有树）⇒ factory chain \"需求\" --project "
                   f"{p.get('id') or ''} 起一棵 ✓")
-        print(f"  tech_stack  {', '.join(p['tech_stack']) or '-'}")
-        print(f"  agents      {len(r['agents'])}")
+        print()
+        print("  ── 团队与能力 ──")
+        print(f"    agents      {len(r.get('agents') or [])}")
+        print(f"    skills      {len(r.get('skills') or [])}")
+        print(f"    workflows   {len(r.get('workflows') or [])}")
         for a in r["agents"]:
             print(f"    {a['id']:<20} role={a['role']:<15} skills={', '.join(a['skills']) or '-'}")
-        print(f"  skills      {len(r['skills'])}")
         for s in r["skills"]:
             print(f"    {s['id']:<20} category={s['category']:<12} "
                   f"{', '.join(s['capabilities']) or '-'}")
-        print(f"  workflows   {len(r['workflows'])}")
         for w in r["workflows"]:
             steps = " → ".join(st["id"] for st in w["steps"])
             print(f"    {w['id']:<20} {w['name'] or '-'}  [{steps}]")

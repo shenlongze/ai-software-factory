@@ -2361,8 +2361,22 @@ def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
                     _trees = sorted(_by.values(), key=lambda x: str(x["plan_id"]))
                 except Exception:  # noqa: BLE001 — 拿不到就不写, 不编 ✓
                     _trees = []
+                # ★ 2026-09-24（Founder: "language 还是空" ✗）:
+                #   库里存的是创建时的值（可能 unknown）⇒ 这里对仓库**实时识别**并展示 ✓
+                #   只读命令不写库（ADR-0013）⇒ 只补显示, 不改数据 ✓
+                _lang, _fw = "", ""
+                try:
+                    from ai_factory_os.services.execution.kernel.project_adoption import (
+                        detect_framework as _df,
+                        detect_language as _dl,
+                    )
+
+                    _lang = _dl(_repo) if _repo else ""
+                    _fw = _df(_repo, _lang) if _repo else ""
+                except Exception:  # noqa: BLE001 — 识别不了就不显示, 不编 ✗
+                    _lang, _fw = "", ""
                 return {"ok": True, "command": "project show", "source": "org 项目库",
-                        "trees": _trees,
+                        "trees": _trees, "detected_language": _lang, "detected_framework": _fw,
                         # 打印器要的字段一个不少（实测: 少 description 就 KeyError ✗）
                         "project": {"name": str(getattr(_rec, "name", "") or _pid_org),
                                     "id": _pid_org, "project_id": _pid_org,

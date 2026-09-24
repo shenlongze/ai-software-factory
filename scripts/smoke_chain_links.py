@@ -1460,6 +1460,35 @@ def _check_store_concurrency() -> list[str]:
     return bad
 
 
+def _check_stream_no_double_box() -> list[str]:
+    """★ 流式回答不许出现"两条框线"（Founder 在真窗口里看到的 ✗）。
+
+    现场（2026-09-24 实测复现 ✓）:
+      行 24 | ⏳ 正在查…  ╭─ ⚕ AI Factory OS ──────   ← 忙指示与顶线挤一行 ✗
+      行 43 |   ╭─ ⚕ AI Factory OS ──────────────   ← 空框（内容已流式打过）✗
+
+    判据（读源码 + 断言关键结构）:
+      1) 打完框的条件必须是 `elif _use_box():`（即 `if _streamed[0]` 优先 ⇒ 流式时跳过打框 ✓）
+      2) 流式打顶线之前必须清忙指示（`_busy_clear` 出现在 `_flush_line` 里 ✓）
+    """
+    from pathlib import Path as _PP
+
+    src = _PP("apps/cli/domains/welcome.py").read_text(encoding="utf-8")
+    bad: list[str] = []
+    if "elif _use_box():" not in src:
+        bad.append("流式时仍会走打框分支 ⇒ 会出现空框 ✗（应为 `elif _use_box():`）")
+    i = src.index("def _flush_line(")
+    j = src.index("def _on_delta(")
+    if "_busy_clear" not in src[i:j]:
+        bad.append("流式打顶线前没清忙指示 ⇒ 顶线会挤在「正在查…」后面 ✗")
+    return bad
+
+
+def test_stream_no_double_box() -> None:
+    """流式回答: 只一条顶线 + 只一条底线 · 顶线不与忙指示同行。"""
+    assert _check_stream_no_double_box() == []
+
+
 def test_store_concurrency() -> None:
     """并发写不许丢更新、不许写坏库（含反例证明 ✓）。"""
     assert _check_store_concurrency() == []
@@ -4270,6 +4299,7 @@ def main() -> int:
     results.append(("冷启动引导（第一次用六步 · 无假地址）", not _check_cold_start_guide(), "；".join(_check_cold_start_guide())))
     results.append(("端到端冷链（派活→执行→进度真的动）", not _check_e2e_cold_start_loop(), "；".join(_check_e2e_cold_start_loop())))
     results.append(("并发写不丢更新（RuntimeStore · 含反例）", not _check_store_concurrency(), "；".join(_check_store_concurrency())))
+    results.append(("流式不双框（顶线/底线各一条 · 不挤忙指示）", not _check_stream_no_double_box(), "；".join(_check_stream_no_double_box())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

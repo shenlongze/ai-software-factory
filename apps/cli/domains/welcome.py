@@ -1066,6 +1066,9 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 if _ln.strip().startswith("RUN:"):      # 内部协议不外泄给老板 ✗
                     return
                 if not _streamed[0]:                    # 第一行之前: 先把答案区顶线打出来 ✓
+                    if _first_proc[0] and _busy_txt:    # ★ 忙指示还在屏上 ⇒ 先清掉再打顶线 ✗
+                        print(_busy_clear(_tty), end="")   #   （Founder 实测: 不清就挤在同一行 ✗）
+                        _first_proc[0] = False
                     from apps.cli.theme import paint as _pl
 
                     _w = min(_term_width(), 96)
@@ -1167,7 +1170,12 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             from apps.cli.theme import paint as _pb    # ★ 正文色（照 Hermes 的 banner_text ✓）
 
             _body = "\n".join(_pb("body", _ln) if _ln.strip() else _ln for _ln in _body.splitlines())
-            if _use_box():
+            if _streamed[0]:
+                # ★ 2026-09-24 修（Founder 在真窗口里看到「上下两条空框线」✗）:
+                #   流式已打过顶线 + 逐行内容（含上面的 flush）⇒ 这里**绝不能再打框** ✗
+                #   （原来是空框: _body="" 但照样 box() ⇒ 屏幕上多出一对空框线）
+                pass
+            elif _use_box():
                 # ★ 标题只留名字（用量/耗时挪到**状态栏** —— 照 Hermes: 框是回答区, 底部那行才是状态 ✓）
                 _b = box("⚕ AI Factory OS", _body)
                 _c, _z = _border_color(), _color_off()

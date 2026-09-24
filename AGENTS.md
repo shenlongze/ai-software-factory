@@ -1,5 +1,9 @@
 # AGENTS.md — AI Factory 项目指令 (进入即读)
 
+- **概念梳理（公司/部门/项目/任务/工作空间/工作目录）**: `docs/概念梳理-组织与工作.md`
+  —— 组织树与工作树是**两套正交维度**（项目不是部门的子节点 ✗）；工作空间=多项目容器、
+     工作目录=会话选中的某个项目（两者不同层 ✗）。**引用概念前先读它 ✓ 禁套近义词** ✗
+
 > 权威事实: 代码 + 运行时 + STEP10 Contract (人工批准 2026-09-02)。
 > 历史文档 (docs/sprint*/design/adr/audit 大部分) = 历史证据, 不代表当前系统。
 > 文档本身不得形成 Parallel Truth (见 docs/00-index/DOCUMENTATION_GOVERNANCE.md)。

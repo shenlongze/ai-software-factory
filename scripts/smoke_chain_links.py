@@ -1662,6 +1662,36 @@ def _check_workdir() -> list[str]:
     return bad
 
 
+def _check_concept_doc() -> list[str]:
+    """★ 概念梳理文档必须存在且**挂在进入即读入口**（Founder: 「一定要梳理清晰」✓）。
+
+    判据:
+      1) `docs/概念梳理-组织与工作.md` 存在, 且含四个关键概念 + 两条边界（正交 / 工作空间 vs 工作目录）
+      2) `AGENTS.md` 挂着它（进入即读 ✓ 否则没人会看到 ✗）
+      3) 文档必须标注**原文出处**（禁凭记忆 ✗）
+    """
+    from pathlib import Path as _PP
+
+    bad: list[str] = []
+    doc = _PP("docs/概念梳理-组织与工作.md")
+    if not doc.is_file():
+        return ["概念梳理文档不存在 ✗"]
+    d = doc.read_text(encoding="utf-8")
+    for k in ("公司", "部门", "项目", "工作空间", "工作目录", "正交"):
+        if k not in d:
+            bad.append(f"文档缺概念「{k}」✗")
+    if "原文" not in d:
+        bad.append("文档没标原文出处 ✗（禁凭记忆）")
+    if "概念梳理-组织与工作" not in _PP("AGENTS.md").read_text(encoding="utf-8"):
+        bad.append("AGENTS.md 没挂该文档 ✗（进不了「进入即读」⇒ 没人看得到）")
+    return bad
+
+
+def test_concept_doc() -> None:
+    """概念梳理: 文档在 · 挂了入口 · 标了原文出处。"""
+    assert _check_concept_doc() == []
+
+
 def test_workdir() -> None:
     """工作目录: 选项目 · 进入 · 命令默认按其跑 · 可退出。"""
     assert _check_workdir() == []
@@ -4529,6 +4559,7 @@ def main() -> int:
     results.append(("产物 ref 指向真文件（E23）", not _check_artifact_refs_real(), "；".join(_check_artifact_refs_real())))
     results.append(("status --project 真收窄（非空转）", not _check_status_project_scope(), "；".join(_check_status_project_scope())))
     results.append(("工作目录（选/进/只跑它/退出）", not _check_workdir(), "；".join(_check_workdir())))
+    results.append(("概念梳理文档（在 + 挂入口 + 标原文）", not _check_concept_doc(), "；".join(_check_concept_doc())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

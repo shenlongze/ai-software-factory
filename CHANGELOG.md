@@ -1,5 +1,42 @@
 # Changelog
 
+## [v1.3.39] — 2026-09-24
+
+**项目详情 = 真实四段**（Founder：「项目详情太乱了，需要真实展示项目情况、项目任务情况、项目文档情况，等等」✓）。
+
+### 现场问题（Founder 实测两条）
+1. 点名了项目，会话却先 `project list` 再 `project show` ✗ ⇒「这里理解有问题啊，只要项目详情就可以了」
+2. 详情仍是字段堆 ✗ ⇒ 他要的是**真实展示**: 项目情况 / 任务情况 / 文档情况 ✓
+
+### 真源在哪（我逐一定位 ✓）
+| 内容 | 真源文件 |
+|---|---|
+| 说明（需求原话）| `~/.factory/conversations/conv-*.json` ★ **全局目录**（此前找的是项目目录 ⇒ 一直是空 ✗）|
+| 任务树/进度 | `~/.factory/projects/<P>/tasks/<PLAN>.json` |
+| PRD | `~/.factory/projects/<P>/product_truth/prds.json` |
+| 需求理解 | `~/.factory/projects/<P>/knowledge/facts.json` |
+| 分析产物 | `~/.factory/projects/<P>/artifacts.json` |
+| 仓库文档/自检脚本 | 项目仓库里的 `*.md` 与 `verify-*.*` |
+
+### Fixed
+- `project show` 改为**四段真实视图**（数据全从上面真源读, 读不到如实留空 ✗不编）：
+  ```
+  plane-shooter    active · javascript
+    ── 项目情况 ──   说明（需求原话）· 仓库 · 语言/框架（自动识别）· 需求理解 N 条事实
+    ── 任务情况 ──   树 N 棵 · 叶/完成/百分比 · **状态分布**（完成/进行中/待做）· 下一步
+    ── 文档情况 ──   PRD（含会话 id）· 分析产物 · 仓库文档 · 自检脚本数
+    ── 团队与能力 ── agents/skills/workflows
+  ```
+  · 实测 plane-shooter：说明=需求原话 ✓ · 叶 87/完成 32（36.8%）· 分布 完成32/进行中1/待做54 ·
+    PRD 1 份（会话 conv-88f79b87b992）· 分析产物 3 份（product/design/ux_ui）· 自检脚本 **20 个** ✓
+- **说明为空的老 bug 修掉** ✓：`_project_notes` 现在扫**全局** `conversations/`（按 project 过滤, 认不出归属的不认 ✗）
+  ⇒ `project list` 的说明列也会跟着有 ✓
+- 会话提示词新增规则 **1e**：老板点名了对象 ⇒ **直接跑那条命令** ✓ 不要先 `list` 铺垫 ✗
+
+### 守卫
+- 「项目详情」加严：四段标题必须齐（项目情况/任务情况/文档情况/团队与能力）+
+  有会话的项目说明**不许为空** + 有代码的项目 language 不许 unknown ✓
+
 ## [v1.3.38] — 2026-09-24
 
 **项目详情：语言自动识别 + 排版三段式**（Founder 实测：「language 还是空」✗ · 「后面详情太乱了，一点章法都没有」✗）。

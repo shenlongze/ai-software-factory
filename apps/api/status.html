@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Factory OS · 状态（v1.3.38）</title>
+<title>AI Factory OS · 状态（v1.3.39）</title>
 <style>
   :root{--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--ink2:#6e6e73;--line:#d2d2d7;
         --brand:#0071e3;--ok:#34c759;--warn:#ff9f0a;--bad:#ff3b30;--r:18px}
@@ -33,15 +33,16 @@
 </head>
 <body><div class="wrap">
   <h1>AI Factory OS · 状态</h1>
-  <p class="sub">v1.3.38 · 生成于 2026-09-24 12:35 ·
+  <p class="sub">v1.3.39 · 生成于 2026-09-24 12:48 ·
      数据来自 <code>docs/TODO.md</code> + <code>docs/WORKLOG.md</code> + 实时读数 ⇒ 不可能与文档漂移 ✓</p>
 
   <div class="cards">
-    <div class="card"><b>守卫</b><span>68/68 通过</span></div><div class="card"><b>pytest</b><span>79 passed, 7 warnings in 16.98s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
+    <div class="card"><b>守卫</b><span>65/68 通过</span></div><div class="card"><b>pytest</b><span>3 failed, 76 passed, 7 warnings in 17.36s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
   </div>
 
   <h2>最近提交</h2>
-  <pre>95ae9fc9 test(guard): 版本守卫加第④条 —— 已安装元数据必须与 pyproject 一致（改版本没重装 editable ⇒ factory -v 显旧号 ✗ 我自己反复忘）
+  <pre>f87ce183 fix(cli): 项目详情 —— 语言实时识别 + 三段式排版 + 提示词讲清&quot;平台会写代码&quot; → v1.3.38
+95ae9fc9 test(guard): 版本守卫加第④条 —— 已安装元数据必须与 pyproject 一致（改版本没重装 editable ⇒ factory -v 显旧号 ✗ 我自己反复忘）
 b958edff fix(cli): 项目详情能看树与进度 + 传错 id 给正确指引（Founder 实测「进不去项目」）→ v1.3.37
 f4603543 docs(runs): 飞机大战过程记录补第 9 节（29/87 · 20 commit · 19 个平台自写验证脚本的原文实证）
 94bb17f7 feat(chat): 提示词加规则 1c —— 讲参数前先查 -h（兑现上一条提交的承诺）→ v1.3.36
@@ -54,8 +55,7 @@ fccb8425 fix(store): RuntimeStore 并发写坏库（飞机大战真实测试炸�
 2ac248d8 feat(help): 冷启动引导（第一次用六步）+ 撤掉假地址 → v1.3.30
 c69e0897 refactor(org): 老区彻底清完（服务层 + 脚手架 + 出处注释）→ v1.3.29
 7bd89c89 refactor(cli): 删老区命令面（Founder: &quot;老区都删除&quot;）→ v1.3.28
-d88c71a0 docs(e2e): 冷启动补测（更正）+ 老区盘点 → v1.3.27
-767d94f1 fix(cli): 撤掉我自己编的「下一步去招人」提示 + 更正测试结论 → v1.3.26</pre>
+d88c71a0 docs(e2e): 冷启动补测（更正）+ 老区盘点 → v1.3.27</pre>
 
   <h2>活清单（TODO.md）</h2>
   <h1>AI Factory OS · TODO（活清单）</h1>
@@ -161,6 +161,9 @@ d88c71a0 docs(e2e): 冷启动补测（更正）+ 老区盘点 → v1.3.27
 <table>
 <tr><th>E21</th><th>守卫偶发不稳（本轮出现 1 次 `1 failed`, 复跑两次全过 ✗）</th><th>待查（先记：不影响判定, 但要找出是哪条 + 为什么）</th></tr>
 </table>
+<table>
+<tr><th>E22</th><th>项目详情要**真实展示**（项目/任务/文档情况）；点名了对象别先 list ✗</th><th>**已修 ✓**（v1.3.39：四段真实视图 + 说明修好 + 提示词 1e）</th></tr>
+</table>
 
   <h2>工作日志（WORKLOG.md，追加式）</h2>
   <h1>AI Factory OS · 工作日志（追加式 ⇒ 留痕）</h1>
@@ -211,6 +214,7 @@ d88c71a0 docs(e2e): 冷启动补测（更正）+ 老区盘点 → v1.3.27
 <tr><td>v1.3.36</td><td>**会话提示词加规则 1c**（兑现 v1.3.35 提交信息里的承诺 ✗）: 「讲参数前先 `RUN: factory &lt;cmd&gt; -h` 看一眼, 别凭记忆说哪个必填」—— 起因 = Founder 实测里模型把 project 的 `--company`（可选）说成必需 ✗</td><td>提示词已改 ✓</td></tr>
 <tr><td>v1.3.37</td><td>**项目详情能看树与进度**（Founder 实测「不能进入到项目查看详情」✗）: 根因① `project show` 只有 language/repo/agents/skills/workflows, **没树没进度** ✗; 根因② 把项目 id（P-xxx）传给要 PLAN-xxx 的命令 ⇒ 只回「任务树不存在」✗（会话里模型就是这么被误导的）; 修 = project show 附**该项目的树 + 叶数/完成/百分比** + 下一步命令; 新增共用 `_plan_not_found()` 替换 **9 处**裸报错; 顺带修计数（原先比 &quot;completed&quot; ✗ 真实值是 done ⇒ 一直算 0）; 实测: plane-shooter ⇒ 任务树 1 棵 · PLAN-5cb0df162c · 叶 87 · 完成 29 · 33.3% ✓</td><td>守卫 67→68</td></tr>
 <tr><td>v1.3.38</td><td>**项目详情三修**（Founder 实测: 「language 还是空」✗ + 「详情太乱没章法」✗ + 会话答「改不了代码」✗）: ① 复用 `detect_language/detect_framework` 对仓库**实时识别**（只读不写库 ✓）⇒ plane-shooter 显示 `javascript（自动识别）` ✓; ② 详情重排**三段**: 基本信息 / 任务树与进度 / 团队与能力 + 删掉重复尾巴; ③ 提示词加规则 1d —— 讲清「平台会真正写代码（run/chain 派 agent 在项目仓库改并提交）」, 不许说成系统不会写码 ✗</td><td>守卫「项目详情」加严（三段标题必须齐 + 有代码的项目不许 unknown）· 守卫 68 · pytest 79</td></tr>
+<tr><td>v1.3.39</td><td>**项目详情 = 真实四段**（Founder: 「详情太乱, 要真实展示项目情况/任务情况/文档情况」+「点名了只要你详情, 别多余命令」✗）: 逐一定位真源 —— 说明在**全局** `conversations/`（此前找项目目录 ⇒ 一直空 ✗ 已修）、任务在 `projects/&lt;P&gt;/tasks/`、PRD 在 `product_truth/prds.json`、事实在 `knowledge/facts.json`、产物在 `artifacts.json`、仓库文档/自检脚本在仓库; `project show` 改为**四段真实视图**（项目情况/任务情况/文档情况/团队与能力, 读不到如实留空 ✗不编）; 实测 plane-shooter: 说明=需求原话 · 叶87/完成32(36.8%) · 分布完成32/进行中1/待做54 · PRD1份 · 产物3份 · **自检脚本20个** ✓; 提示词加规则 1e（点名了对象就直接跑那条, 别先 list ✗）; 守卫加严（四段齐 + 说明不许空 + language 不许 unknown）</td><td>守卫 68 · pytest 79</td></tr>
 </table>
 <p>过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |</p>
 <p>（生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |</p>

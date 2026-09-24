@@ -5379,41 +5379,66 @@ def _print_project(sub: str, r: dict) -> None:
         print(_render_table(["ID", "Project", "说明", "Status", "Language", "Repository", "Tech Stack"], rows))
         print(f"{r['count']} projects (source: {r['source']})")
     elif sub == "show":
-        # ★ 2026-09-24 重排（Founder: 「后面详情太乱了, 一点章法都没有」✗）:
-        #   分三段: ① 基本信息 ② 任务树与进度（用户最关心 ⇒ 放前面）③ 团队与能力 ✓
+        # ★ 2026-09-24（Founder: 「项目详情太乱了, 需要真实展示项目情况/任务情况/文档情况」✓）
+        #   四段: 项目情况 → 任务情况 → 文档情况 → 团队与能力; 数据全从真源读, 读不到如实留空 ✗不编
         p = r["project"]
         _dl_ = r.get("detected_language") or ""
         _df_ = r.get("detected_framework") or ""
         _lang = _dl_ or p.get("language") or "unknown"
         _fw = _df_ or p.get("framework") or "-"
-        _auto = "（自动识别）" if _dl_ and _dl_ != (p.get("language") or "") else ""
-        print(f"{p['name']}   {p.get('description') or '（未记录说明）'}")
+        print(f"{p['name']}    {p.get('status') or ''} · {_lang}")
         print()
-        print("  ── 基本信息 ──")
-        print(f"    language    {_lang}{_auto}")
-        print(f"    framework   {_fw}")
-        print(f"    repository  {p.get('repository') or '-'}")
+        print("  ── 项目情况 ──")
+        print(f"    说明        {p.get('description') or '（未记录说明）'}")
+        print(f"    仓库        {p.get('repository') or '-'}")
+        print(f"    语言/框架   {_lang}{'（自动识别）' if _dl_ else ''} · {_fw}")
+        print(f"    需求理解    {int(r.get('facts') or 0)} 条事实（knowledge/facts.json）")
         print()
+        print("  ── 任务情况 ──")
         _tr = r.get("trees") or []
-        print("  ── 任务树与进度 ──")
+        _dist = r.get("status_dist") or {}
         if _tr:
             _tot_l = sum(int(x.get("leaves") or 0) for x in _tr)
             _tot_d = sum(int(x.get("done") or 0) for x in _tr)
             _pct = (100.0 * _tot_d / _tot_l) if _tot_l else 0.0
-            print(f"    共 {len(_tr)} 棵 · 叶 {_tot_l} · 完成 {_tot_d}（{_pct:.1f}%）")
+            print(f"    树          {len(_tr)} 棵 · 叶 {_tot_l} · 完成 {_tot_d}（{_pct:.1f}%）")
             for _x in _tr:
                 print(f"      {_x['plan_id']:<22} 叶 {_x['leaves']:>4} · 完成 {_x['done']:>4}"
                       f"  {_x['percent']:>5.1f}%")
+            if _dist:
+                _map = {"done": "完成", "todo": "待做", "pending": "待做",
+                        "in_progress": "进行中", "claimed": "已认领"}
+                print("    分布        " + " · ".join(f"{_map.get(k, k)} {v}"
+                                                      for k, v in sorted(_dist.items())))
             print(f"    下一步      factory tasktree todo {_tr[0]['plan_id']}    （逐叶清单）")
             print(f"                factory tasktree flow {_tr[0]['plan_id']}    （功能链路图）")
         else:
-            print("    （还没有树）⇒ factory chain \"需求\" --project "
+            print("    树          （还没有）⇒ factory chain \"需求\" --project "
                   f"{p.get('id') or ''} 起一棵 ✓")
         print()
+        print("  ── 文档情况 ──")
+        _prds = r.get("prds") or []
+        if _prds:
+            print(f"    PRD         {len(_prds)} 份")
+            for _x in _prds:
+                _c = f"（会话 {_x['conversation_id']}）" if _x.get("conversation_id") else ""
+                print(f"      {_x['id']:<24} {_x.get('status') or ''} {_c}")
+        else:
+            print("    PRD         （还没有）")
+        _arts = r.get("artifacts") or []
+        if _arts:
+            print(f"    分析产物    {len(_arts)} 份: " + " / ".join(_a.get("type") or "?" for _a in _arts))
+        else:
+            print("    分析产物    （还没有）")
+        _docs = r.get("repo_docs") or []
+        print(f"    仓库文档    {len(_docs)} 个" + (": " + " · ".join(_docs[:4]) if _docs else ""))
+        _vs = r.get("verify_scripts") or []
+        if _vs:
+            print(f"    自检脚本    {len(_vs)} 个（{_vs[0].split('/')[-1][:26]}… 等）")
+        print()
         print("  ── 团队与能力 ──")
-        print(f"    agents      {len(r.get('agents') or [])}")
-        print(f"    skills      {len(r.get('skills') or [])}")
-        print(f"    workflows   {len(r.get('workflows') or [])}")
+        print(f"    agents      {len(r.get('agents') or [])}　skills {len(r.get('skills') or [])}"
+              f"　workflows {len(r.get('workflows') or [])}")
         for a in r["agents"]:
             print(f"    {a['id']:<20} role={a['role']:<15} skills={', '.join(a['skills']) or '-'}")
         for s in r["skills"]:

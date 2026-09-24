@@ -2260,8 +2260,27 @@ def _project_notes(root: Path, rows: list[Any]) -> dict[str, str]:
         note = str(getattr(r, "description", "") or getattr(r, "title", "") or "").strip()
         if not note:
             try:
-                files = sorted((Path(root) / "projects" / pid / "conversations").glob("*.json"),
-                               key=lambda q: q.stat().st_mtime)
+                # ★ 2026-09-24 修: 会话实际在**全局** `conversations/`（项目目录里没有 ✗）
+                #   ⇒ 两处都找（全局优先, 项目目录兜底）, 只认属于本项目的会话 ✓
+                files = []
+
+                def _scan(_d: Path, *, strict: bool) -> None:
+                    """strict=True ⇒ 只在**全局**目录用: 认不出归属的会话不认 ✗
+                    （项目目录里的会话天然属于本项目 ⇒ 不要求带 project_id ✓）"""
+                    for _f in sorted(_d.glob("*.json"), key=lambda q: q.stat().st_mtime):
+                        try:
+                            _j = json.loads(_f.read_text(encoding="utf-8"))
+                        except Exception:  # noqa: BLE001
+                            continue
+                        _op = str(_j.get("project_id") or _j.get("project") or "")
+                        if _op and _op != pid:
+                            continue
+                        if strict and not _op:
+                            continue          # 全局目录里认不出归属的, 不认 ✗
+                        files.append(_f)
+
+                _scan(Path(root) / "conversations", strict=True)
+                _scan(Path(root) / "projects" / pid / "conversations", strict=False)
                 for f in files:
                     try:
                         d = json.loads(f.read_text(encoding="utf-8"))
@@ -2375,8 +2394,49 @@ def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
                     _fw = _df(_repo, _lang) if _repo else ""
                 except Exception:  # noqa: BLE001 — 识别不了就不显示, 不编 ✗
                     _lang, _fw = "", ""
+                # ★ 2026-09-24（Founder: 要"真实展示项目情况/任务情况/文档情况"✓）:
+                #   下面全部从**真源文件**读, 读不到就如实留空 —— 绝不编 ✗
+                _base = ctx.root / "projects" / _pid_org
+                _prds: list[dict[str, Any]] = []
+                try:
+                    _pj = json.loads((_base / "product_truth" / "prds.json").read_text(encoding="utf-8"))
+                    _prds = [{"id": str(k), "status": str(v.get("status") or ""),
+                              "conversation_id": str(v.get("conversation_id") or "")}
+                             for k, v in _pj.items()]
+                except Exception:  # noqa: BLE001
+                    _prds = []
+                _facts = 0
+                try:
+                    _f = json.loads((_base / "knowledge" / "facts.json").read_text(encoding="utf-8"))
+                    _facts = len(_f.get("facts") or [])
+                except Exception:  # noqa: BLE001
+                    _facts = 0
+                _arts: list[dict[str, str]] = []
+                try:
+                    _aj = json.loads((_base / "artifacts.json").read_text(encoding="utf-8"))
+                    for _a in (_aj.get("artifacts") or {}).values():
+                        _arts.append({"id": str(_a.get("id") or ""), "type": str(_a.get("type") or ""),
+                                      "ref": str(_a.get("ref") or "")})
+                except Exception:  # noqa: BLE001
+                    _arts = []
+                # 树的**状态分布**（真实 status: done/todo/in_progress ✓）
+                _dist: dict[str, int] = {}
+                for _r in _rows:
+                    _s = str(_r.get("status") or "?")
+                    _dist[_s] = _dist.get(_s, 0) + 1
+                # 仓库文档 + 自检脚本（读仓库 ✓）
+                _docs: list[str] = []
+                _verifs: list[str] = []
+                _rp = Path(_repo) if _repo else None
+                if _rp and _rp.is_dir():
+                    _docs = sorted(str(q.relative_to(_rp)) for q in _rp.rglob("*.md")
+                                   if ".git" not in q.parts)[:12]
+                    _verifs = sorted(str(q.relative_to(_rp)) for q in _rp.rglob("verify-*.*")
+                                     if ".git" not in q.parts)
                 return {"ok": True, "command": "project show", "source": "org 项目库",
                         "trees": _trees, "detected_language": _lang, "detected_framework": _fw,
+                        "prds": _prds, "facts": _facts, "artifacts": _arts,
+                        "status_dist": _dist, "repo_docs": _docs, "verify_scripts": _verifs,
                         # 打印器要的字段一个不少（实测: 少 description 就 KeyError ✗）
                         "project": {"name": str(getattr(_rec, "name", "") or _pid_org),
                                     "id": _pid_org, "project_id": _pid_org,

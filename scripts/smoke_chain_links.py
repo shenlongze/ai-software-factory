@@ -1501,18 +1501,20 @@ def _check_project_detail() -> list[str]:
     env = dict(_os.environ)
     bad: list[str] = []
     shop = _sp.run([str(exe), "project", "show", "gym-coach"], capture_output=True, text=True, env=env)
-    if "任务树" not in shop.stdout:
-        bad.append("`project show` 不显示任务树（用户「进不去项目」✗）")
+    if "任务情况" not in shop.stdout:
+        bad.append("`project show` 不显示任务情况（用户「进不去项目」✗）")
     # ★ 2026-09-24（Founder: 「后面详情太乱了, 一点章法都没有」✗）: 必须三段分明 ✓
-    for _sec in ("── 基本信息 ──", "── 任务树与进度 ──", "── 团队与能力 ──"):
+    for _sec in ("── 项目情况 ──", "── 任务情况 ──", "── 文档情况 ──", "── 团队与能力 ──"):
         if _sec not in shop.stdout:
-            bad.append(f"项目详情缺少分段「{_sec}」（排版没章法 ✗）")
+            bad.append(f"项目详情缺少分段「{_sec}」（Founder 要「项目情况/任务情况/文档情况」✗）")
     # ★ 语言不许永远是 unknown（Founder: 「language 还是空」✗）—— 有代码的仓库要能识别出来 ✓
     _scen = _PP("/Users/agentdev/factory-scenarios/plane-shooter")
     if _scen.is_dir():
         _ps = _sp.run([str(exe), "project", "show", "plane-shooter"], capture_output=True, text=True, env=env)
         if "language    unknown" in _ps.stdout:
             bad.append("有代码的项目 language 仍显示 unknown（没做实时识别 ✗）")
+        if "（未记录说明）" in _ps.stdout:
+            bad.append("有会话的项目说明仍为空（会话在全局目录, 之前找错了地方 ✗）")
     tt = _sp.run([str(exe), "tasktree", "show", "P-000000"], capture_output=True, text=True, env=env)
     if "项目 id" not in (tt.stdout + tt.stderr):
         bad.append("拿项目 id 查树时没给正确指引（只回「不存在」⇒ 用户以为没树 ✗）")

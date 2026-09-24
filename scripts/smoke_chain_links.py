@@ -1521,6 +1521,42 @@ def _check_project_detail() -> list[str]:
     return bad
 
 
+def _check_project_scope_wiring() -> list[str]:
+    """★ 项目归属的**管线**必须接好（Founder: 「这些内容有项目分类么?」⇒ 全做 ✓）。
+
+    判据（读源码断言关键连接；执行期实测在下一批做 ✓）:
+      1) 会话创建支持 project_id 且写入落盘 dict ✓
+      2) 执行请求带 project_id 字段, 且调度器两处都传 ✓
+      3) runner 把 project_id 交给事件 logger ✓
+      4) `project docs` 有分发 + 有实现 ✓
+    """
+    from pathlib import Path as _PP
+
+    bad: list[str] = []
+    u = _PP("src/ai_factory_os/services/conversation/understanding.py").read_text(encoding="utf-8")
+    if "project_id: str = \"\"" not in u or '"project_id": str(project_id or "")' not in u:
+        bad.append("会话创建没接 project_id（新会话仍无项目归属 ✗）")
+    rt = _PP("src/ai_factory_os/services/execution/runtime/types.py").read_text(encoding="utf-8")
+    if "project_id: str | None = None" not in rt:
+        bad.append("ExecutionRequest 缺 project_id 字段 ✗")
+    for f in ("src/ai_factory_os/bootstrap/scheduler_wiring.py",
+              "src/ai_factory_os/bootstrap/scheduler_pump.py"):
+        if "project_id=" not in _PP(f).read_text(encoding="utf-8"):
+            bad.append(f"{f} 派发时没传 project_id ✗")
+    rn = _PP("src/ai_factory_os/services/execution/runner.py").read_text(encoding="utf-8")
+    if "project_id=getattr(request" not in rn:
+        bad.append("runner 没把 project_id 交给事件 logger ✗（审计事件仍无归属）")
+    mn = _PP("apps/cli/main.py").read_text(encoding="utf-8")
+    if 'cmd_project_docs' not in mn:
+        bad.append("`project docs` 没接上 ✗")
+    return bad
+
+
+def test_project_scope_wiring() -> None:
+    """项目归属管线: 会话 · 执行请求 · 事件 · project docs。"""
+    assert _check_project_scope_wiring() == []
+
+
 def test_project_detail() -> None:
     """项目详情含树与进度 · 传错 id 类型给指引。"""
     assert _check_project_detail() == []
@@ -4364,6 +4400,7 @@ def main() -> int:
     results.append(("并发写不丢更新（RuntimeStore · 含反例）", not _check_store_concurrency(), "；".join(_check_store_concurrency())))
     results.append(("流式不双框（顶线/底线各一条 · 不挤忙指示）", not _check_stream_no_double_box(), "；".join(_check_stream_no_double_box())))
     results.append(("项目详情能看树与进度（传错 id 给指引）", not _check_project_detail(), "；".join(_check_project_detail())))
+    results.append(("项目归属管线（会话 · 执行请求 · 事件 · docs）", not _check_project_scope_wiring(), "；".join(_check_project_scope_wiring())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

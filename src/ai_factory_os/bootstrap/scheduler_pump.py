@@ -929,8 +929,16 @@ def make_real_execution_port(root: Path | str, *, task_id: str, work: Any = None
 
             store = open_runtime_store(root)
             eid = store.next_execution_id(prefix="EXR-")
+            _pid_ev = ""
+            try:                                    # ★ 事件带项目归属（取不到就空 ✓）
+                from ai_factory_os.services.work import decomposition as _Dp
+
+                _pid_ev = str((_Dp.load_tree(root, task_id) or {}).get("project_id") or "")
+            except Exception:  # noqa: BLE001
+                _pid_ev = ""
             req = ExecutionRequest(
                 id=eid, task_id=task_id,
+                project_id=(_pid_ev or None),
                 agent_id=member_id or None,
                 input={"node_id": node_id, "resolution_id": resolution_id,
                        "member_id": member_id, "identity_id": identity_id},

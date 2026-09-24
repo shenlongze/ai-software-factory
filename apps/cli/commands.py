@@ -2340,6 +2340,71 @@ def resolve_project_id(ctx: FactoryContext, token: str) -> str:
     return ""
 
 
+
+def cmd_project_docs(ctx: FactoryContext, args: Any) -> dict:
+    """factory project docs <项目> [--show <名字>] —— 按项目看文档（**只读** ✓）。
+
+    ★ 2026-09-24（Founder: 「项目相关的文档」能不能查 ✓ 批准加这个只读入口）:
+      此前的痛点: `project show` 只说"有几份" ✗、`factory product` 那一族只有**生成**子命令 ✗、
+      产物记录里的 ref 是**悬空**的 `file:///docs/product.json` ✗ ⇒ 用户看不到任何内容 ✓。
+      这里从**真源**读并把内容打出来（PRD 的 content / 产物的 metadata / 事实 / 仓库 md 的真实路径 ✓）。
+    """
+    name = str(getattr(args, "name", "") or "")
+    pid = resolve_project_id(ctx, name)
+    if not pid:
+        raise CliError(f"project not found: {name}", exit_code=7)
+    base = Path(ctx.root) / "projects" / pid
+    want = str(getattr(args, "show", "") or "").strip().lower()
+
+    docs: list[dict[str, Any]] = []
+    # PRD（product_truth/prds.json: 条目里有 content/structured_content ✓）
+    try:
+        prds = json.loads((base / "product_truth" / "prds.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        prds = {}
+    for k, v in (prds or {}).items():
+        docs.append({"kind": "prd", "id": str(k), "title": str(v.get("title") or ""),
+                     "status": str(v.get("status") or ""), "source": "product_truth/prds.json",
+                     "content": v.get("structured_content") or v.get("content") or {}})
+    # 分析产物（artifacts.json: 内容在 metadata ✓; ref 可能是悬空的 ⇒ 如实标注 ✗）
+    try:
+        arts = json.loads((base / "artifacts.json").read_text(encoding="utf-8")).get("artifacts") or {}
+    except Exception:  # noqa: BLE001
+        arts = {}
+    for a in (arts or {}).values():
+        _ref = str(a.get("ref") or "")
+        _dangling = _ref.startswith("file:///") and not Path(_ref.replace("file://", "")).exists()
+        docs.append({"kind": str(a.get("type") or "artifact"), "id": str(a.get("id") or ""),
+                     "title": "", "status": str(a.get("status") or ""),
+                     "source": "artifacts.json", "content": a.get("metadata") or {},
+                     "ref": _ref, "ref_dangling": bool(_dangling)})
+    # 需求事实
+    try:
+        facts = json.loads((base / "knowledge" / "facts.json").read_text(encoding="utf-8")).get("facts") or []
+    except Exception:  # noqa: BLE001
+        facts = []
+    # 仓库文档（真实路径 ✓ 可直接打开）
+    repo_docs: list[str] = []
+    _pid_repo = ""
+    try:
+        from ai_factory_os.services.organization.projects import ProjectStore
+
+        _rec = next((r for r in ProjectStore(Path(ctx.root) / "org").list_projects() or []
+                     if str(getattr(r, "id", "")) == pid), None)
+        _pid_repo = str(getattr(_rec, "repo_path", "") or "") if _rec is not None else ""
+        _rp = Path(_pid_repo) if _pid_repo else None
+        if _rp and _rp.is_dir():
+            repo_docs = sorted(str(q) for q in _rp.rglob("*.md") if ".git" not in q.parts)
+    except Exception:  # noqa: BLE001
+        repo_docs = []
+    out: dict[str, Any] = {"ok": True, "command": "project docs", "project_id": pid,
+                           "docs": docs, "facts": len(facts),
+                           "repo_docs": repo_docs, "show": want}
+    if want:
+        picked = [d for d in docs if d["kind"] == want or d["id"].lower() == want]
+        out["picked"] = picked
+    return out
+
 def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
     """factory project show <name> — 项目详情: 技术栈/状态/运行偏好/Agent/技能/工作流。
 

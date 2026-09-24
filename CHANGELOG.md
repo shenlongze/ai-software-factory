@@ -1,5 +1,37 @@
 # Changelog
 
+## [v1.3.40] — 2026-09-24
+
+**项目分类（归属）打通**（Founder 问「这些内容有项目分类么？」⇒ 实测后决定「全做」✓）。
+
+### 先给实测结论（当时的原状 ✗）
+| 内容 | 有项目归属吗 | 实测 |
+|---|---|---|
+| 任务树 / PRD / 分析产物 / 需求事实 | ✓ 有（**存储层按项目分目录**）| 但**没有命令能按项目看内容** ✗ |
+| 会话 | ✗ **基本没有** | 572 个会话里只有 **3 个**带 `project_id` ✗ |
+| 事件（审计）| ✗ **没有** | 表里有 `project_id` 列 ✓ 但 13,086 条**全空** ✗ |
+| 看板 / 状态 | ⚠ 部分 | `kanban --project` ✓；`dashboard`/`status` 不支持 ✗ |
+
+### 本轮做完的三件（第四件 丙 待做）
+- **乙 会话带归属** ✓：`create_conversation(..., project_id=…)` 支持并落盘；
+  `chain` / `conversation new --project` 传入已知项目；公开形态 `_public_conv` 也带出该字段
+  （否则调用方看不到 ✗）。实测：带项目 → `'P-test1'` ✓ · 不带 → `''`（如实 ✗不编）
+  · 坑：该 dict **本来就有** `project_id` 字段 + 一个 `ensure_project_binding` 机制 ⇒
+    我一开始加重复了（ruff F601 抓出 ✗）⇒ 改为复用既有字段 ✓
+- **甲 执行事件带归属** ✓：`ExecutionRequest` 加 `project_id`（附加式, 默认 None ✓）+
+  调度器两处（`scheduler_wiring` / `scheduler_pump`）派发时传值 + runner 交给事件 logger
+  · 说明：当前正在跑的批次加载的是**改动前**的代码 ⇒ 带归属的执行事件从**下一批**开始出现 ✓
+- **丁 `factory project docs <项目> [--show <名字>]`** ✓（只读 ✓ Founder 批准）：
+  从真源列/打项目文档 —— PRD（含标题）· 分析产物（**如实标注 ref 悬空** ✗）·
+  需求事实条数 · 仓库文档**可直接打开的绝对路径** ✓
+  · 实测 plane-shooter：PRD 1 份 · 产物 3 份（product/design/ux_ui, ref 全悬空 ✗）·
+    事实 11 条 · 仓库 md 2 个（真实路径 ✓）；`--show prd` 能打出内容 ✓
+- **丙（`dashboard`/`status` 支持 `--project`）**：本轮**未做** ✗ ⇒ 记 TODO 待做 ✓
+
+### 过程中的坑（如实记）
+- `chain.py` 里没有 `args` ⇒ 传给 `create_conversation` 时用本地的 `project_id` ✓（Pyright 先抓到 ✗）
+- `project docs` 的打印分支我**插错函数**了 ✗（落进 `_print_tool` ⇒ 命令零输出 ✗）⇒ 搬到 `_print_project` ✓
+
 ## [v1.3.39] — 2026-09-24
 
 **项目详情 = 真实四段**（Founder：「项目详情太乱了，需要真实展示项目情况、项目任务情况、项目文档情况，等等」✓）。

@@ -78,6 +78,9 @@ class ExecutionRequest(BaseModel):
 
     id: str
     task_id: str
+    # ★ 2026-09-24（Founder: 审计事件要能按项目分类 ✓）: 派发时带上项目归属
+    #   （附加式 + 默认 None ⇒ 不影响既有构造 ✓; runner 据此给事件打 project_id ✓）
+    project_id: str | None = None
     workflow_id: str | None = None
     step_id: str | None = None
     agent_id: str | None = None

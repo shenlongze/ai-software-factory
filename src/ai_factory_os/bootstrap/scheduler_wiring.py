@@ -538,6 +538,7 @@ class StoreExecution:
         req = ExecutionRequest(
             id=eid,
             task_id=self._plan_id,                      # ★ 任务树 id（pump 用它定位叶）
+            project_id=(_proj or None),                 # ★ 事件按项目分类（Founder ✓）
             status=ExecutionStatus.PENDING,
             input={                                    # ★ pump/_claim_and_run 读这几个键
                 "node_id": node_id,

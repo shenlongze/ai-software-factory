@@ -97,7 +97,8 @@ def run_chain(
 
     # ── s2 建会话 ─────────────────────────────────────────────────────────
     if not cid:
-        conv = U.create_conversation(root, title=text[:40] or "新需求")
+        conv = U.create_conversation(root, title=text[:40] or "新需求",
+                                     project_id=str(project_id or ""))
         cid = str(conv.get("id") or "")
         _log("② 建会话", "ok", cid)
         loc = locate(text, project_id=project_id, proposer=proposer, intent=intent)

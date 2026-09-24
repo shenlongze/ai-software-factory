@@ -58,6 +58,7 @@ from .commands import (
     cmd_metrics,
     cmd_org_member_list,
     cmd_org_member_set,
+    cmd_project_docs,
     cmd_project_org,
     cmd_exec_approval_apply,
     cmd_exec_approval_approve,
@@ -495,6 +496,13 @@ def build_parser() -> Any:
     p_pr_show = prsub.add_parser("show", help="项目详情: 技术栈/Agent/技能/工作流映射 (发 project.viewed)")
     json_opt(p_pr_show)
     p_pr_show.add_argument("name", help="项目名 (如 markpad)")
+    # ★ 2026-09-24（Founder 批准 ✓）: 按项目看**文档内容**的只读入口（此前只有"有几份" ✗）
+    p_pr_docs = prsub.add_parser(
+        "docs", help="★ 项目文档: PRD / 分析产物 / 需求事实 / 仓库文档（--show 看内容 ✓）")
+    json_opt(p_pr_docs)
+    p_pr_docs.add_argument("name", help="项目名/id/片段")
+    p_pr_docs.add_argument("--show", default="",
+                           help="看某份内容: prd | product | design | ux_ui | facts")
     p_pr_org = prsub.add_parser(
         "org", help="★ 给项目设归属公司/部门（派活按它筛人; 不给参数=摘掉）")
     json_opt(p_pr_org)
@@ -4403,6 +4411,8 @@ def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
         return cmd_project_list(ctx, args)
     if args.project_command == "show":
         return cmd_project_show(ctx, args)
+    if args.project_command == "docs":
+        return cmd_project_docs(ctx, args)
     if args.project_command == "org":
         return cmd_project_org(ctx, args)
     if args.project_command == "adopt":
@@ -5378,6 +5388,30 @@ def _print_project(sub: str, r: dict) -> None:
                  ", ".join(p["tech_stack"]) or "-"] for p in r["projects"]]
         print(_render_table(["ID", "Project", "说明", "Status", "Language", "Repository", "Tech Stack"], rows))
         print(f"{r['count']} projects (source: {r['source']})")
+    elif sub == "docs":
+        print(f"{r.get('project_id')} 的文档")
+        _docs = r.get("docs") or []
+        if not _docs:
+            print("  （还没有文档）⇒ 先 `factory chain \"需求\" --project " + str(r.get("project_id")) + "` ✓")
+        for _d in _docs:
+            _st = f" [{_d.get('status')}]" if _d.get("status") else ""
+            _ti = f" {_d.get('title')}" if _d.get("title") else ""
+            print(f"  {_d.get('kind'):<10} {_d.get('id'):<24}{_st}{_ti}")
+            if _d.get("ref"):
+                _flag = " ✗悬空（记录写的位置不存在）" if _d.get("ref_dangling") else " ✓"
+                print(f"              ref: {_d['ref']}{_flag}")
+        print(f"  需求事实    {int(r.get('facts') or 0)} 条（knowledge/facts.json）")
+        _rd = r.get("repo_docs") or []
+        print(f"  仓库文档    {len(_rd)} 个" + ("（可直接打开 ✓）" if _rd else ""))
+        for _p in _rd[:6]:
+            print(f"      {_p}")
+        _pk = r.get("picked") or []
+        if _pk:
+            print()
+            for _d in _pk:
+                print(f"  ── {_d.get('kind')} {_d.get('id')} {_d.get('title') or ''} ──")
+                _c = _d.get("content")
+                print(json.dumps(_c, ensure_ascii=False, indent=2)[:4000] if _c else "  （没有内容 ✗）")
     elif sub == "show":
         # ★ 2026-09-24（Founder: 「项目详情太乱了, 需要真实展示项目情况/任务情况/文档情况」✓）
         #   四段: 项目情况 → 任务情况 → 文档情况 → 团队与能力; 数据全从真源读, 读不到如实留空 ✗不编

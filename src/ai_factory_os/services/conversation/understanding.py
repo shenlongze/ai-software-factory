@@ -233,7 +233,8 @@ def _mutate(root: Path | str, conv_id: str,
 # ------------------------------------------------------------------ Conversation
 
 def create_conversation(root: Path | str, *, title: str = "新会话",
-                        created_by: str = "human") -> dict[str, Any]:
+                        created_by: str = "human",
+                        project_id: str = "") -> dict[str, Any]:
     """创建 Conversation (conv-*; 目标域独立于 conversation_os conv_ legacy)。
 
     幂等: 同 title 不判重 — 每次创建独立 conversation (用户可开多个长期会话)。
@@ -252,8 +253,9 @@ def create_conversation(root: Path | str, *, title: str = "新会话",
         "created_at": now,
         "updated_at": now,
         # ★ 项目归属（Founder: 会话/需求/文档都该有项目属性 ✓）
-        #   首次理解成功后由 ensure_project_binding 绑定（幂等）
-        "project_id": "",
+        #   ① 创建时给了就带上（chain / conversation new --project ✓ 2026-09-24 加）
+        #   ② 首次理解成功后由 ensure_project_binding 绑定（幂等）
+        "project_id": str(project_id or ""),
     }
     with _lock:
         if _load_conv(root, conv_id) is not None:  # 天文概率碰撞 — 防御
@@ -273,6 +275,8 @@ def _public_conv(doc: dict[str, Any]) -> dict[str, Any]:
         "title": doc.get("title"),
         "status": doc.get("status"),
         "created_by": doc.get("created_by", ""),
+        # ★ 2026-09-24: 公开形态要带 project_id ✓（否则调用方/测试看不到归属 ✗）
+        "project_id": doc.get("project_id", ""),
         "created_at": doc.get("created_at"),
         "updated_at": doc.get("updated_at"),
         "messages_count": len(doc.get("messages") or []),

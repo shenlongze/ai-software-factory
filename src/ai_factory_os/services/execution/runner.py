@@ -251,6 +251,8 @@ class ExecutionRunner:
             return None
         return self._logger.record(
             type_, source=self.SOURCE, task_id=request.task_id,
+            # ★ 2026-09-24（Founder: 审计事件要能按项目分类 ✓）: 执行事件带上 project_id
+            project_id=getattr(request, "project_id", None) or None,
             stage=stage, action=action, result=result, payload=payload,
         )
 

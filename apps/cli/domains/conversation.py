@@ -161,7 +161,8 @@ def _new(root: Path, args: Any) -> dict[str, Any]:
     知识检索扫哪个仓库）。绑定走既有 `U.move_conv_to_project`（幂等 + 原子搬移, 符合
     Founder 铁律「属于项目的文件必须在项目目录下」）。
     """
-    conv = U.create_conversation(root, title=str(getattr(args, "title", "") or "新会话"))
+    conv = U.create_conversation(root, title=str(getattr(args, "title", "") or "新会话"),
+                                 project_id=str(getattr(args, "project", "") or ""))
     cid = conv["id"]
     out: dict[str, Any] = {"created": cid, "title": conv.get("title"), "status": conv.get("status")}
     pid = str(getattr(args, "project", "") or "")

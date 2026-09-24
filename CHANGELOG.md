@@ -1,5 +1,32 @@
 # Changelog
 
+## [v1.3.37] — 2026-09-24
+
+**项目详情能看到「它的任务树 + 进度」**（Founder 实测：「不能进入到项目，查看项目详情么？」✗）。
+
+### 现场（Founder 在会话里的实测）
+```
+factory> plane-shooter 项目情况
+  ┊ 💻 $ factory project list   → 4 projects（能看到 plane-shooter ✓）
+  ┊ 💻 $ factory tasktree show P-6eea9b3e
+       任务树不存在: P-6eea9b3e          ← ✗ 骗人：树明明在（PLAN-5cb0df162c, 29/87）
+```
+- 根因一：`factory project show` **只有 language/repo/agents/skills/workflows** ⇒ **没有树、没有进度** ✗
+  ⇒ 用户"进不去项目"的感觉是对的 ✓
+- 根因二：把**项目 id（P-xxx）**传给需要 **PLAN-xxx** 的命令 ⇒ 只回「任务树不存在」✗
+  ⇒ 用户/助手都以为"这个项目没有树" ✗（会话里的模型就是这么被误导的 ✓）
+
+### Fixed
+- `project show` 现在附上**该项目的任务树 + 每棵的叶数/完成数/百分比** ✓ + 下一步命令 ✓
+  · 实测：`plane-shooter` ⇒ `任务树 1 棵 · PLAN-5cb0df162c · 叶 87 · 完成 29 · 33.3%` ✓
+- 新增共用 `_plan_not_found()`（DRY ✓）替换 **9 处**裸「任务树不存在」✗ ⇒
+  拿到 `P-xxx` 时明说「你给的是**项目 id**；树要传 PLAN-xxx ⇒ `factory tasktree list --project P-xxx`」✓
+- 顺带修：进度计数原先比 `"completed"` ✗ —— 而真实状态值是 `done/todo/in_progress` ⇒ 一直算成 0 ✗
+
+### 守卫
+- 新增「项目详情能看树与进度」：**真跑 CLI** 断言 ① `project show` 输出含 `任务树`/`PLAN-`
+  ② 拿 `P-` 查树必须含「项目 id」指引 ✓
+
 ## [v1.3.36] — 2026-09-24
 
 **会话提示词：讲参数前先查 `-h`**（兑现 v1.3.35 提交信息里承诺的那条 ✗）。

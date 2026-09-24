@@ -48,6 +48,7 @@
 | v1.3.34 | **修 check_wheel.sh 进程泄漏**（我自己造的 12 个孤儿 `factory serve` ✗）: 根因 = 启动 `( … ) &` 没 `exec` ⇒ `$!` 是**子 shell** 的 PID ⇒ kill 只杀壳、留下 python ✗; 修 = 加 exec + cleanup 等真退出（≤5s）→ 精确 PID 强杀 → 复核, 没停干净**报红** ✗; 12 个孤儿已按精确 PID 逐个停掉（未用 pkill ✓）⇒ 复核零残留 ✓ | 实测 check_wheel 8082 全过 ✓ |
 | v1.3.35 | **修流式双框 + 忙指示挤行**（Founder 在真窗口里看到 ✗，我用当前代码复现 ✓）: 根因 = ① 流式时 `_body` 已清空但 `if _use_box():` 照样打框 ⇒ 多一对空框线 ✗; ② `_flush_line` 打顶线前没清忙指示 ✗; 修 = 打框改 `elif _use_box():` + 顶线前 `_busy_clear` ⇒ **pty 实测: 顶线 1 条 · 底线 1 条 · 不挤行** ✓; 新增守卫「流式不双框」; 另记录 E16（模型把 project 的 `--company` 可选说成必需 ✗，已把「先查 -h」写进提示词） | 守卫 66→67 · pytest 78 |
 | v1.3.36 | **会话提示词加规则 1c**（兑现 v1.3.35 提交信息里的承诺 ✗）: 「讲参数前先 `RUN: factory <cmd> -h` 看一眼, 别凭记忆说哪个必填」—— 起因 = Founder 实测里模型把 project 的 `--company`（可选）说成必需 ✗ | 提示词已改 ✓ |
+| v1.3.37 | **项目详情能看树与进度**（Founder 实测「不能进入到项目查看详情」✗）: 根因① `project show` 只有 language/repo/agents/skills/workflows, **没树没进度** ✗; 根因② 把项目 id（P-xxx）传给要 PLAN-xxx 的命令 ⇒ 只回「任务树不存在」✗（会话里模型就是这么被误导的）; 修 = project show 附**该项目的树 + 叶数/完成/百分比** + 下一步命令; 新增共用 `_plan_not_found()` 替换 **9 处**裸报错; 顺带修计数（原先比 "completed" ✗ 真实值是 done ⇒ 一直算 0）; 实测: plane-shooter ⇒ 任务树 1 棵 · PLAN-5cb0df162c · 叶 87 · 完成 29 · 33.3% ✓ | 守卫 67→68 |
 过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |
 （生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |
 

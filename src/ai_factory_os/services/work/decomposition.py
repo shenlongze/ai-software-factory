@@ -645,7 +645,13 @@ def claim_leaf(
     with _CLAIM_LOCK:
         tree = _read(root, plan_id, project_id)
         if tree is None:
-            return {"ok": False, "reason": f"任务树不存在: {plan_id}", "node": None}
+            # ★ 2026-09-24（Founder 实测: 会话里拿 P-id 查树 ⇒ 只回"不存在"骗人 ✗）
+            #   传错 id 类型要给正确指引, 别让用户以为"项目没有树" ✗
+            _hint = ""
+            if str(plan_id).startswith("P-"):
+                _hint = (f"（你给的是**项目 id** {plan_id}; 树要传 PLAN-xxx ⇒ "
+                         f"用 `factory tasktree list --project {plan_id}` 看该项目的树 ✓）")
+            return {"ok": False, "reason": f"任务树不存在: {plan_id} {_hint}".rstrip(), "node": None}
         node = next((n for n in (tree.get("nodes") or [])
                      if str(n.get("id") or "") == node_id), None)
         if node is None:

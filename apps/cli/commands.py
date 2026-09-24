@@ -2339,7 +2339,30 @@ def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
             if _rec is not None:
                 _repo = str(getattr(_rec, "repo_path", "") or "")
                 _note = _project_notes(ctx.root, [_rec]).get(_pid_org, "")
+                # ★ 2026-09-24（Founder 实测: 「不能进入到项目看详情」✗）:
+                #   项目详情必须带上**它的任务树与进度** —— 否则用户看到"项目"却看不到"做到哪了" ✗
+                _trees: list[dict[str, Any]] = []
+                try:
+                    from ai_factory_os.services.work import progress as _pg
+
+                    # ★ 实测: leaf_rows 的字段是 `project`（不是 project_id ✗）
+                    _rows = [r for r in _pg.leaf_rows(ctx.root)
+                             if str(r.get("project") or r.get("project_id") or "") == _pid_org]
+                    _by: dict[str, dict[str, Any]] = {}
+                    for _r in _rows:
+                        _b = _by.setdefault(str(_r.get("plan_id") or ""),
+                                            {"plan_id": str(_r.get("plan_id") or ""), "leaves": 0, "done": 0})
+                        _b["leaves"] += 1
+                        # ★ 实测: 真实 status 是 done/todo/in_progress（不是 "completed" ✗）
+                        if str(_r.get("status") or "") in ("done", "completed"):
+                            _b["done"] += 1
+                    for _b in _by.values():
+                        _b["percent"] = round(100.0 * _b["done"] / max(_b["leaves"], 1), 1)
+                    _trees = sorted(_by.values(), key=lambda x: str(x["plan_id"]))
+                except Exception:  # noqa: BLE001 — 拿不到就不写, 不编 ✓
+                    _trees = []
                 return {"ok": True, "command": "project show", "source": "org 项目库",
+                        "trees": _trees,
                         # 打印器要的字段一个不少（实测: 少 description 就 KeyError ✗）
                         "project": {"name": str(getattr(_rec, "name", "") or _pid_org),
                                     "id": _pid_org, "project_id": _pid_org,
@@ -4640,7 +4663,11 @@ def cmd_recover_plan(ctx: FactoryContext, args: Any) -> dict:
     project_id = str(getattr(args, "project", "") or "")
     tree = D.load_tree(ctx.root, plan_id, project_id) if project_id else D.load_tree(ctx.root, plan_id)
     if not tree:
-        raise CliError(f"任务树不存在: {plan_id}（`factory tasktree list` 看有哪些）", exit_code=1)
+        _h = ""
+        if str(plan_id).startswith("P-"):
+            _h = (f" ← 你给的是**项目 id**; 树要传 PLAN-xxx ⇒ "
+                  f"`factory tasktree list --project {plan_id}` 看该项目的树 ✓")
+        raise CliError(f"任务树不存在: {plan_id}（`factory tasktree list` 看有哪些）{_h}", exit_code=1)
     pj = str(tree.get("project_id") or project_id or "")
 
     cp = CheckpointStore(ctx.root / "checkpoints").load(plan_id)

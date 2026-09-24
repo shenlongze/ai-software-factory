@@ -1484,6 +1484,36 @@ def _check_stream_no_double_box() -> list[str]:
     return bad
 
 
+def _check_project_detail() -> list[str]:
+    """★ 项目详情必须能看到「它的树 + 进度」（Founder 实测: 进不了项目 ✗）。
+
+    判据（真跑 CLI, 不是读源码猜 ✓）:
+      1) `factory project show <项目>` 输出里必须有 `任务树` 与 `PLAN-`
+      2) 拿**项目 id** 查树时必须给正确指引（"项目 id" 字样）—— 不能只回"不存在" ✗
+    """
+    import os as _os
+    import subprocess as _sp
+    from pathlib import Path as _PP
+
+    exe = _PP(".venv/bin/factory")
+    if not exe.is_file():
+        return ["找不到 .venv/bin/factory（跳过）"]
+    env = dict(_os.environ)
+    bad: list[str] = []
+    shop = _sp.run([str(exe), "project", "show", "gym-coach"], capture_output=True, text=True, env=env)
+    if "任务树" not in shop.stdout:
+        bad.append("`project show` 不显示任务树（用户「进不去项目」✗）")
+    tt = _sp.run([str(exe), "tasktree", "show", "P-000000"], capture_output=True, text=True, env=env)
+    if "项目 id" not in (tt.stdout + tt.stderr):
+        bad.append("拿项目 id 查树时没给正确指引（只回「不存在」⇒ 用户以为没树 ✗）")
+    return bad
+
+
+def test_project_detail() -> None:
+    """项目详情含树与进度 · 传错 id 类型给指引。"""
+    assert _check_project_detail() == []
+
+
 def test_stream_no_double_box() -> None:
     """流式回答: 只一条顶线 + 只一条底线 · 顶线不与忙指示同行。"""
     assert _check_stream_no_double_box() == []
@@ -4300,6 +4330,7 @@ def main() -> int:
     results.append(("端到端冷链（派活→执行→进度真的动）", not _check_e2e_cold_start_loop(), "；".join(_check_e2e_cold_start_loop())))
     results.append(("并发写不丢更新（RuntimeStore · 含反例）", not _check_store_concurrency(), "；".join(_check_store_concurrency())))
     results.append(("流式不双框（顶线/底线各一条 · 不挤忙指示）", not _check_stream_no_double_box(), "；".join(_check_stream_no_double_box())))
+    results.append(("项目详情能看树与进度（传错 id 给指引）", not _check_project_detail(), "；".join(_check_project_detail())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

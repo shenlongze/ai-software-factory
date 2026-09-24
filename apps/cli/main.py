@@ -2978,7 +2978,7 @@ def _tasktree_todo(ctx: FactoryContext, args: Any) -> dict:
     project = str(getattr(args, "project", "") or "")
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
-        raise CliError(f"任务树不存在: {plan_id}（factory tasktree list 看有哪些）", exit_code=1)
+        raise _plan_not_found(plan_id)
     nodes = tree.get("nodes") or []
     leaves = [n for n in nodes if n.get("kind") == "task"]
     done = sum(1 for n in leaves if str(n.get("status") or "").lower() in ("completed", "done", "accepted"))
@@ -3014,7 +3014,7 @@ def _tasktree_flow(ctx: FactoryContext, args: Any) -> dict:
     project = str(getattr(args, "project", "") or "")
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
-        raise CliError(f"任务树不存在: {plan_id}（factory tasktree list 看有哪些）", exit_code=1)
+        raise _plan_not_found(plan_id)
     return {"ok": True, "action": "tasktree-flow", "tree": tree, "flow": _UV.build_flow(tree)}
 
 
@@ -3034,7 +3034,7 @@ def _tasktree_dataflow(ctx: FactoryContext, args: Any) -> dict:
     project = str(getattr(args, "project", "") or "")
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
-        raise CliError(f"任务树不存在: {plan_id}（factory tasktree list 看有哪些）", exit_code=1)
+        raise _plan_not_found(plan_id)
     pid = str(tree.get("project_id") or "")
     proj_dir = (_Path(ctx.root) / "projects" / pid) if pid else None
     return {"ok": True, "action": "tasktree-dataflow", "tree": tree,
@@ -3062,7 +3062,7 @@ def _tasktree_declare(ctx: FactoryContext, args: Any) -> dict:
     project = str(getattr(args, "project", "") or "")
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
-        raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
+        raise _plan_not_found(plan_id)
     pid = str(tree.get("project_id") or "")
     proj_dir = (_Path(ctx.root) / "projects" / pid) if pid else None
     # ★ 实体清单来源: ① 架构设计制品的 database_design 节（从零场景也在）→ ② 项目里的 DDL
@@ -3182,7 +3182,7 @@ def _tasktree_priority(ctx: FactoryContext, args: Any) -> dict:
     project = str(getattr(args, "project", "") or "")
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
-        raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
+        raise _plan_not_found(plan_id)
     nodes = tree.get("nodes") or []
     did, written = "查看现状", 0
     skipped: list[str] = []
@@ -3232,7 +3232,7 @@ def _tasktree_staffing(ctx: FactoryContext, args: Any) -> dict:
     project = str(getattr(args, "project", "") or "")
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
-        raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
+        raise _plan_not_found(plan_id)
     _proj = str(getattr(args, "project", "") or "") or str(tree.get("project_id") or "")
     _co, _dep = _ST.project_scope(ctx.root, _proj)
     catalog = _ST.role_catalog(ctx.root, company_id=_co, department_id=_dep)   # ★ 按归属筛人
@@ -3328,7 +3328,7 @@ def _tasktree_translate(ctx: FactoryContext, args: Any) -> dict:
     project = str(getattr(args, "project", "") or "")
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
-        raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
+        raise _plan_not_found(plan_id)
 
     # 只翻"还没人话名"的（已有 display_name 的不覆盖 —— 用户改过的不该被冲掉）
     items = [(str(n.get("id") or ""), str(n.get("title") or ""))
@@ -3365,7 +3365,7 @@ def _tasktree_expand(ctx: FactoryContext, args: Any) -> dict:
     max_depth = int(getattr(args, "max_depth", 3) or 3)
     tree = _D.load_tree(ctx.root, plan_id, project) if project else _D.load_tree(ctx.root, plan_id)
     if not tree:
-        raise CliError(f"任务树不存在: {plan_id}", exit_code=1)
+        raise _plan_not_found(plan_id)
 
     # ★ 目标节点: 默认顶层模块; --node 指定任意节点（含 task —— 递归拆要靠它）
     #   --deep 时把 task 也纳入候选（逐层往下走）
@@ -3563,7 +3563,7 @@ def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
     if cmd == "show":
         tree = D.load_tree(ctx.root, str(args.plan_id), project_id)
         if tree is None:
-            raise CliError(f"任务树不存在: {args.plan_id}", exit_code=7)
+            raise _plan_not_found(args.plan_id)
         return {"ok": True, "command": "tasktree show", "tree": tree,
                 "summary": D.tree_summary(tree),
                 "order": D.topological_order(tree),
@@ -5343,6 +5343,19 @@ def _print_knowledge(sub: str, r: dict) -> None:
         print(f"{r.get('count')} 个项目已重建")
         return
 
+
+def _plan_not_found(plan_id: str) -> "CliError":
+    """树没找到时的统一报错（★ 2026-09-24: 传错 id 类型要给正确指引 ✗）。
+
+    Founder 实测: 会话里拿**项目 id**（P-xxx）查树 ⇒ 只回"任务树不存在"⇒
+    用户/助手都以为"这个项目没有树" ✗（其实树在, 只是要 PLAN-xxx）。
+    """
+    _h = ""
+    if str(plan_id).startswith("P-"):
+        _h = (f" ← 你给的是**项目 id**; 树要传 PLAN-xxx ⇒ "
+              f"`factory tasktree list --project {plan_id}` 看该项目的树 ✓")
+    return CliError(f"任务树不存在: {plan_id}（`factory tasktree list` 看有哪些）{_h}", exit_code=1)
+
 def _print_project(sub: str, r: dict) -> None:
     if sub == "org":
         # ★ 2026-09-21: 项目归属公司/部门（派活按它筛人）
@@ -5370,6 +5383,18 @@ def _print_project(sub: str, r: dict) -> None:
         print(f"{p['name']}  {p['description'] or ''}")
         print(f"  language    {p['language']}")
         print(f"  repository  {p['repository'] or '-'}")
+        # ★ 2026-09-24（Founder 实测: 「不能进入到项目看详情」✗）: 把**它的任务树与进度**打出来 ✓
+        _tr = r.get("trees") or []
+        if _tr:
+            print(f"  任务树      {len(_tr)} 棵")
+            for _x in _tr:
+                print(f"    {_x['plan_id']:<22} 叶 {_x['leaves']:>4} · 完成 {_x['done']:>4}"
+                      f"  {_x['percent']:>5.1f}%")
+            print(f"  下一步      factory tasktree todo {_tr[0]['plan_id']}"
+                  f"    （看逐叶清单; 或 factory tasktree flow {_tr[0]['plan_id']} 看链路图）")
+        else:
+            print("  任务树      （还没有树）⇒ 用 factory chain \"需求\" --project "
+                  f"{p.get('id') or ''} 起一棵 ✓")
         print(f"  tech_stack  {', '.join(p['tech_stack']) or '-'}")
         print(f"  agents      {len(r['agents'])}")
         for a in r["agents"]:

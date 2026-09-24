@@ -1217,6 +1217,15 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             #   ⇒ 直接进 ✓（解析不出来就不动 ✓ 不编 ✗）
             _m_enter = re.match(r"^\s*(?:请|帮我)?\s*(?:进入|切到|切换到|只看)\s*(?:项目\s*)?[「\"']?([^」\"'，。\s]+)[」\"']?",
                                 line or "")
+            # ★ 2026-09-25: **自然语言退出**（"退出工作目录"/"回到全局"/"退出项目" ⇒ 回全局 ✓）
+            #   （只能进不能出 = 半成品 ✗ ⇒ 一并补上 ✓）
+            #   ★ 必须带对象（工作目录/项目/全局）—— 光说「退出」可能是想退程序 ✗ 不抢它的语义 ✓
+            _m_exit = re.match(r"^\s*(?:请|帮我)?\s*(?:退出|离开|回到|返回)\s*"
+                               r"(?:工作目录|项目|全局|全部)\s*$", line or "")
+            if _m_exit and _sel_project:
+                _was = _sel_project
+                _sel_project = ""
+                print(f"  {MARK_SYS} 已退出工作目录（{_was}）—— 回到全局数据 ✓")
             if _m_enter:
                 from apps.cli.commands import resolve_project_id as _rpi2
 

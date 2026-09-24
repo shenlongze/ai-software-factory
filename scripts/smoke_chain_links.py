@@ -1722,6 +1722,11 @@ def _check_chat_enter() -> list[str]:
     wsrc = _PP("apps/cli/domains/welcome.py").read_text(encoding="utf-8")
     if "_m_enter" not in wsrc or "removesuffix" not in wsrc:
         bad.append("welcome 里没有「进入/切到」的确定性兜底 ✗（会退化成「模型说了算」⇒ 假声称 ✗）")
+    # ★ 只能进不能出 = 半成品 ✗ ⇒ 必须也有**自然语言退出**（且不许误抢"退出程序" ✗）
+    if "_m_exit" not in wsrc:
+        bad.append("没有自然语言退出 ✗（进了出不来 = 半成品 ✗）")
+    if "(?:工作目录|项目|全局|全部)\\s*$" not in wsrc:
+        bad.append("退出正则没要求**带对象** ✗（光说「退出」会误抢「退程序」的语义 ✗）")
     # ③ 协议
     if "SESSION:" not in _PP("apps/cli/domains/chat.py").read_text(encoding="utf-8"):
         bad.append("chat 没有 SESSION: 协议 ✗")

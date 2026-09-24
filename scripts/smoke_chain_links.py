@@ -1687,6 +1687,60 @@ def _check_concept_doc() -> list[str]:
     return bad
 
 
+def _check_chat_enter() -> list[str]:
+    """★ 会话里**不用命令**说「进入飞机大战项目」必须真能进（Founder 实测: 之前只会说不会做 ✗）。
+
+    判据（有行为断言 ✓ 不是只读源码）:
+      1) `resolve_project_id` 认**说明（需求原话）**: 「飞机大战」⇒ 那个项目 id ✓
+      2) 有 **确定性兜底**（不靠模型自觉 ✗ —— 实测模型只"说"已进入却一个动作都不发 ✗）
+         ⇒ welcome.py 里必须有"进入/切到/只看 + 项目名"的正则 + 真解析 ✓
+      3) 模型协议里要有 `SESSION: project …`（模型愿意配合时走这条 ✓）
+      4) 提示词里有对应规则（1f ✓）
+    """
+    import importlib
+    import sys as _sys
+    from pathlib import Path as _PP
+
+    _sys.path.insert(0, ".")
+    bad: list[str] = []
+    try:
+        C = importlib.import_module("apps.cli.commands")
+        M = importlib.import_module("apps.cli.main")
+        W = importlib.import_module("apps.cli.domains.welcome")
+        CH = importlib.import_module("apps.cli.domains.chat")
+    except Exception as exc:  # noqa: BLE001
+        return [f"导入失败: {type(exc).__name__}"]
+    # ① 说明能解析（真实数据 ✓ 没数据就不判, 不误杀 ✓）
+    try:
+        ctx = M.FactoryContext(root=_PP.home() / ".factory")
+        pid = C.resolve_project_id(ctx, "飞机大战")
+        if pid and pid != "P-6eea9b3e":
+            bad.append(f"「飞机大战」解析成了 {pid}（应为 P-6eea9b3e ✗）")
+    except Exception:  # noqa: BLE001
+        pass
+    # ② 确定性兜底
+    wsrc = _PP("apps/cli/domains/welcome.py").read_text(encoding="utf-8")
+    if "_m_enter" not in wsrc or "removesuffix" not in wsrc:
+        bad.append("welcome 里没有「进入/切到」的确定性兜底 ✗（会退化成「模型说了算」⇒ 假声称 ✗）")
+    # ③ 协议
+    if "SESSION:" not in _PP("apps/cli/domains/chat.py").read_text(encoding="utf-8"):
+        bad.append("chat 没有 SESSION: 协议 ✗")
+    # ④ 提示词规则
+    try:
+        prompt = CH._system_prompt(_PP.home() / ".factory", "")
+        if "SESSION: project" not in prompt:
+            bad.append("提示词里没有 SESSION: project 规则 ✗")
+    except Exception:  # noqa: BLE001
+        pass
+    del W
+    return bad
+
+
+def test_chat_enter() -> None:
+    """会话直接说「进入X」⇒ 真能进（说明能解析 + 确定性兜底 + 协议 + 提示词）。"""
+    assert _check_chat_enter() == []
+
+
 def test_concept_doc() -> None:
     """概念梳理: 文档在 · 挂了入口 · 标了原文出处。"""
     assert _check_concept_doc() == []
@@ -4560,6 +4614,7 @@ def main() -> int:
     results.append(("status --project 真收窄（非空转）", not _check_status_project_scope(), "；".join(_check_status_project_scope())))
     results.append(("工作目录（选/进/只跑它/退出）", not _check_workdir(), "；".join(_check_workdir())))
     results.append(("概念梳理文档（在 + 挂入口 + 标原文）", not _check_concept_doc(), "；".join(_check_concept_doc())))
+    results.append(("会话直接说进入（不用命令）", not _check_chat_enter(), "；".join(_check_chat_enter())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

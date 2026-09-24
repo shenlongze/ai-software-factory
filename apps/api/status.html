@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Factory OS · 状态（v1.3.44）</title>
+<title>AI Factory OS · 状态（v1.3.45）</title>
 <style>
   :root{--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--ink2:#6e6e73;--line:#d2d2d7;
         --brand:#0071e3;--ok:#34c759;--warn:#ff9f0a;--bad:#ff3b30;--r:18px}
@@ -33,15 +33,16 @@
 </head>
 <body><div class="wrap">
   <h1>AI Factory OS · 状态</h1>
-  <p class="sub">v1.3.44 · 生成于 2026-09-25 02:59 ·
+  <p class="sub">v1.3.45 · 生成于 2026-09-25 03:21 ·
      数据来自 <code>docs/TODO.md</code> + <code>docs/WORKLOG.md</code> + 实时读数 ⇒ 不可能与文档漂移 ✓</p>
 
   <div class="cards">
-    <div class="card"><b>守卫</b><span>72/73 通过</span></div><div class="card"><b>pytest</b><span>1 failed, 83 passed, 7 warnings in 21.54s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
+    <div class="card"><b>守卫</b><span>73/74 通过</span></div><div class="card"><b>pytest</b><span>1 failed, 84 passed, 7 warnings in 18.75s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
   </div>
 
   <h2>最近提交</h2>
-  <pre>eb61bb41 feat(cli): 工作目录 —— 会话内选项目 · 进入 · 之后只跑它 · 可退出 → v1.3.43
+  <pre>702faa9e docs(concepts): 概念梳理（公司/部门/项目/任务/工作空间/工作目录）→ v1.3.44
+eb61bb41 feat(cli): 工作目录 —— 会话内选项目 · 进入 · 之后只跑它 · 可退出 → v1.3.43
 3fcf40b3 feat(cli): status --project（丙 一半）+ 修 cmd_status 没传 args 的根因 → v1.3.42
 0ace87ca fix(artifact): 产物 ref 悬空（E23）—— 用户打不开项目文档 ✗ → v1.3.41
 4e5c4e6b feat(scope): 项目分类（归属）打通 乙+甲+丁（Founder: 全做）→ v1.3.40
@@ -54,8 +55,7 @@ f4603543 docs(runs): 飞机大战过程记录补第 9 节（29/87 · 20 commit �
 8478a8ce fix(cli): 流式回答的「双框」与「忙指示挤行」（Founder 真窗口看到 ✗）→ v1.3.35
 21ef07f6 chore(trace): 补齐 v1.3.34 的 CHANGELOG/TODO/WORKLOG（上一个 heredoc 缩进错, 文件没写成 ✗ 如实补上）
 b558408c fix(scripts): check_wheel.sh 的进程泄漏（12 个孤儿 factory serve）→ v1.3.34
-fccb8425 fix(store): RuntimeStore 并发写坏库（飞机大战真实测试炸出来的）→ v1.3.33
-630f9699 test(e2e): 端到端自动化 + 覆盖率基线（Founder 问&quot;现在有没有完整测试&quot;）→ v1.3.32</pre>
+fccb8425 fix(store): RuntimeStore 并发写坏库（飞机大战真实测试炸出来的）→ v1.3.33</pre>
 
   <h2>活清单（TODO.md）</h2>
   <h1>AI Factory OS · TODO（活清单）</h1>
@@ -176,6 +176,9 @@ fccb8425 fix(store): RuntimeStore 并发写坏库（飞机大战真实测试炸�
 <table>
 <tr><th>E28</th><th>概念梳理（公司/部门/项目/工作空间/工作目录）</th><th>**已做 ✓**（v1.3.44: `docs/概念梳理-组织与工作.md` + 挂进 AGENTS.md + 守卫）</th></tr>
 </table>
+<table>
+<tr><th>E29</th><th>会话里直接说「进入X」不能进（只能靠 /project 命令 ✗）</th><th>**已修 ✓**（v1.3.45: 认说明 + SESSION: 协议 + **确定性兜底** 防模型假声称）</th></tr>
+</table>
 
   <h2>工作日志（WORKLOG.md，追加式）</h2>
   <h1>AI Factory OS · 工作日志（追加式 ⇒ 留痕）</h1>
@@ -232,6 +235,7 @@ fccb8425 fix(store): RuntimeStore 并发写坏库（飞机大战真实测试炸�
 <tr><td>v1.3.42</td><td>**丙（一半）: status --project**（Founder「全做」第 3 件）: 按项目真收窄 —— 实测 全局 项目4/树10 → `--project plane-shooter` ⇒ 项目**1**/树**1** ✓; 复用 `progress.summary(project_id=…)` ✓; 根因修: `main.py` 里 `cmd_status(ctx)` **没传 args** ✗ ⇒ 参数型行为永远不生效 ⇒ 改 `cmd_status(ctx, args)` ✓; **未做**: `dashboard --project`（收集器已支持 project_id ✓ 但顶层 parser 没定位到 + 未接参）⇒ **撤掉空转 flag** ✗ 不留半成品 ⇒ 记 E24 ✓</td><td>守卫 70→71</td></tr>
 <tr><td>v1.3.43</td><td>**工作目录**（Founder 设计: 会话里选项目/进入/之后只针对它/可退出, 页面体现=选工作目录 ✓）: 已有 /project 进入+清空退出 ✓ 缺 ①命令不自动按项目跑 ②无「工作目录」说法 ③选择无编号 ④会话未绑定; 本轮做齐 ①②③④: 候选带编号（/project 2 ✓）· 措辞改「工作目录」· **进入后只读命令自动补 --project, 不认则回退**（抽助手 workdir_project_id/argv_candidates, **两处**执行点都用 ✓）· 新会话带 project_id; 实测 pty: /project 2 ⇒ 「状态总览」⇒ 输出 项目**1** · P-6eea9b3e ✓ 真收窄 ✓; 未做: ⑤重开不记忆（E26）· 显示小瑕（工具行仍显原命令, E27）</td><td>守卫 71→72</td></tr>
 <tr><td>v1.3.44</td><td>**概念梳理**（Founder: 「公司/部门/项目/工作空间, 一定要梳理清晰」）: 新增 `docs/概念梳理-组织与工作.md`（**全按原文** ✓ 方案书 L235-238 Founder 2026-08-24 澄清 + ADR-0017）—— 核心结论: **组织树 × 工作树是两套正交维度**（项目**不是**部门子节点 ✗）; 工作空间=**多项目容器**+跨项目视图; 工作目录=**会话选中某个项目**（两者不同层 ✗）; 部门**可选**（Solo 零配置 ✓）; 核对实现: department_ids 是列表 ✓ 与原文「多对多」一致 · parent_company 已预留 ✓ · create company</td><td>department</td><td>project 都能建 ✓; 文档挂进 AGENTS.md「进入即读」+ 守卫（存在/含概念/标原文/挂入口）✓</td><td>守卫 72→73</td></tr>
+<tr><td>v1.3.45</td><td>**会话直接说「进入X」就能进**（Founder:「不用命令, 直接用会话, 是否可以进入」）: 实测原状 = ① 说「进入飞机大战项目」只找到不会进（项目名 plane-shooter, 「飞机大战」只在说明里 ✗）② 加规则后模型**假声称**「已进入 ✓」却一个动作不发 ✗✗; 修 = ① `resolve_project_id` 第⑤条**认说明（需求原话）**（实测 飞机大战→P-6eea9b3e ✓ 寄养→P-9816c063 ✓）② 新协议 `SESSION: project …` ③ ★ **确定性兜底**（welcome 正则: 说「进入/切到/只看 + 能解析的项目」⇒ CLI 直接进, **不靠模型自觉** ✗ 防假声称）④ 提示词 1f; 实测 pty: 「进入飞机大战项目」⇒ 已进入工作目录 plane-shooter（P-6eea9b3e）✓</td><td>守卫 73→74</td></tr>
 </table>
 <p>过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |</p>
 <p>（生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |</p>

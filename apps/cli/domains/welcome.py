@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -1193,6 +1194,42 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             finally:
                 if _busy_txt:
                     print(_busy_clear(_tty), end="")
+            # ★ 2026-09-25（Founder:「不用命令, 直接使用会话, 是否可以进入」）:
+            #   会话里说「进入飞机大战项目」⇒ 模型出 `SESSION: project …` ⇒ **这里真进去** ✓
+            #   （不是数据写入 ⇒ 不需要点头 ✓; 解析不出来就如实说, 不编 ✗）
+            for _sitem in (_meta or {}).get("sessions") or []:
+                from apps.cli.commands import resolve_project_id as _rpi
+
+                _sp = str(_sitem).split()
+                if len(_sp) >= 2 and _sp[0].lower() in ("project", "项目"):
+                    _tok_s = " ".join(_sp[1:]).strip()
+                    _pid_s = str(_rpi(ctx, _tok_s) or "")
+                    if not _pid_s:
+                        print(f"  {MARK_SYS} 没找到「{_tok_s}」这个项目（打 /project 看候选 ✓）")
+                        continue
+                    _nm_s = next((c[0] for c in _project_candidates(root) if c[1] == _pid_s), _pid_s)
+                    _sel_project = f"{_nm_s}（{_pid_s}）"
+                    print(f"  {MARK_SYS} 已进入工作目录: {_sel_project}")
+                    print(f"  {MARK_SYS} 之后的只读命令默认只跑这个项目（/project 退出 回全局 ✓）")
+            # ★ 2026-09-25（Founder:「不用命令, 直接使用会话, 是否可以进入」）:
+            #   **确定性兜底**（不靠模型自觉 ✗ —— 实测它只"说"已进入却一个动作都没发 ✗）:
+            #   老板这轮只要说了「进入/切到/切换到/只看 <某项目>」且那个项目**真能解析**出来
+            #   ⇒ 直接进 ✓（解析不出来就不动 ✓ 不编 ✗）
+            _m_enter = re.match(r"^\s*(?:请|帮我)?\s*(?:进入|切到|切换到|只看)\s*(?:项目\s*)?[「\"']?([^」\"'，。\s]+)[」\"']?",
+                                line or "")
+            if _m_enter:
+                from apps.cli.commands import resolve_project_id as _rpi2
+
+                _tok_e = _m_enter.group(1).strip()
+                # ★ 剥掉尾巴的「项目/工作目录」（"进入飞机大战项目" ⇒ 抓成"飞机大战项目" ✗）
+                for _suf in ("工作目录", "项目"):
+                    _tok_e = _tok_e.removesuffix(_suf).strip()
+                _pid_e = str(_rpi2(ctx, _tok_e) or "")
+                if _pid_e and not _sel_project.endswith(f"（{_pid_e}）"):
+                    _nm_e = next((c[0] for c in _project_candidates(root) if c[1] == _pid_e), _pid_e)
+                    _sel_project = f"{_nm_e}（{_pid_e}）"
+                    print(f"  {MARK_SYS} 已进入工作目录: {_sel_project}"
+                          f"（之后只读命令默认只跑它; /project 退出 回全局 ✓）")
             _last_input = line
             _u0 = (_meta or {}).get("usage") or {}
             _sess["turns"] += 1

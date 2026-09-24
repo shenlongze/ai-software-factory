@@ -2324,6 +2324,17 @@ def resolve_project_id(ctx: FactoryContext, token: str) -> str:
     if not tk:
         return ""
 
+    # ★ 2026-09-25（Founder 实测:「不用命令直接说能不能进入」）:
+    #   老板按**他自己的话**叫项目（"飞机大战"）而项目名是 plane-shooter ✗
+    #   ⇒ **说明（需求原话）也必须能匹配** ✓（优先级最低 ⇒ 放最后 ✓ 不抢 id/名字的匹配 ✓）
+    try:
+        _notes = _project_notes(ctx.root, rows) or {}
+    except Exception:  # noqa: BLE001
+        _notes = {}
+
+    def _note(r: Any) -> str:
+        return str(_notes.get(str(getattr(r, "id", "") or ""), "") or "").lower()
+
     def _pid(r: Any) -> str:
         return str(getattr(r, "id", "") or "")
 
@@ -2344,6 +2355,9 @@ def resolve_project_id(ctx: FactoryContext, token: str) -> str:
             return _pid(r)
     for r in rows:                      # ④ 片段（用户常说 library, 不说 community-library）
         if tk and (_name(r).find(tk) >= 0 or _base(r).find(tk) >= 0 or tk in _pid(r).lower()):
+            return _pid(r)
+    for r in rows:                      # ⑤ 说明（需求原话 ⇒ 老板按他的话叫项目 ✓ 优先级最低）
+        if tk and tk in _note(r):
             return _pid(r)
     return ""
 

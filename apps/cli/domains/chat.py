@@ -195,6 +195,10 @@ def _system_prompt(root: Path | str, project: str = "") -> str:
         "1e ★ 老板**点名了对象**（项目管理/某项目名/某个树 id）⇒ **直接跑对应的那条命令** ✓\n"
         "   **不要**先 `project list` / `tasktree list` 铺垫 ✗（Founder 实测: 点名了 plane-shooter\n"
         "   还先列一遍清单 ⇒ 「这里理解有问题啊, 只要项目详情就可以了」✗）; 拿不准 id 时才列 ✓\n"
+        "1f ★ 老板说「进入/切到/只看某个项目/进入某项目」时 ⇒ **用 `SESSION: project <名字|id|片段>`**\n"
+        "   替他进入工作目录 ✓（一行, 例: `SESSION: project plane-shooter`）——\n"
+        "   **不许**让老板自己去敲 `/project` ✗（Founder 实测: 说「进入飞机大战项目」时你只会找、不会进 ✗）;\n"
+        "   项目名对不上他口头叫法时, 先用**说明（需求原话）**匹配 ✓（如「飞机大战」⇒ plane-shooter ✓）, 再进 ✓。\n"
         "1c ★ 讲「要哪几个参数」之前, **先 `RUN: factory <该命令> -h` 看一眼** ——\n"
         "   别凭记忆说哪个必填 ✗（Founder 实测: 把 project 的 --company（可选）说成必需 ✗）\n"
         f"{_proj_line}"
@@ -264,6 +268,11 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
         _meta["rounds"] = _round + 1
         runs = [ln.split("RUN:", 1)[1].strip() for ln in answer.splitlines() if ln.strip().startswith("RUN:")]
         runs = [r for r in runs if r][:_MAX_ROUNDS]
+        # ★ 2026-09-25（Founder:「不用命令, 直接使用会话, 是否可以进入」）:
+        #   `SESSION: project <名字|id|片段>` ⇒ 会话**替老板进入工作目录** ✓
+        #   （不是数据写入 ⇒ 不需要点头 ✓; 解析失败由调用方忽略 ✗ 不编）
+        _meta["sessions"] = [ln.split("SESSION:", 1)[1].strip() for ln in answer.splitlines()
+                             if ln.strip().startswith("SESSION:")]
         if not runs or on_run is None:
             break
         results: list[str] = []
@@ -333,7 +342,9 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
     import re as _re
 
     # ★ RUN: 是给系统的指令, **不该露给用户** —— 行内的也清掉（保留命令本身, 用反引号包住）
-    answer = "\n".join(ln for ln in answer.splitlines() if not ln.strip().startswith("RUN:")).strip()
+    answer = "\n".join(ln for ln in answer.splitlines()
+                       if not ln.strip().startswith("RUN:")
+                       and not ln.strip().startswith("SESSION:")).strip()
     #   清掉的同时**给个交代**（实测: 只删不留 ⇒ 出现"要不我换个写法再试："后面空着 ✗）
     answer = _re.sub(r"`?RUN:\s*([^`\n]+)`?",
                      lambda m: f"（已跑 `factory {m.group(1).strip()}`）", answer).strip()

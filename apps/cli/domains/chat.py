@@ -234,7 +234,11 @@ def chat_turn(root: Path | str, text: str, *, conv_id: str = "", history: list[d
 
     conv = conv_id
     if not conv:
-        d = U.create_conversation(root, title="终端会话")
+        # ★ 2026-09-25: 新建会话带上**当前工作目录**的项目归属（乙 的延续 ✓）
+        from apps.cli.domains.welcome import workdir_project_id as _wpid
+
+        _pid_d = _wpid(str(project or ""))
+        d = U.create_conversation(root, title="终端会话", project_id=_pid_d)
         conv = str((d or {}).get("id") or (d or {}).get("conversation_id") or "")
     if conv:
         U.append_message(root, conv, role="human", content=text)

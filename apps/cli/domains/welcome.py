@@ -357,7 +357,7 @@ SESSION_COMMANDS: dict[str, str] = {
     "/clear": "清屏",
     "/commands": "常用命令总表（表格: 命令 / 作用 / 是否改数据）",
     "/colors": "色板预览（每个界面元素上一遍色, 指着说哪不对）",
-    "/project": "会话归属哪个项目: /project <名字|id|片段>（不带参数=看当前+候选）",
+    "/project": "★ 工作目录: /project 列出可选 ⇒ /project <编号|名字|id> 进入; /project 退出 回全局",
 }
 
 
@@ -578,6 +578,28 @@ def _project_candidates(root: Path | str) -> list[tuple[str, str, str]]:
     return out
 
 
+def workdir_project_id(sel: str) -> str:
+    """从"名字（P-xxx）"里取出项目 id（拿不到就空 ✓ 不编 ✗）。"""
+    s = str(sel or "")
+    if s.endswith("）") and "（" in s:
+        return s.split("（")[-1][:-1].strip()
+    return ""
+
+
+def argv_candidates(argv: list[str], sel_project: str) -> list[list[str]]:
+    """★ 工作目录（Founder 设计 ✓）: 进了工作目录 ⇒ 只读命令**默认按它跑**。
+
+    返回**候选执行序列**（按顺序试）:
+      1) 原命令 + `--project <id>`（若在某个工作目录里 ✓）
+      2) 原命令（命令**不认** --project ⇒ 回退到它 ✓ 不硬塞 ✗）
+    """
+    base = [str(a) for a in argv]
+    pid = workdir_project_id(sel_project)
+    if pid and base:
+        return [base + ["--project", pid], base]
+    return [base]
+
+
 def _install_completer() -> None:
     """装上 readline 补全: 打 `/` 后按 TAB 能补会话命令 + factory 命令名。
 
@@ -795,16 +817,29 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
 
                 _buf9 = _io9.StringIO()
                 _rc9, _t09 = 0, _t9.monotonic()
+                # ★ 工作目录: 只读命令默认带 --project; 不认就回退（同一套助手 ✓ 不复制 ✗）
                 try:
-                    with _c9.redirect_stdout(_buf9):
-                        from apps.cli.main import main as _m3
+                    from apps.cli.main import main as _m3
 
-                        _m3(["--root", str(ctx.root), *_argv])
-                except SystemExit as _se9:
-                    _rc9 = int(getattr(_se9, "code", 0) or 0)
-                except Exception as exc:  # noqa: BLE001 — 一条命令炸了不带走 shell
+                    for _try in argv_candidates(list(_argv), _sel_project):
+                        _buf9 = _io9.StringIO()
+                        _rc9 = 0
+                        try:
+                            with _c9.redirect_stdout(_buf9):
+                                _m3(["--root", str(ctx.root), *_try])
+                        except SystemExit as _se9:
+                            _rc9 = int(getattr(_se9, "code", 0) or 0)
+                        except Exception as exc:  # noqa: BLE001 — 一条命令炸了不带走 shell
+                            _rc9 = 1
+                            print(f"  ⚠ 出错: {type(exc).__name__}: {str(exc)[:120]}")
+                        _t9v = _buf9.getvalue()
+                        if _rc9 and ("unrecognized" in _t9v or "invalid choice" in _t9v) and _try is not None:
+                            continue          # 不认这个参数 ⇒ 回退 ✓
+                        _buf9 = _io9.StringIO()   # 保留最后一次结果 ✓
+                        _buf9.write(_t9v)
+                        break
+                except Exception:  # noqa: BLE001
                     _rc9 = 1
-                    print(f"  ⚠ 出错: {type(exc).__name__}: {str(exc)[:120]}")
                 _out9 = _buf9.getvalue().rstrip()
                 print()
                 print(tool_block(" ".join(_argv), _t9.monotonic() - _t09, _out9))
@@ -879,16 +914,27 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             _arg = line.strip()[len("/project"):].strip()
             _cands = _project_candidates(root)
             if not _arg:
-                _cur = f"当前归属: {_sel_project}" if _sel_project else "当前: **没有指定**（我会按全局数据回答）"
+                _cur = (f"当前工作目录: {_sel_project}" if _sel_project
+                        else "当前工作目录: **未选择**（按全局数据回答）")
                 print(f"  {MARK_SYS} {_cur}")
-                print("  可选的（说 /project <名字|id|片段> 就锁到它）:")
-                for _n, _i, _note in _cands[:10]:
-                    print(f"     {_i}  {_n}" + (f"   {_note[:34]}" if _note else ""))
-                print("      /project 清空   ⇒ 取消归属（回到全局）")
+                print("  选择工作目录（说编号或名字都行 ✓）:")
+                for _k, (_n, _i, _note) in enumerate(_cands[:10], 1):
+                    print(f"     {_k}) {_i}  {_n}" + (f"   {_note[:34]}" if _note else ""))
+                print("      /project 退出   ⇒ 回到全局（不再只针对某个项目）")
                 continue
-            if _arg.lower() in ("清空", "none", "clear", "-"):
+            if _arg.lower() in ("退出", "清空", "none", "clear", "-", "exit"):
                 _sel_project = ""
-                print(f"  {MARK_SYS} 已取消归属（回到全局数据 ✓）")
+                print(f"  {MARK_SYS} 已退出工作目录（回到全局数据 ✓）")
+                continue
+            if _arg.isdigit():                       # ★ 按编号选择（Founder: 选工作目录 ✓）
+                _k = int(_arg)
+                if 1 <= _k <= min(len(_cands), 10):
+                    _n, _i, _note = _cands[_k - 1]
+                    _sel_project = f"{_n}（{_i}）"
+                    print(f"  {MARK_SYS} 已进入工作目录: {_sel_project}")
+                    print(f"  {MARK_SYS} 之后的只读命令默认只跑这个项目（/project 退出 回全局 ✓）")
+                else:
+                    print(f"  {MARK_SYS} 编号超出范围（1~{min(len(_cands), 10)}）—— 打 /project 看清单 ✓")
                 continue
             _hit = [c for c in _cands if _arg.lower() in (c[1] or "").lower()
                     or _arg.lower() in (c[0] or "").lower() or (c[0] or "").lower().startswith(_arg.lower())]
@@ -896,7 +942,8 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 print(f"  {MARK_SYS} 没找到「{_arg}」—— 打 /project 看候选（名字/id/片段都认 ✓）")
                 continue
             _sel_project = f"{_hit[0][0]}（{_hit[0][1]}）"
-            print(f"  {MARK_SYS} 会话已归属: {_sel_project} —— 之后默认按它回答/查它的数据 ✓")
+            print(f"  {MARK_SYS} 已进入工作目录: {_sel_project}")
+            print(f"  {MARK_SYS} 之后的只读命令默认只跑这个项目（/project 退出 回全局 ✓）")
             continue
         if low in ("/colors", "/theme"):
             from apps.cli.theme import PALETTE, color_enabled, paint
@@ -1088,7 +1135,10 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
 
             def _on_progress(cmd: str, seconds: float) -> None:
                 # ★ 只**记录**（打印交给 tool_block 的块头 —— 否则命令名/耗时会出现两次 ✗）
-                _last_exec["cmd"], _last_exec["s"] = cmd, seconds
+                # ★ 工作目录: 展示**真实执行的命令**（带了 --project 就要显出来 ✓ 别让人以为没带 ✗）
+                _pid_show = workdir_project_id(_sel_project)
+                _shown = f"{cmd} --project {_pid_show}" if (_pid_show and cmd and "--project" not in cmd) else cmd
+                _last_exec["cmd"], _last_exec["s"] = _shown, seconds
                 if _first_proc[0] and _busy_txt:      # 忙指示那行先清掉（Founder: 别黏一起 ✗）
                     print(_busy_clear(_tty), end="")
                     _first_proc[0] = False
@@ -1097,15 +1147,31 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
                 import contextlib as _c
                 import io as _io
 
-                buf = _io.StringIO()
-                try:
-                    with _c.redirect_stdout(buf):
-                        from apps.cli.main import main as _m2
+                # ★ 2026-09-25（Founder 设计「工作目录」✓）: 进了工作目录 ⇒ 只读命令**默认按它跑**
+                #   做法: 试一次补 `--project <id>`; 命令**不认**这个参数 ⇒ **回退**重跑原命令 ✓（不硬塞 ✗）
+                _cmds: list[list[str]] = argv_candidates(list(argv), _sel_project)
+                from apps.cli.main import main as _m2
 
-                        _m2(["--root", str(ctx.root), *[str(a) for a in argv]])
-                except SystemExit:
-                    pass
-                _v = buf.getvalue().rstrip()      # ★ 只去尾部: 头行的前导空格是表格对齐的一部分 ✗
+                _v = ""
+                for _argv_try in _cmds:
+                    buf = _io.StringIO()
+                    _err = None
+                    try:
+                        with _c.redirect_stdout(buf), _c.redirect_stderr(_io.StringIO()) as _eb:
+                            try:
+                                _m2(["--root", str(ctx.root), *_argv_try])
+                            except SystemExit as _se:
+                                _err = getattr(_se, "code", 0)
+                            _errtxt = _eb.getvalue()
+                    except Exception:  # noqa: BLE001
+                        _v, _err, _errtxt = "", 1, ""
+                    _v = buf.getvalue().rstrip()      # ★ 只去尾部: 头行前导空格是表格对齐的一部分 ✗
+                    # 只有"参数不认/用法错"才回退；其它错误就照原样报出来 ✓
+                    if _err and ("unrecognized arguments" in _errtxt or "invalid choice" in _errtxt
+                                 or "unrecognized" in _errtxt):
+                        _v = ""
+                        continue
+                    break
                 return _v or "（无输出）"
 
             import time as _t3
@@ -1143,7 +1209,7 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             #   ⇒ 模型/用量/成本/耗时 **不再挤在框标题里**，改到底部状态栏 ✓
             try:                                  # 工具栏保持真值（模型 / 归属项目 ✓）
                 _TOOLBAR["model"] = str(_meta.get("model") or "")
-                _TOOLBAR["project"] = f"项目 {_sel_project}" if _sel_project else ""
+                _TOOLBAR["project"] = f"工作目录 {_sel_project}" if _sel_project else ""
             except Exception:  # noqa: BLE001
                 pass
             _sb: list[str] = []

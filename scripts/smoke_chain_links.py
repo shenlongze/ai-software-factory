@@ -1625,6 +1625,48 @@ def _check_status_project_scope() -> list[str]:
     return bad
 
 
+def _check_workdir() -> list[str]:
+    """★ 工作目录（Founder 设计: 会话里选项目 → 进入 → 之后的命令只跑它 → 可退出 ✓）。
+
+    判据:
+      1) 助手存在且行为正确: `workdir_project_id` 能从「名字（P-xxx）」取 id; 拿不到 = 空 ✓
+      2) `argv_candidates` 在**有**工作目录时返回 [带 --project, 不带]（后者 = 不认时回退 ✓）
+      3) 两处命令执行点都用了这个助手 ✓（否则有的路径不生效 ✗ —— 我第一轮就只接了一处 ✗）
+      4) 会话里 /project 支持**编号选择**与「退出」✓
+    """
+    from pathlib import Path as _PP
+    import importlib
+    import sys as _sys
+
+    _sys.path.insert(0, ".")
+    bad: list[str] = []
+    try:
+        W = importlib.import_module("apps.cli.domains.welcome")
+    except Exception as exc:  # noqa: BLE001
+        return [f"导入 welcome 失败: {type(exc).__name__}"]
+    if W.workdir_project_id("plane-shooter（P-6eea9b3e）") != "P-6eea9b3e":
+        bad.append("workdir_project_id 取 id 不对 ✗")
+    if W.workdir_project_id("") != "":
+        bad.append("无工作目录时该返回空 ✗（不许编）")
+    cands = W.argv_candidates(["status"], "x（P-1）")
+    if not (len(cands) == 2 and cands[0] == ["status", "--project", "P-1"] and cands[1] == ["status"]):
+        bad.append(f"argv_candidates 不对 ✗: {cands}")
+    if W.argv_candidates(["status"], "") != [["status"]]:
+        bad.append("没进工作目录时不该加参数 ✗")
+    src = _PP("apps/cli/domains/welcome.py").read_text(encoding="utf-8")
+    if src.count("argv_candidates(") < 3:      # 定义 1 + 两处调用 ✓
+        bad.append(f"命令执行点没都用上助手 ✗（用到 {src.count('argv_candidates(')} 处, 应 ≥3）")
+    for need in ("选择工作目录", "已进入工作目录", "退出"):
+        if need not in src:
+            bad.append(f"缺少「{need}」文案/分支 ✗")
+    return bad
+
+
+def test_workdir() -> None:
+    """工作目录: 选项目 · 进入 · 命令默认按其跑 · 可退出。"""
+    assert _check_workdir() == []
+
+
 def test_status_project_scope() -> None:
     """status --project: 真收窄（不是空转的开关）。"""
     assert _check_status_project_scope() == []
@@ -4486,6 +4528,7 @@ def main() -> int:
     results.append(("项目归属管线（会话 · 执行请求 · 事件 · docs）", not _check_project_scope_wiring(), "；".join(_check_project_scope_wiring())))
     results.append(("产物 ref 指向真文件（E23）", not _check_artifact_refs_real(), "；".join(_check_artifact_refs_real())))
     results.append(("status --project 真收窄（非空转）", not _check_status_project_scope(), "；".join(_check_status_project_scope())))
+    results.append(("工作目录（选/进/只跑它/退出）", not _check_workdir(), "；".join(_check_workdir())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

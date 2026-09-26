@@ -143,6 +143,56 @@ def live_node_ids(root: Path, *, stale_after_sec: float = STALE_EXEC_SEC) -> set
     return live
 
 
+def sweep_stale_executions(root: Path, *, older_than_minutes: int = 60) -> list[str]:
+    """★ 回收**卡死的执行**: RUNNING 停留超过阈值 ⇒ 进程早没了 ⇒ 标 FAILED（释放容量 ✓）。
+
+    2026-09-25（E13 · Founder 飞机大战实测）: 4 个执行挂在 RUNNING **5 天** ✗
+    ⇒ 它们占着并发容量 ⇒ `run` 整批只推进几个叶、其余全「推迟（容量受限）」✗
+    而 `sweep_stale_claims`（治"认领"）与 `recover --plan`（治树）**都不会碰执行** ✗。
+
+    判据（保守 ✓ 不误杀）:
+      · 只按**时间**判死（记录里没有 pid ✗ 无法核进程）⇒ 阈值默认 **60 分钟**（单次执行通常几分钟 ✓）
+      · **只标 FAILED, 绝不标 SUCCESS** ✗（不假装成功 ✓）
+      · 失败原因写进 `input["_sweep_reason"]`（E14 的补救: 失败要能看出为什么 ✓）
+    """
+    from datetime import datetime, timedelta, timezone
+
+    out: list[str] = []
+    try:
+        from ai_factory_os.services.execution.runtime.types import (
+            ExecutionStatus,
+        )
+
+        store = open_runtime_store(root)                 # 模块级已导入 ✓（别再编 import ✗）
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=int(older_than_minutes))
+        for _req in store.list_executions():             # 返回 ExecutionRequest 对象 ✓（不是 dict ✗）
+            eid = str(getattr(_req, "id", "") or "")
+            if str(getattr(getattr(_req, "status", ""), "value", getattr(_req, "status", ""))) != "RUNNING":
+                continue
+            _ts = str(getattr(_req, "started_at", "") or getattr(_req, "created_at", "") or "")
+            try:
+                _dt = datetime.fromisoformat(_ts.replace("Z", "+00:00"))
+            except Exception:  # noqa: BLE001 — 时间读不出来就不动它（保守 ✓）
+                continue
+            if _dt > cutoff:
+                continue                                   # 还年轻 ⇒ 可能真在跑 ✓ 不动
+            _inp = dict(getattr(_req, "input", None) or {})
+            _inp["_sweep_reason"] = (
+                f"卡死回收: RUNNING 停留超过 {older_than_minutes} 分钟（since {_ts}）"
+                " ⇒ 进程已不在 ⇒ 标 FAILED 释放并发容量（E13）"
+            )
+            try:
+                store.save_execution(_req.model_copy(update={
+                    "status": ExecutionStatus.FAILED, "input": _inp,
+                }))
+                out.append(eid)
+            except Exception:  # noqa: BLE001 — 单个写失败不连累其它 ✓
+                continue
+    except Exception:  # noqa: BLE001 — 回收失败不影响主流程（如实返回空 ✓）
+        return out
+    return out
+
+
 def sweep_stale_claims(root: Path, ports: Ports) -> list[dict[str, str]]:
     """★ 把【陈旧认领】交回 pending —— `claimed` 但**没有任何活跃执行**指着它的叶。
 
@@ -741,6 +791,11 @@ def drive(
     root = Path(getattr(ports.work, "_root", "."))
     # ★ 起手先交回【陈旧认领】（进程中断遗留的 claimed）—— 否则它们永远 BLOCKED, 整棵树不动
     rep.released = sweep_stale_claims(root, ports)
+    # ★ E13: 同时回收**卡死的执行**（RUNNING 超时 ⇒ 释放容量 ✓ 否则整批被拖死 ✗）
+    _reaped = sweep_stale_executions(root)
+    if _reaped:
+        print(f"  （回收卡死执行 {len(_reaped)} 个: {', '.join(_reaped[:6])}"
+              f"{' …' if len(_reaped) > 6 else ''} ⇒ 释放并发容量 ✓）")
 
     for _ in range(max_ticks):
         # ★ 限量: 已经跑够就停（停在【执行之间】, 不打断正在跑的那批）

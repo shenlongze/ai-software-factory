@@ -1741,6 +1741,38 @@ def _check_chat_enter() -> list[str]:
     return bad
 
 
+def _check_stale_execution_sweep() -> list[str]:
+    """★ 卡死的执行必须能被回收（E13 —— 4 个 RUNNING 挂了 **5 天** ⇒ 占并发容量 ⇒ 整批拖死 ✗）。
+
+    判据:
+      1) `sweep_stale_executions` 存在, 且**接进了**清理点（与 sweep_stale_claims 同处 ✓）
+      2) 它**只按时间判死** + **只标 FAILED, 绝不标 SUCCESS** ✗（不许假装成功 ✓）
+      3) 失败要留原因（`_sweep_reason` ✓ —— E14 的补救 ✓）
+      4) **不许静默空转** ✗（我第一版 import 了一个不存在的模块 ⇒ 被 except 吞掉 ⇒ 一个都没回收 ✗）
+         ⇒ 用正确的 `open_runtime_store(...).list_executions()` ✓
+    """
+    from pathlib import Path as _PP
+
+    bad: list[str] = []
+    src = _PP("src/ai_factory_os/bootstrap/scheduler_pump.py").read_text(encoding="utf-8")
+    if "def sweep_stale_executions" not in src:
+        bad.append("没有 sweep_stale_executions ✗（卡死执行没人回收）")
+    if "sweep_stale_executions(root)" not in src:
+        bad.append("没接进清理点 ✗（run 时不会回收）")
+    if "ExecutionStatus.FAILED" not in src or "_sweep_reason" not in src:
+        bad.append("回收时没标 FAILED 或没留原因 ✗")
+    if 'runtime_wiring import open_runtime_store' in src:
+        bad.append("又用了不存在的 `runtime_wiring` 模块 ✗（会静默空转 ⇒ 一个都回收不了 ✗）")
+    if "list_executions()" not in src:
+        bad.append("没用 `list_executions()` 读执行 ✗")
+    return bad
+
+
+def test_stale_execution_sweep() -> None:
+    """卡死执行回收: 存在 + 接进清理点 + 只标 FAILED + 留原因 + 不静默空转。"""
+    assert _check_stale_execution_sweep() == []
+
+
 def test_chat_enter() -> None:
     """会话直接说「进入X」⇒ 真能进（说明能解析 + 确定性兜底 + 协议 + 提示词）。"""
     assert _check_chat_enter() == []
@@ -4620,6 +4652,7 @@ def main() -> int:
     results.append(("工作目录（选/进/只跑它/退出）", not _check_workdir(), "；".join(_check_workdir())))
     results.append(("概念梳理文档（在 + 挂入口 + 标原文）", not _check_concept_doc(), "；".join(_check_concept_doc())))
     results.append(("会话直接说进入（不用命令）", not _check_chat_enter(), "；".join(_check_chat_enter())))
+    results.append(("卡死执行回收（E13）", not _check_stale_execution_sweep(), "；".join(_check_stale_execution_sweep())))
     width = max(len(n) for n, _, _ in results)
     fails = 0
     for label, ok, detail in results:

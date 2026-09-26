@@ -1,5 +1,40 @@
 # Changelog
 
+## [v1.3.47] — 2026-09-24
+
+**回收卡死的执行（E13）** —— 它正卡着飞机大战的生产 ✗。
+
+### 现场（Founder 飞机大战实测）
+`factory run` 整批只推进几个叶、其余全「推迟（容量/预算受限）」✗
+查执行库: **4 个执行挂在 RUNNING，最久的 5 天前** ✗（EXR-011/021/022/025, `pid=None` 无从核进程）
+⇒ 它们**占着并发容量** ⇒ 新批次跑不动 ✓
+而 `sweep_stale_claims`（治**认领**）与 `recover --plan`（治**树**）**都不碰执行** ✗
+—— 代码注释里自己都写着「不会碰它」✓
+
+### Fixed
+- 新增 `sweep_stale_executions(root, *, older_than_minutes=60)` ✓ 接进 `scheduler_pump` 的清理点
+  （紧挨 `sweep_stale_claims` ✓ 同一套思路 ✓）
+- 判据（**保守, 不误杀** ✓）：只按**时间**判死（记录里没有 pid ✗）· 阈值默认 **60 分钟**
+  （单次执行通常几分钟 ✓）· **只标 FAILED, 绝不标 SUCCESS** ✗（不许假装成功 ✓）
+- 失败**留原因**：写进 `input["_sweep_reason"]` ✓（E14 的补救: 失败要能看出为什么 ✓）
+
+### 实测（真跑 ✓）
+```
+回收: ['EXR-011', 'EXR-021', 'EXR-022', 'EXR-025']
+回收后: SUCCESS 69 · FAILED 19 · PENDING 4 · **RUNNING 0** ✓（此前 4 个僵尸）
+EXR-011 原因: 卡死回收: RUNNING 停留超过 60 分钟（since 2026-09-20 19:04:29…）⇒ 进程已不在 ⇒ 标 FAILED 释放容量
+```
+
+### 坑（如实记 · 差点静默空转 ✗）
+第一版我 `from ai_factory_os.bootstrap.runtime_wiring import open_runtime_store` ✗
+——**该模块不存在** ⇒ 被 `except` 吞掉 ⇒ **一个都没回收、还看不出错** ✗
+（正是我最常踩的那类坑 ✓）⇒ 正确 API 就在同文件 32 行: `from ...runtime.store import open_runtime_store`
++ `store.list_executions()`（返回**对象**不是 dict ✓）⇒ 改对后立刻回收 4 个 ✓
+
+### 守卫
+- 新增「卡死执行回收」：函数存在 + **接进清理点** + 只标 FAILED + 留原因 +
+  **禁止再出现那个不存在的 import** ✗（专门防静默空转 ✓）
+
 ## [v1.3.46] — 2026-09-24
 
 **自然语言退出工作目录**（补齐上一版：只能进不能出 = 半成品 ✗）。

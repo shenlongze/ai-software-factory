@@ -1778,6 +1778,34 @@ def test_chat_enter() -> None:
     assert _check_chat_enter() == []
 
 
+def _check_capability_map() -> list[str]:
+    """★ 能力地图文档必须在 + 挂入口 + **必须如实列"还做不到的"**（Founder 问「能做什么」✓）。
+
+    判据:
+      1) 文档存在, 且三段齐全（做什么 / 查看什么 / 控制什么 ✓）
+      2) 必须有「还做不到的」一节（**只讲能做的不讲做不到 = 吹** ✗）
+      3) 挂在 AGENTS.md（进入即读 ✓）
+    """
+    from pathlib import Path as _PP
+
+    bad: list[str] = []
+    doc = _PP("docs/能力地图-做什么-查看什么-控制什么.md")
+    if not doc.is_file():
+        return ["能力地图文档不存在 ✗"]
+    d = doc.read_text(encoding="utf-8")
+    for k in ("能\"做\"", "能\"查看\"", "能\"控制\"", "还做不到的"):
+        if k not in d:
+            bad.append(f"能力地图缺章节「{k}」✗")
+    if "能力地图-做什么" not in _PP("AGENTS.md").read_text(encoding="utf-8"):
+        bad.append("AGENTS.md 没挂能力地图 ✗（进不了进入即读）")
+    return bad
+
+
+def test_capability_map() -> None:
+    """能力地图: 三段齐 + 如实列做不到 + 挂入口。"""
+    assert _check_capability_map() == []
+
+
 def test_concept_doc() -> None:
     """概念梳理: 文档在 · 挂了入口 · 标了原文出处。"""
     assert _check_concept_doc() == []
@@ -4651,6 +4679,7 @@ def main() -> int:
     results.append(("status --project 真收窄（非空转）", not _check_status_project_scope(), "；".join(_check_status_project_scope())))
     results.append(("工作目录（选/进/只跑它/退出）", not _check_workdir(), "；".join(_check_workdir())))
     results.append(("概念梳理文档（在 + 挂入口 + 标原文）", not _check_concept_doc(), "；".join(_check_concept_doc())))
+    results.append(("能力地图（三段齐 + 如实列做不到）", not _check_capability_map(), "；".join(_check_capability_map())))
     results.append(("会话直接说进入（不用命令）", not _check_chat_enter(), "；".join(_check_chat_enter())))
     results.append(("卡死执行回收（E13）", not _check_stale_execution_sweep(), "；".join(_check_stale_execution_sweep())))
     width = max(len(n) for n, _, _ in results)

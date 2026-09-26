@@ -1,5 +1,28 @@
 # Changelog
 
+## [v1.3.48] — 2026-09-26
+
+**能力地图**（Founder:「我能使用 AI Factory OS 做什么，查看什么，控制什么？」）⇒ 新增
+`docs/能力地图-做什么-查看什么-控制什么.md`（挂进 `AGENTS.md` 进入即读 ✓）。
+
+### 内容（**全部实测** ✓ 命令名单取自 `_top_command_names()` ✓）
+- **能做**: 建组织（公司/部门/项目/任务）· `chain` 需求→全链 · `understand` 读库出事实 ·
+  `org member set` 舰队归属 · `agent add/assign` · `provider add` · **`run` 真执行**（agent 在仓库改+自己提交）·
+  `recover` 修卡住 · `product develop/ux` 出产物 · `backup`
+- **能查看**（全只读）: `status`（`--project` 收窄 ✓）· `dashboard`（`--workspace` 跨项目 ✓）·
+  `project show`（四段）· **`project docs`**（读文档内容 ✓ 新加）· `tasktree list/show/todo/flow/dataflow` ·
+  `kanban` · `execution` · `event/history/evd/verification` · `org member list` · `knowledge/memory` ·
+  `metrics` · `serve` 网页版
+- **能控制**: `approval` 批准门 · 会话三档权限 · `tasktree edit/expand/confirm/priority/staffing/workflow` ·
+  `agent assign/release` · `llm/provider` · `workspace init`
+- **第五节「还做不到的」如实列 10 条** ✗（不能把 done 标回未完成 · 分解器不按缺口拆 ·
+  无端到端可玩性验收 · 只能进入项目 · 工作目录不持久化/显示不透明 · 光说「退出」不触发 ·
+  无专门看公司入口 · 事件多数无项目归属 · 失败原因部分缺失）
+
+### 守卫
+- 新增「能力地图」：文档在 + 三段齐 + **必须有「还做不到的」一节**（只讲能做的不讲做不到 = 吹 ✗）+
+  挂进 AGENTS.md ✓
+
 ## [v1.3.47] — 2026-09-24
 
 **回收卡死的执行（E13）** —— 它正卡着飞机大战的生产 ✗。

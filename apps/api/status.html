@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Factory OS · 状态（v1.3.49）</title>
+<title>AI Factory OS · 状态（v1.3.50）</title>
 <style>
   :root{--bg:#f5f5f7;--card:#fff;--ink:#1d1d1f;--ink2:#6e6e73;--line:#d2d2d7;
         --brand:#0071e3;--ok:#34c759;--warn:#ff9f0a;--bad:#ff3b30;--r:18px}
@@ -33,15 +33,16 @@
 </head>
 <body><div class="wrap">
   <h1>AI Factory OS · 状态</h1>
-  <p class="sub">v1.3.49 · 生成于 2026-10-13 16:30 ·
+  <p class="sub">v1.3.50 · 生成于 2026-10-13 16:37 ·
      数据来自 <code>docs/TODO.md</code> + <code>docs/WORKLOG.md</code> + 实时读数 ⇒ 不可能与文档漂移 ✓</p>
 
   <div class="cards">
-    <div class="card"><b>守卫</b><span>76/76 通过</span></div><div class="card"><b>pytest</b><span>87 passed, 7 warnings in 19.77s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
+    <div class="card"><b>守卫</b><span>76/76 通过</span></div><div class="card"><b>pytest</b><span>87 passed, 7 warnings in 19.66s</span></div><div class="card"><b>架构 R1–R17</b><span>汇总: 11/15 条规则通过（有红）· 跨层/跨域 import 边 216 条</span></div><div class="card"><b>分类 R18–R23</b><span>汇总: 5/6 条规则通过（有红）—— Founder: &quot;代码必须严格分类，严格管理，不能东一个西一个&quot;</span></div>
   </div>
 
   <h2>最近提交</h2>
-  <pre>aa9b7327 docs(compare): Hermes CLI 设计 vs 本平台会话层（引原文/代码, 含可迁移清单）
+  <pre>dc14407c feat(chat): 只读命令免审批 + 项目仓库真路径注入 → v1.3.49
+aa9b7327 docs(compare): Hermes CLI 设计 vs 本平台会话层（引原文/代码, 含可迁移清单）
 c1d0bd14 docs(capability): 能力地图（做什么/查看什么/控制什么）+ E23 复修（守卫抓到回归）→ v1.3.48
 faeacee4 docs(todo): 纠正 3 条过期行（E2 作废 / E3·E6 已修）+ 澄清 E1 真问题 = 编排环
 86a57bd0 fix(runtime): 回收卡死的执行（E13）—— 它卡着飞机大战的生产 → v1.3.47
@@ -54,15 +55,14 @@ eb61bb41 feat(cli): 工作目录 —— 会话内选项目 · 进入 · 之后�
 4e5c4e6b feat(scope): 项目分类（归属）打通 乙+甲+丁（Founder: 全做）→ v1.3.40
 ce44c28e fix(cli): 项目详情 = 真实四段（项目情况/任务情况/文档情况/团队）→ v1.3.39
 f87ce183 fix(cli): 项目详情 —— 语言实时识别 + 三段式排版 + 提示词讲清&quot;平台会写代码&quot; → v1.3.38
-95ae9fc9 test(guard): 版本守卫加第④条 —— 已安装元数据必须与 pyproject 一致（改版本没重装 editable ⇒ factory -v 显旧号 ✗ 我自己反复忘）
-b958edff fix(cli): 项目详情能看树与进度 + 传错 id 给正确指引（Founder 实测「进不去项目」）→ v1.3.37</pre>
+95ae9fc9 test(guard): 版本守卫加第④条 —— 已安装元数据必须与 pyproject 一致（改版本没重装 editable ⇒ factory -v 显旧号 ✗ 我自己反复忘）</pre>
 
   <h2>活清单（TODO.md）</h2>
   <h1>AI Factory OS · TODO（活清单）</h1>
 <blockquote>这份清单是**活的**：做完一条就更新状态、写上版本号和提交号（可核对 ✓）。</blockquote>
 <blockquote>每次改动都同时进 `docs/WORKLOG.md`（追加式, 不改历史 ⇒ 留痕 ✓）。</blockquote>
 <blockquote>网页版：`factory serve` 起来后看 `/status`（由 `scripts/build_status.py` 从这三个来源生成 ✓）。</blockquote>
-<p>最后更新：2026-09-22 · 当前版本 `v1.3.29`</p>
+<p>最后更新：2026-10-13 · 当前版本 `v1.3.50`</p>
 <p>---</p>
 <h2>1. 已完成（带痕迹）</h2>
 <table>
@@ -254,6 +254,7 @@ b958edff fix(cli): 项目详情能看树与进度 + 传错 id 给正确指引（
 <tr><td>v1.3.47</td><td>**回收卡死执行（E13）**（飞机大战被它卡住: run 整批只推几个叶, 其余全「推迟(容量受限)」✗）: 现场 = **4 个执行挂 RUNNING 5 天**（pid=None 无从核）⇒ 占并发容量; sweep_stale_claims(治认领)/recover(治树) 都不碰执行（注释自述「不会碰它」✓）; 修 = 新增 `sweep_stale_executions`（只按时间判死·阈值 60 分钟·**只标 FAILED 绝不标 SUCCESS** ✗·原因写 `_sweep_reason`）+ 接进 pump 清理点; 实测回收 EXR-011/021/022/025 ⇒ **RUNNING 0** ✓; 坑: 我第一版 import 了**不存在的模块** ⇒ 被 except 吞 ⇒ 静默空转 ✗（一个没回收）⇒ 用正确 API（同文件 32 行）改对 ✓</td><td>守卫 74→75</td></tr>
 <tr><td>v1.3.48</td><td>**能力地图**（Founder:「我能使用 AI Factory OS 做什么/查看什么/控制什么」）: 新增 `docs/能力地图-做什么-查看什么-控制什么.md` —— **全实测**（命令名单取自 `_top_command_names()` ✓）: 能做（create/chain/run/understand/org member/provider/product/backup）· 能查看（status/dashboard/project show·docs/tasktree 全族/kanban/execution/event/metrics/serve）· 能控制（approval 门/会话三档/tasktree edit·expand·confirm·priority·staffing·workflow/agent assign/llm·provider/workspace init）; **第五节如实列 10 条做不到** ✗; 挂进 AGENTS.md + 守卫（三段齐 + 必须列做不到 ✗ 防吹）</td><td>守卫 75→76</td></tr>
 <tr><td>v1.3.49</td><td>**会话只读命令免审批 + 项目仓库真路径注入**（Founder 实测两句:「只有命令才能执行么？？」✗ —— 连 `ls` 都要点头; `ls plane-shooter` 找不到 ✗ —— 它不知道项目仓库路径）: 修 = ① `chat.py` 新增 `_READONLY_SHELL` 白名单 + `is_readonly_shell()`（只读 ⇒ 免审批 ✓; 写/联网/装包 `&gt;` `rm` `curl` `npm` `pip` 一律不免 ✓; `sh `/`bash ` 前缀先剥 ✓; `&amp;&amp;`/`;`/`</td><td>` **逐段判** ✓; 认不出**照样问** ✗ 保守不赌 ✓）② `welcome.py` 审批回调 `_ask_sh()` 接上 ⇒ 只读**直接放行** ✓ ③ 同文件 `_system_prompt()` 注入**项目仓库绝对路径**（`ProjectStore.repo_path`）+ 需求原话 ⇒ 不再拿项目名当路径 ✗; 留痕: 本批改动 2026-09-26 起在工作区未提交, 2026-10-13 补齐版本号规矩(三处同步)后才入库 ✓</td><td>守卫 76（未加）</td><td>pytest 87 ✓ · verify.sh 16/16 ✓ · check_wheel 干净装 `/`·`/status`·`/api/trees` 200 ✓</td></tr>
+<tr><td>v1.3.50</td><td>**项目进度与交接说明**（Founder:「写一个现在项目进度的说明, 方便我使用其它开发工具继续进行开发任务」）: 新增 `docs/项目进度与交接.md` —— **单文件交接**九节（三十秒读完 / 按顺序先读哪 10 份 + **哪些是历史不是当前** ✗ / 七层结构 / 干活前必守规矩[INV 冻结·状态语义·版本号三处同步·提交四件套·禁令·验证铁律] / 提交与推送现状[**澄清「ahead 450」是假象** ✓ 推送= `git push origin HEAD:main`] / 验证命令+当次期望读数 / 没做完的三档[可直接做 · **必须等 Founder 拍板** · 明确不做] / 明确做不到 8 条 ✗ / 起步动作+标准收尾 / 已知坑 6 条各带来源版本）; 挂进 `AGENTS.md` 进入即读 ✓; 文中每个读数**标注来源**（覆盖率 27.7% 标注为引 `docs/TODO.md` §6 旧读数·**未复测** ✗ 不冒充实测 ✓）; 定位声明: **不是真相源**（冲突以 `docs/ssot/architecture.md` + STEP10 冻结契约为准 ✓ 依 `DOCUMENTATION_GOVERNANCE.md` §8 禁 Parallel Truth）; 顺带同步 `docs/TODO.md` 抬头「最后更新」（此前停 09-22 / v1.3.29）</td><td>守卫 76（未加）</td><td>pytest 87 ✓ · verify.sh 16/16 ✓ · 版本三处 v1.3.50 ✓</td></tr>
 </table>
 <p>过程里工具错了两回（短名算式 · 正则多点 ✗），都被**每目标全量 pytest** 抓住 ⇒ 停手修正后一次全绿 | 架构守卫 **R10: 0 项** ✓ · pytest 74 ✓ · `compat_aliases.py` 里的 `.models` 是有意保留的兼容映射 ✓ |</p>
 <p>（生成器 `scripts/build_status.py` 从 TODO/日志/git log/实时读数**真源**生成 ⇒ 不会漂移 ✓） | `factory serve` 后 `/status` 200 ✓（干净安装也 200 ✓） |</p>

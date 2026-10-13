@@ -1074,7 +1074,15 @@ def run_shell(root: Path | str, *, banner: bool = True) -> int:
             from apps.cli.domains import chat as _chat
 
             def _ask_sh(cmd: str) -> bool:
-                """通用命令的审批（照 Hermes 的框: 一次 / 本会话总是 / 拒绝）—— 默认**拒绝**（非终端）。"""
+                """通用命令的审批（照 Hermes 的框: 一次 / 本会话总是 / 拒绝）—— 默认**拒绝**（非终端）。
+
+                ★ 2026-09-26（Founder:「只有命令才能执行么？？」✗）: **只读命令直接放行** ✓
+                  （ls/find/cat/grep/git status… ⇒ 不再打扰老板 ✓; 其余照旧要点头 ✓）
+                """
+                from apps.cli.domains.chat import is_readonly_shell as _ro
+
+                if _ro(cmd):
+                    return True                     # 只读 ⇒ 免审批（写/联网/装包仍然问 ✓）
                 key = "sh:" + str(cmd).split()[0] if str(cmd).split() else "sh"
                 if key in _always:
                     return True

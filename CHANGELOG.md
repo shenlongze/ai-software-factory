@@ -1,5 +1,31 @@
 # Changelog
 
+## [v1.3.49] — 2026-10-13
+
+**会话里只读命令不再打扰老板 + 它知道项目仓库的真路径**（Founder 实测两句：
+「只有命令才能执行么？？」✗ · `ls plane-shooter` 找不到 ✗）。
+
+### Added
+- `apps/cli/domains/chat.py`：新增 `_READONLY_SHELL` 白名单 + `is_readonly_shell(cmd)`
+  —— 只读 shell（`ls/find/cat/head/tail/wc/stat/file/du/df/grep/rg/pwd/whoami/date/echo/which/type`、
+  `git status|log|diff|show|branch|remote`、`--version` 类）**免审批直接跑** ✓；
+  判据**保守**：认不出就**照样问** ✗（写/联网/装包 `>` `>>` `rm` `mv` `cp` `chmod` `sudo` `curl` `wget`
+  `npm` `pip` `install` `kill` `dd` `mkfs` `tee` 一律不免 ✓）；多段（`&&`/`;`/`|`）**逐段判**，全只读才算 ✓；
+  会话传来的是 `sh ls …`（带前缀）⇒ 先剥 `sh `/`bash `/`sh -c `/`bash -c `/`zsh ` 前缀再判 ✓
+- `apps/cli/domains/welcome.py`：审批回调 `_ask_sh()` 接上 `is_readonly_shell()`
+  —— 只读命令**直接 return True** ✓，其余照旧走「一次 / 本会话总是 / 拒绝」审批框 ✓
+- `apps/cli/domains/chat.py` `_system_prompt()`：把**项目仓库的真实绝对路径**（取自
+  `ProjectStore.repo_path`）+ **需求原话**（`_project_notes`）注入系统提示 ✓
+  —— 它不再拿项目名当路径（实测 `ls plane-shooter` 会失败 ✗）
+
+### Changed
+- 会话里的权限体验与「只读操作免审批」保持一致：查看类动作零打扰，写/联网/装包仍必须点头 ✓
+
+### Known gaps
+- `is_readonly_shell()` 目前**无自动化回归**（本仓 `tests/` 已按刀29 清理，验证走 `scripts/smoke_*.py`）
+  ⇒ 判据靠本文档 + 代码注释记录，未接进 `scripts/` 冒烟 ✗
+- 白名单是**枚举式**，新命令（如 `jq`/`tree`）默认落到「要点头」一侧 ✓（保守，非漏放）
+
 ## [v1.3.48] — 2026-09-26
 
 **能力地图**（Founder:「我能使用 AI Factory OS 做什么，查看什么，控制什么？」）⇒ 新增
